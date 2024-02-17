@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:RtlEditor2.ViewModels"
+             xmlns:views="clr-namespace:RtlEditor2.Views"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="RtlEditor2.Views.MainView"
+             x:DataType="vm:MainViewModel">
+  <Design.DataContext>
+    <!-- This only sets the DataContext for the previewer in an IDE,
+         to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+    <vm:MainViewModel />
+  </Design.DataContext>
+
+	<DockPanel>
+		
+		<!-- Menu -->
+		<Menu DockPanel.Dock="Top">
+			<MenuItem Header="_File">
+				<MenuItem Header="_Open..."/>
+				<Separator/>
+				<MenuItem Header="_Exit"/>
+			</MenuItem>
+			<MenuItem Header="_Edit">
+				<MenuItem Header="Copy"/>
+				<MenuItem Header="Paste"/>
+			</MenuItem>
+		</Menu>
+		
+		<Grid RowDefinitions="*, 4, 100">
+			<Grid ColumnDefinitions="200, 4, *, 4, 200" Grid.Row="0">
+				<!-- Navigate View -->
+				<views:NavigateView Grid.Column="0"/>
+				
+				<GridSplitter Grid.Column="1" ResizeDirection="Columns"/>
+
+				<!-- Code View -->
+				<views:CodeView Grid.Column="2" />
+				
+				<GridSplitter Grid.Column="3" ResizeDirection="Columns"/>
+
+				<!-- Info View -->
+				<views:InfoView Grid.Column="4" />
+			</Grid>
+			<!--Rectangle Grid.Row="0" Fill="Blue"/-->
+			<GridSplitter Grid.Row="1" ResizeDirection ="Rows"/>
+			
+			<!-- Log View -->
+			<TextBlock Margin="5" Grid.Row="2">boot</TextBlock>
+		</Grid>
+		
+	</DockPanel>
+</UserControl>
