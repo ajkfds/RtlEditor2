@@ -1,4 +1,8 @@
-﻿using System;
+﻿using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -16,6 +20,20 @@ namespace RtlEditor2.Models
         {
             Title = title;
         }
+
+        public void test()
+        {
+        }
+
+        Bitmap defaultImage = new Bitmap(AssetLoader.Open(new Uri("avares://RtlEditor2/Assets/Icons/paper.png")));
+
+        public IImage Image
+        {
+            get {
+                return defaultImage;
+            }
+        }
+
 
         public Node(string title, ObservableCollection<Node> subNodes)
         {

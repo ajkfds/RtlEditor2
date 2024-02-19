@@ -5,7 +5,7 @@
 	xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
 	xmlns:vm="clr-namespace:RtlEditor2.ViewModels"
 	xmlns:views="clr-namespace:RtlEditor2.Views"
-			 
+	xmlns:models="clr-namespace:RtlEditor2.Models"
 	mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
 	x:Class="RtlEditor2.Views.ProjectView"
 	x:DataType="vm:ProjectViewModel"
@@ -18,7 +18,10 @@
 	<TreeView ItemsSource="{Binding Nodes}">
 		<TreeView.ItemTemplate>
 			<TreeDataTemplate ItemsSource="{Binding SubNodes}">
-				<TextBlock Text="{Binding Title}"/>
+				<StackPanel Orientation="Horizontal">
+					<Image Source="{Binding Image}" Width="16" Height="16" />
+					<TextBlock Text="{Binding Title}" Margin="8 0"/>
+				</StackPanel>
 			</TreeDataTemplate>
 		</TreeView.ItemTemplate>
 	</TreeView>
