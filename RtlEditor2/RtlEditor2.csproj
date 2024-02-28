@@ -29,4 +29,10 @@
     <Folder Include="Models\Common\Json\" />
     <Folder Include="Models\Editor\FileTypes\" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Views\TreeControlView.axaml.cs">
+      <DependentUpon>TreeControlView.axaml</DependentUpon>
+    </Compile>
+  </ItemGroup>
 </Project>

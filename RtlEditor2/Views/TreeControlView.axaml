@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:RtlEditor2.ViewModels;assembly=RtlEditor2"
+             xmlns:views="clr-namespace:RtlEditor2.Views;assembly=RtlEditor2"
+             xmlns:models="clr-namespace:RtlEditor2.Models.Common;assembly=RtlEditor2"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="450"
+             x:Class="RtlEditor2.Views.TreeControlView">
+	<Design.DataContext>
+		<vm:TreeControlViewModel/>
+	</Design.DataContext>
+
+	<TreeView
+        Name="Tree"
+        x:DataType="vm:TreeControlViewModel"
+        ItemsSource="{Binding Nodes}"
+		
+        Tapped="TreeView_Tapped"
+        DoubleTapped="TreeView_DoubleTapped"
+        SelectionChanged="TreeView_SelectionChanged"
+        >
+		<!-- Tap,DoubleTap,SelectionChangedイベントの割り当て -->
+
+		<TreeView.ItemTemplate>
+			<TreeDataTemplate
+                x:DataType="models:TreeNode"
+                ItemsSource="{Binding Nodes}"
+            >
+				<!-- ItemはImageとTextBlockを横に並べた構造にする -->
+				<StackPanel Orientation="Horizontal">
+					<Image Source="{Binding Image}" Width="16" Height="16"/>
+					<TextBlock Text="{Binding Text}" Margin="8 0 0 0" />
+				</StackPanel>
+			</TreeDataTemplate>
+		</TreeView.ItemTemplate>
+
+		<TreeView.Styles>
+			<Style Selector="TreeViewItem">
+				<Setter Property="IsExpanded" Value="{Binding Path=IsExpanded,Mode=TwoWay}"/>
+			</Style>
+		</TreeView.Styles>
+
+	</TreeView>
+</UserControl>

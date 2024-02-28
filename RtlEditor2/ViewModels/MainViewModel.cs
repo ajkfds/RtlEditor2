@@ -65,7 +65,7 @@ public class MainViewModel : ViewModelBase
     //////////////
     private void addProject(Models.Editor.Data.Project project)
     {
-        Models.Common.Global.navigateView.AddProject(project);
+        //Models.Common.Global.navigateView.AddProject(project);
         //Tools.ParseProjectForm pform = new Tools.ParseProjectForm(navigatePanel.GetPeojectNode(project.Name));
         //pform.ShowDialog(this);
     }

@@ -30,7 +30,13 @@
 		
 		<Grid RowDefinitions="*, 4, 100">
 			<Grid ColumnDefinitions="200, 4, *, 4, 200" Grid.Row="0">
-				<views:LeftTabs Grid.Column="0" Name="LeftTabs" />
+				<TabControl Name="LeftTab">
+					<TabItem Header="Navigate" FontSize="12">
+						<views:TreeControlView
+							Name="NavigateView"
+					/>
+					</TabItem>
+				</TabControl>
 				
 				<GridSplitter Grid.Column="1" ResizeDirection="Columns"/>
 
