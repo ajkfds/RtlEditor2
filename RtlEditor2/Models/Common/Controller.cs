@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using RtlEditor2.Data;
 using static RtlEditor2.Models.Common.Controller;
 
 namespace RtlEditor2.Models.Common
@@ -24,9 +25,9 @@ namespace RtlEditor2.Models.Common
         //    return Global.mainForm.BackColor;
         //}
 
-        public static void AddProject(Editor.Data.Project project)
+        public static void AddProject(Project project)
         {
-            Global.mainForm.Controller_AddProject(project);
+            Global.mainView.Controller_AddProject(project);
         }
 
         //public static System.Windows.Forms.MenuStrip GetMenuStrip()

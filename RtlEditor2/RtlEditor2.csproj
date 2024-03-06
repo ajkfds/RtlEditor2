@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
   
@@ -27,12 +27,18 @@
 
   <ItemGroup>
     <Folder Include="Models\Common\Json\" />
-    <Folder Include="Models\Editor\FileTypes\" />
+    <Folder Include="Lint\" />
+    <Folder Include="Setups\" />
+    <Folder Include="Snippets\" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Update="Views\TreeControlView.axaml.cs">
-      <DependentUpon>TreeControlView.axaml</DependentUpon>
+    <ProjectReference Include="..\..\AjkAvaloniaLibs\AjkAvaloniaLibs\AjkAvaloniaLibs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Tools\ParseProjectForm.axaml.cs">
+      <DependentUpon>ParseProjectForm.axaml</DependentUpon>
     </Compile>
   </ItemGroup>
 </Project>

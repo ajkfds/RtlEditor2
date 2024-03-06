@@ -6,6 +6,10 @@ public partial class MainWindow : Window
 {
     public MainWindow()
     {
+        Global.mainWindow = this;
         InitializeComponent();
+
     }
+
+
 }

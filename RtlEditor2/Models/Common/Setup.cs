@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using RtlEditor2.Data;
 
 namespace RtlEditor2.Models.Common
 {
@@ -121,7 +122,7 @@ namespace RtlEditor2.Models.Common
                     }
                     else
                     {
-                        Editor.Data.Project project = Editor.Data.Project.Create(reader);
+                        Project project = Project.Create(reader);
                         Controller.AddProject(project);
                     }
                 }

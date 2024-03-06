@@ -2,9 +2,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:vm="clr-namespace:RtlEditor2.ViewModels"
-             xmlns:views="clr-namespace:RtlEditor2.Views"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             xmlns:vm="clr-namespace:RtlEditor2.ViewModels;assembly=RtlEditor2"
+             xmlns:views="clr-namespace:RtlEditor2.Views;assembly=RtlEditor2"
+             xmlns:ajkctrl="clr-namespace:AjkAvaloniaLibs.Contorls;assembly=AjkAvaloniaLibs"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="450"
              x:Class="RtlEditor2.Views.MainView"
              x:DataType="vm:MainViewModel">
   <Design.DataContext>
@@ -32,16 +33,14 @@
 			<Grid ColumnDefinitions="200, 4, *, 4, 200" Grid.Row="0">
 				<TabControl Name="LeftTab">
 					<TabItem Header="Navigate" FontSize="12">
-						<views:TreeControlView
-							Name="NavigateView"
-					/>
+						<views:NavigateView Name="NavigateView"/>
 					</TabItem>
 				</TabControl>
 				
 				<GridSplitter Grid.Column="1" ResizeDirection="Columns"/>
 
 				<!-- Code View -->
-				<views:CodeView Grid.Column="2" />
+				<views:CodeView Grid.Column="2" Name="CodeView"/>
 				
 				<GridSplitter Grid.Column="3" ResizeDirection="Columns"/>
 

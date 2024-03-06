@@ -89,7 +89,7 @@ namespace RtlEditor2.Views
 //            _syntaxModeCombo.SelectionChanged += SyntaxModeCombo_SelectionChanged;
 
             string scopeName = _registryOptions.GetScopeByLanguageId(csharpLanguage.Id);
-
+            
             _textEditor.Document = new TextDocument(
                 "// AvaloniaEdit supports displaying control chars: \a or \b or \v" + Environment.NewLine +
                 "// AvaloniaEdit supports displaying underline and strikethrough" + Environment.NewLine);
@@ -106,6 +106,23 @@ namespace RtlEditor2.Views
                 else _textEditor.FontSize = _textEditor.FontSize > 1 ? _textEditor.FontSize - 1 : 1;
             }, RoutingStrategies.Bubble, true);
 
+        }
+
+        public void SetTextFile(Data.TextFile textFile)
+        {
+            if (textFile == null)
+            {
+//                Global.mainForm.editorPage.CodeEditor.SetTextFile(null);
+//                Global.mainForm.mainTab.TabPages[0].Text = "-";
+            }
+            else
+            {
+                _textEditor.Document = textFile.CodeDocument.TextDocument;
+                //                Global.mainForm.editorPage.CodeEditor.AbortInteractiveSnippet();
+                //                Global.mainForm.editorPage.CodeEditor.SetTextFile(textFile);
+                //                Global.mainForm.mainTab.TabPages[0].Text = textFile.Name;
+                //                Global.mainForm.mainTab.SelectedTab = Global.mainForm.mainTab.TabPages[0];
+            }
         }
 
         private void textEditor_TextArea_TextEntering(object sender, TextInputEventArgs e)
