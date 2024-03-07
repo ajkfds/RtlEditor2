@@ -76,25 +76,25 @@ namespace RtlEditor2.Views
 
 //            _textEditor.TextArea.TextView.ElementGenerators.Add(_generator);
 
-            _registryOptions = new TextMateSharp.Grammars.RegistryOptions(
-                (ThemeName)_currentTheme);
+            //_registryOptions = new TextMateSharp.Grammars.RegistryOptions(
+            //    (ThemeName)_currentTheme);
 
-            _textMateInstallation = _textEditor.InstallTextMate(_registryOptions);
+//            _textMateInstallation = _textEditor.InstallTextMate(_registryOptions);
 
-            Language csharpLanguage = _registryOptions.GetLanguageByExtension(".cs");
+//            Language csharpLanguage = _registryOptions.GetLanguageByExtension(".cs");
 
 //            _syntaxModeCombo = this.FindControl<ComboBox>("syntaxModeCombo");
 //            _syntaxModeCombo.ItemsSource = _registryOptions.GetAvailableLanguages();
 //            _syntaxModeCombo.SelectedItem = csharpLanguage;
 //            _syntaxModeCombo.SelectionChanged += SyntaxModeCombo_SelectionChanged;
 
-            string scopeName = _registryOptions.GetScopeByLanguageId(csharpLanguage.Id);
+//            string scopeName = _registryOptions.GetScopeByLanguageId(csharpLanguage.Id);
             
             _textEditor.Document = new TextDocument(
                 "// AvaloniaEdit supports displaying control chars: \a or \b or \v" + Environment.NewLine +
                 "// AvaloniaEdit supports displaying underline and strikethrough" + Environment.NewLine);
             //+ ResourceLoader.LoadSampleFile(scopeName));
-            _textMateInstallation.SetGrammar(_registryOptions.GetScopeByLanguageId(csharpLanguage.Id));
+//            _textMateInstallation.SetGrammar(_registryOptions.GetScopeByLanguageId(csharpLanguage.Id));
             _textEditor.TextArea.TextView.LineTransformers.Add(new UnderlineAndStrikeThroughTransformer());
 
 //            _statusTextBlock = this.Find<TextBlock>("StatusText");

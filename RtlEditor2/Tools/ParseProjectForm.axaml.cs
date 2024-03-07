@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System;
 using Avalonia.Threading;
 using Avalonia;
+using System.Security.Cryptography.X509Certificates;
 
 namespace RtlEditor2.Tools
 {
@@ -15,6 +16,7 @@ namespace RtlEditor2.Tools
             InitializeComponent();
         }
 
+        DispatcherTimer timer = new DispatcherTimer();
 
         public ParseProjectForm(NavigatePanel.ProjectNode projectNode)
         {
@@ -24,11 +26,19 @@ namespace RtlEditor2.Tools
             //            this.Icon = ajkControls.Global.Icon;
             this.ShowInTaskbar = false;
             Closing += ParseProjectForm_Closing;
+            Loaded += ParseProjectForm_Loaded;
             Opened += ParseProjectForm_Opened;
-            
+
+            timer.Interval = new TimeSpan(0, 0, 0, 10);
+            timer.Tick += Timer_Tick;
+            timer.Start();
         }
 
-        System.Threading.Thread thread = null;
+        private void Timer_Tick(object? sender, EventArgs e)
+        {
+            ProgressBar0.InvalidateVisual();
+        }
+
         private void ParseProjectForm_Opened(object? sender, EventArgs e)
         {
             if (thread != null) return;
@@ -36,12 +46,15 @@ namespace RtlEditor2.Tools
             thread.Start();
         }
 
+        System.Threading.Thread thread = null;
+        private void ParseProjectForm_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+        }
+
 
 
         private NavigatePanel.ProjectNode projectNode = null;
         private volatile bool close = false;
-
-
 
 
         private void ParseProjectForm_Closing(object? sender, WindowClosingEventArgs e)
@@ -130,16 +143,9 @@ namespace RtlEditor2.Tools
 
             System.Diagnostics.Debug.Print(projectNode.Project.Name + ":" + sw.ElapsedMilliseconds.ToString() + "ms");
             close = true;
-            Dispatcher.UIThread.Post(new Action(() => { Close(); }));
+//            Dispatcher.UIThread.Post(new Action(() => { Close(); }));
+            Dispatcher.UIThread.Invoke(new Action(()=>{ Close(); }));
         }
 
-
-
-
-        private void timer_Tick(object sender, EventArgs e)
-        {
-            //            ProgressBar0.Update();
-            //            Update();
-        }
     }
 }

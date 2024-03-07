@@ -8,8 +8,6 @@ public partial class MainWindow : Window
     {
         Global.mainWindow = this;
         InitializeComponent();
-
     }
-
 
 }

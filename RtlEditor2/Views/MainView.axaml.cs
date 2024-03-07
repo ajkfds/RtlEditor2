@@ -1,7 +1,9 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using RtlEditor2.Data;
 using System;
+using System.Threading.Tasks;
 
 namespace RtlEditor2.Views;
 
@@ -19,11 +21,10 @@ public partial class MainView : UserControl
         FileTypes.TextFile textFileType = new FileTypes.TextFile();
         Global.FileTypes.Add(textFileType.ID, textFileType);
 
-        AttachedToVisualTree += OnAttachedToVisualTree;
-
+        Loaded += MainView_Loaded;
     }
 
-    private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    private void MainView_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         // read setup file
         if (System.IO.File.Exists(setupFileName))
@@ -31,9 +32,6 @@ public partial class MainView : UserControl
             Global.Setup.LoadSetup(setupFileName);
         }
     }
-
-
-
 
     internal void Controller_AddProject(Project project)
     {

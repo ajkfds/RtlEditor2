@@ -8,5 +8,5 @@
         x:Class="RtlEditor2.Views.MainWindow"
         Icon="/Assets/avalonia-logo.ico"
         Title="RtlEditor2">
-	<views:MainView />
+	<views:MainView Name="MainView0"/>
 </Window>

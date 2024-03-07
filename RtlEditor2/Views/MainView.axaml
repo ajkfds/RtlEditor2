@@ -27,6 +27,14 @@
 				<MenuItem Header="Copy"/>
 				<MenuItem Header="Paste"/>
 			</MenuItem>
+			<MenuItem Header="_Project">
+				<MenuItem Header="Add Project"/>
+			</MenuItem>
+			<MenuItem Header="_Tools">
+			</MenuItem>
+			<MenuItem Header="_Help">
+				
+			</MenuItem>
 		</Menu>
 		
 		<Grid RowDefinitions="*, 4, 100">
