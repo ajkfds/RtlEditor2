@@ -23,6 +23,11 @@ using Avalonia.Diagnostics;
 using AvaloniaEdit.TextMate;
 using TextMateSharp.Grammars;
 using System.Reflection.Emit;
+using System.Diagnostics.CodeAnalysis;
+using RtlEditor2.CodeEditor;
+using System.Threading;
+using Avalonia.Threading;
+using RtlEditor2.Models.Common;
 
 namespace RtlEditor2.Views
 {
@@ -35,6 +40,8 @@ namespace RtlEditor2.Views
         private OverloadInsightWindow _insightWindow;
         private TextMateSharp.Grammars.RegistryOptions _registryOptions;
         private int _currentTheme = (int)ThemeName.DarkPlus;
+
+        private BackroungParser backGroundParser = new BackroungParser();
 
 
         public CodeView()
@@ -95,7 +102,7 @@ namespace RtlEditor2.Views
                 "// AvaloniaEdit supports displaying underline and strikethrough" + Environment.NewLine);
             //+ ResourceLoader.LoadSampleFile(scopeName));
 //            _textMateInstallation.SetGrammar(_registryOptions.GetScopeByLanguageId(csharpLanguage.Id));
-            _textEditor.TextArea.TextView.LineTransformers.Add(new UnderlineAndStrikeThroughTransformer());
+            _textEditor.TextArea.TextView.LineTransformers.Add(new CodeDocumentColorTransformer());
 
 //            _statusTextBlock = this.Find<TextBlock>("StatusText");
 
@@ -106,6 +113,56 @@ namespace RtlEditor2.Views
                 else _textEditor.FontSize = _textEditor.FontSize > 1 ? _textEditor.FontSize - 1 : 1;
             }, RoutingStrategies.Bubble, true);
 
+            backGroundParser.Run();
+
+            DispatcherTimer timer = new DispatcherTimer();
+            timer.Interval = new TimeSpan(0, 0, 0, 0, 10);
+            timer.Tick += Timer_Tick;
+        }
+
+        private void Timer_Tick(object? sender, EventArgs e)
+        {
+            DocumentParser parser = backGroundParser.GetResult();
+            if (parser == null) return;
+            if (parser.ParsedDocument == null) return;
+            //if (TextFile == null) return;
+            //if (TextFile != parser.TextFile)
+            //{   // return not current file
+            //    return;
+            //}
+
+            Data.TextFile textFile = parser.TextFile;
+            CodeDocument codeDocument = textFile.CodeDocument;
+
+            if (textFile == null || textFile == null)
+            {
+                parser.Dispose();
+                return;
+            }
+
+//            Controller.AppendLog("complete edit parse ID :" + parser.TextFile.ID);
+            if (codeDocument.Version != parser.ParsedDocument.Version)
+            {
+//                Controller.AppendLog("edit parsed mismatch " + DateTime.Now.ToString() + "ver" + codeDocument.Version + "<-" + parser.ParsedDocument.Version);
+                parser.Dispose();
+                return;
+            }
+
+            //            CodeDocument.CopyFrom(parser.Document);
+            codeDocument.CopyColorMarkFrom(parser.Document);
+
+            if (parser.ParsedDocument != null)
+            {
+                parser.TextFile.AcceptParsedDocument(parser.ParsedDocument);
+            }
+
+            // update current view
+//            codeTextbox.Invoke(new Action(codeTextbox.Refresh));
+//            Controller.MessageView.Update(TextFile.ParsedDocument);
+//            codeTextbox.ReDrawHighlight();
+
+//            Controller.NavigatePanel.UpdateVisibleNode();
+//            Controller.NavigatePanel.Refresh();
         }
 
         public void SetTextFile(Data.TextFile textFile)
@@ -117,13 +174,146 @@ namespace RtlEditor2.Views
             }
             else
             {
-                _textEditor.Document = textFile.CodeDocument.TextDocument;
+                CodeDocument = textFile.CodeDocument;
+                
                 //                Global.mainForm.editorPage.CodeEditor.AbortInteractiveSnippet();
                 //                Global.mainForm.editorPage.CodeEditor.SetTextFile(textFile);
                 //                Global.mainForm.mainTab.TabPages[0].Text = textFile.Name;
                 //                Global.mainForm.mainTab.SelectedTab = Global.mainForm.mainTab.TabPages[0];
             }
+
+            //if (TextFile != null)
+            //{
+            //    if (closeCantidateTextFiles.Contains(textFile))
+            //    {
+            //        closeCantidateTextFiles.Remove(textFile);
+            //    }
+            //    closeCantidateTextFiles.Add(textFile);
+            //    if (closeCantidateTextFiles.Count > FilesCasheNumbers)
+            //    {
+            //        closeCantidateTextFiles[0].Close();
+            //        closeCantidateTextFiles.RemoveAt(0);
+            //    }
+            //}
+
+            if (textFile == null || textFile.CodeDocument == null)
+            {
+                CodeDocument = null;
+                //codeTextbox.Visible = false;
+                return;
+            }
+            if (TextFile == null || TextFile.GetType() != textFile.GetType())
+            {
+                //codeTextbox.Style = textFile.DrawStyle;
+            }
+
+            //codeTextbox.Visible = true;
+//            codeTextbox.Document = textFile.CodeDocument;
+//            TextFile = textFile;
+//            ScrollToCaret();
+//            if (TextFile != null) Controller.MessageView.Update(TextFile.ParsedDocument);
+
+            entryParse();
+
         }
+
+        CodeEditor.CodeDocument codeDocument = null;
+        public CodeEditor.CodeDocument CodeDocument
+        {
+            get
+            {
+                return codeDocument;
+            }
+            set
+            {
+                codeDocument = value;
+                _textEditor.Document = codeDocument.TextDocument;
+            }
+        }
+
+        public Data.TextFile? TextFile
+        {
+            get
+            {
+                if (codeDocument == null) return null;
+                return codeDocument.TextFile;
+            }
+        }
+
+        class CodeDocumentColorTransformer : DocumentColorizingTransformer
+        {
+            protected override void ColorizeLine(DocumentLine line)
+            {
+                if (Global.mainView.CodeView.CodeDocument == null) return;
+
+                CodeDocument codeDocument = Global.mainView.CodeView.CodeDocument;
+                if (!codeDocument.LineInfomations.ContainsKey(line)) return;
+                CodeEditor.LineInfomation lineInfo = codeDocument.LineInfomations[line];
+
+                foreach(var color in lineInfo.Colors)
+                {
+                    ChangeLinePart(
+                        color.Offset,
+                        color.Length,
+                        visualLine =>
+                        {
+                            visualLine.TextRunProperties.SetForegroundBrush(color.Brush);
+                        }
+                    );
+
+                }
+
+
+                //SolidColorBrush cb = new SolidColorBrush(Color.FromRgb(255, 0, 0), 10.5);
+
+                //string lineText = this.CurrentContext.Document.GetText(line);
+
+                //int indexOfUnderline = lineText.IndexOf("underline");
+                //if (indexOfUnderline == -1) return;
+                //ChangeLinePart(
+                //    line.Offset + indexOfUnderline,
+                //    line.Offset + indexOfUnderline + "underline".Length,
+                //    visualLine =>
+                //    {
+                //        visualLine.TextRunProperties.SetForegroundBrush(cb);
+                //        if (visualLine.TextRunProperties.TextDecorations != null)
+                //        {
+                //            var textDecorations = new TextDecorationCollection(visualLine.TextRunProperties.TextDecorations) { TextDecorations.Underline[0] };
+
+                //            visualLine.TextRunProperties.SetTextDecorations(textDecorations);
+                //        }
+                //        else
+                //        {
+                //            visualLine.TextRunProperties.SetTextDecorations(TextDecorations.Underline);
+                //        }
+                //    }
+                //);
+
+
+            }
+
+        }
+
+        // -----------------------------------------------------------
+        // Entry Edit Parse
+        public void RequestReparse()
+        {
+            entryParse();
+        }
+
+        private void entryParse()
+        {
+//            if (Global.StopParse) return;
+            if (TextFile == null) return;
+            DocumentParser parser = TextFile.CreateDocumentParser(DocumentParser.ParseModeEnum.EditParse);
+            if (parser != null)
+            {
+//                Controller.AppendLog("entry edit parse ID :" + parser.TextFile.ID);
+                backGroundParser.EntryParse(parser);
+            }
+        }
+
+        // -----------------------------------------------------------
 
         private void textEditor_TextArea_TextEntering(object sender, TextInputEventArgs e)
         {

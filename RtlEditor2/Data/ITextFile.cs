@@ -23,21 +23,21 @@ namespace RtlEditor2.Data
 
         List<Item> FindItems(Func<Item, bool> match, Func<Item, bool> stop);
 
-//        bool ParseValid { get; }
+        bool ParseValid { get; }
         void Dispose();
 
         void Update();
-//        void ParseHierarchy(Action<ITextFile> action);
+        void ParseHierarchy(Action<ITextFile> action);
 
         NavigatePanel.NavigatePanelNode NavigatePanelNode { get; }
-//        CodeEditor.DocumentParser CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum parseMode);
+        CodeEditor.DocumentParser CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum parseMode);
 
         // textFile
-//        CodeEditor.CodeDocument CodeDocument { get; }
-//        bool IsCodeDocumentCashed { get; }
+        CodeEditor.CodeDocument CodeDocument { get; }
+        bool IsCodeDocumentCashed { get; }
 
-//        CodeEditor.ParsedDocument ParsedDocument { get; set; }
-//        void AcceptParsedDocument(CodeEditor.ParsedDocument newParsedDocument);
+        CodeEditor.ParsedDocument ParsedDocument { get; set; }
+        void AcceptParsedDocument(CodeEditor.ParsedDocument newParsedDocument);
 
         void LoadFormFile();
         bool ReparseRequested { get; }

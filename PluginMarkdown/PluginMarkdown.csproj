@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CodeEditorPlugin\CodeEditorPlugin.csproj" />
+    <ProjectReference Include="..\RtlEditor2\RtlEditor2.csproj" />
+  </ItemGroup>
+
+</Project>

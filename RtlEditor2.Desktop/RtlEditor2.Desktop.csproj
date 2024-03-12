@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PluginMarkdown\PluginMarkdown.csproj" />
     <ProjectReference Include="..\RtlEditor2\RtlEditor2.csproj" />
   </ItemGroup>
 </Project>

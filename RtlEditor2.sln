@@ -9,9 +9,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RtlEditor2.Desktop", "RtlEd
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AjkAvaloniaLibs", "..\AjkAvaloniaLibs\AjkAvaloniaLibs\AjkAvaloniaLibs.csproj", "{22DF82D1-A149-47A4-B692-BDD7CE82C2E9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditorPlugin", "CodeEditorPlugin\CodeEditorPlugin.csproj", "{FF0B01B8-7A10-40F4-BFF7-5AA6EC527EFF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditorPlugin", "CodeEditorPlugin\CodeEditorPlugin.csproj", "{FF0B01B8-7A10-40F4-BFF7-5AA6EC527EFF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PluginVerilog", "PluginVerilog\PluginVerilog.csproj", "{23559999-8527-4AF3-875B-1D57B711968A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PluginMarkdown", "PluginMarkdown\PluginMarkdown.csproj", "{2FD1E886-867A-473F-903E-3E3D1B8E764D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -35,10 +35,10 @@ Global
 		{FF0B01B8-7A10-40F4-BFF7-5AA6EC527EFF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FF0B01B8-7A10-40F4-BFF7-5AA6EC527EFF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FF0B01B8-7A10-40F4-BFF7-5AA6EC527EFF}.Release|Any CPU.Build.0 = Release|Any CPU
-		{23559999-8527-4AF3-875B-1D57B711968A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{23559999-8527-4AF3-875B-1D57B711968A}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{23559999-8527-4AF3-875B-1D57B711968A}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{23559999-8527-4AF3-875B-1D57B711968A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2FD1E886-867A-473F-903E-3E3D1B8E764D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2FD1E886-867A-473F-903E-3E3D1B8E764D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2FD1E886-867A-473F-903E-3E3D1B8E764D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2FD1E886-867A-473F-903E-3E3D1B8E764D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

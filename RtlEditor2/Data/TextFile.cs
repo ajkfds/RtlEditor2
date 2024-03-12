@@ -44,30 +44,30 @@ namespace RtlEditor2.Data
             get { if (document == null) return false; else return true; }
         }
 
-        //public virtual CodeEditor.ParsedDocument ParsedDocument { get; set; }
+        public virtual CodeEditor.ParsedDocument ParsedDocument { get; set; }
 
-        //public bool ParseValid
-        //{
-        //    get
-        //    {
-        //        //CodeDocument doc = CodeDocument;
-        //        //ParsedDocument parsedDocument = ParsedDocument;
-        //        if (doc == null) return false;
-        //        if (parsedDocument == null) return false;
-        //        if (doc.Version == parsedDocument.Version) return true;
-        //        return false;
-        //    }
-        //}
+        public bool ParseValid
+        {
+            get
+            {
+                RtlEditor2.CodeEditor.CodeDocument doc = CodeDocument;
+                RtlEditor2.CodeEditor.ParsedDocument parsedDocument = ParsedDocument;
+                if (doc == null) return false;
+                if (parsedDocument == null) return false;
+                if (doc.Version == parsedDocument.Version) return true;
+                return false;
+            }
+        }
 
-        //public virtual void AcceptParsedDocument(ParsedDocument newParsedDocument)
-        //{
-        //    ParsedDocument oldParsedDocument = ParsedDocument;
-        //    ParsedDocument = null;
-        //    if (oldParsedDocument != null) oldParsedDocument.Dispose();
+        public virtual void AcceptParsedDocument(RtlEditor2.CodeEditor.ParsedDocument newParsedDocument)
+        {
+            RtlEditor2.CodeEditor.ParsedDocument oldParsedDocument = ParsedDocument;
+            ParsedDocument = null;
+            if (oldParsedDocument != null) oldParsedDocument.Dispose();
 
-        //    ParsedDocument = newParsedDocument;
-        //    Update();
-        //}
+            ParsedDocument = newParsedDocument;
+            Update();
+        }
         public virtual void Close()
         {
             if (Dirty) return;
@@ -194,10 +194,10 @@ namespace RtlEditor2.Data
         }
 
 
-        //public override CodeEditor.DocumentParser CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum parseMode)
-        //{
-        //    return null;
-        //}
+        public override CodeEditor.DocumentParser CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum parseMode)
+        {
+            return null;
+        }
 
         //public virtual List<PopupItem> GetPopupItems(ulong Version, int index)
         //{
@@ -234,75 +234,75 @@ namespace RtlEditor2.Data
         //{
         //}
 
-        //public void ParseHierarchy(Action<ITextFile> action)
-        //{
-        //    codeEditor.Controller.AppendLog("parseHier : " + Name);
+        public void ParseHierarchy(Action<ITextFile> action)
+        {
+//            codeEditor.Controller.AppendLog("parseHier : " + Name);
 
-        //    List<string> parsedIds = new List<string>();
-        //    parseHierarchy(this, parsedIds, action);
-        //    Update();
+            List<string> parsedIds = new List<string>();
+            parseHierarchy(this, parsedIds, action);
+            Update();
 
-        //    if (NavigatePanelNode != null)
-        //    {
-        //        NavigatePanelNode.HierarchicalVisibleUpdate();
-        //    }
-        //    codeEditor.Controller.NavigatePanel.Update();
-        //}
+            if (NavigatePanelNode != null)
+            {
+                NavigatePanelNode.HierarchicalVisibleUpdate();
+            }
+//            codeEditor.Controller.NavigatePanel.Update();
+        }
 
-        //private void parseHierarchy(Data.Item item, List<string> parsedIds, Action<ITextFile> action)
-        //{
-        //    if (item == null) return;
-        //    Data.ITextFile textFile = item as Data.TextFile;
-        //    if (textFile == null) return;
-        //    if (parsedIds.Contains(textFile.ID)) return;
+        private void parseHierarchy(Data.Item item, List<string> parsedIds, Action<ITextFile> action)
+        {
+            if (item == null) return;
+            Data.ITextFile textFile = item as Data.TextFile;
+            if (textFile == null) return;
+            if (parsedIds.Contains(textFile.ID)) return;
 
-        //    action(textFile);
-        //    parsedIds.Add(textFile.ID);
+            action(textFile);
+            parsedIds.Add(textFile.ID);
 
-        //    if (textFile.ParseValid & !textFile.ReparseRequested)
-        //    {
-        //        textFile.Update();
-        //    }
-        //    else
-        //    {
-        //        CodeEditor.DocumentParser parser = item.CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum.BackgroundParse);
-        //        if (parser != null)
-        //        {
-        //            System.Diagnostics.Debug.Print("## parse hier " + textFile.ID);
-        //            parser.Parse();
-        //            if (parser.ParsedDocument == null) return;
-        //            textFile.AcceptParsedDocument(parser.ParsedDocument);
-        //            textFile.Update();
-        //        }
-        //    }
+            if (textFile.ParseValid & !textFile.ReparseRequested)
+            {
+                textFile.Update();
+            }
+            else
+            {
+                CodeEditor.DocumentParser parser = item.CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum.BackgroundParse);
+                if (parser != null)
+                {
+                    System.Diagnostics.Debug.Print("## parse hier " + textFile.ID);
+                    parser.Parse();
+                    if (parser.ParsedDocument == null) return;
+                    textFile.AcceptParsedDocument(parser.ParsedDocument);
+                    textFile.Update();
+                }
+            }
 
-        //    // parse all chiled nodes
-        //    List<Data.Item> items = new List<Data.Item>();
-        //    lock (textFile.Items)
-        //    {
-        //        foreach (Data.Item subItem in textFile.Items.Values)
-        //        {
-        //            items.Add(subItem);
-        //        }
-        //    }
+            // parse all chiled nodes
+            List<Data.Item> items = new List<Data.Item>();
+            lock (textFile.Items)
+            {
+                foreach (Data.Item subItem in textFile.Items.Values)
+                {
+                    items.Add(subItem);
+                }
+            }
 
-        //    foreach (Data.Item subitem in items)
-        //    {
-        //        parseHierarchy(subitem, parsedIds, action);
-        //    }
+            foreach (Data.Item subitem in items)
+            {
+                parseHierarchy(subitem, parsedIds, action);
+            }
 
-        //    if (textFile.ReparseRequested)
-        //    {
-        //        CodeEditor.DocumentParser parser = item.CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum.BackgroundParse);
-        //        if (parser != null)
-        //        {
-        //            System.Diagnostics.Debug.Print("## re-parse hier " + textFile.ID);
-        //            parser.Parse();
-        //            if (parser.ParsedDocument == null) return;
-        //            textFile.AcceptParsedDocument(parser.ParsedDocument);
-        //            textFile.Update();
-        //        }
-        //    }
-        //}
+            if (textFile.ReparseRequested)
+            {
+                CodeEditor.DocumentParser parser = item.CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum.BackgroundParse);
+                if (parser != null)
+                {
+                    System.Diagnostics.Debug.Print("## re-parse hier " + textFile.ID);
+                    parser.Parse();
+                    if (parser.ParsedDocument == null) return;
+                    textFile.AcceptParsedDocument(parser.ParsedDocument);
+                    textFile.Update();
+                }
+            }
+        }
     }
 }

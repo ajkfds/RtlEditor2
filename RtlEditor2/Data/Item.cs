@@ -225,10 +225,10 @@ namespace RtlEditor2.Data
             return node;
         }
 
-        //public virtual CodeEditor.DocumentParser CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum parseMode)
-        //{
-        //    return null;
-        //}
+        public virtual CodeEditor.DocumentParser CreateDocumentParser(CodeEditor.DocumentParser.ParseModeEnum parseMode)
+        {
+            return null;
+        }
 
 
     }

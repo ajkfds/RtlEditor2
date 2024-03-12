@@ -1,4 +1,5 @@
 ﻿using ExCSS;
+using RtlEditor2.CodeEditor;
 using RtlEditor2.Data;
 using RtlEditor2.Models.Common;
 using System;
@@ -13,7 +14,7 @@ namespace RtlEditor2
     {
         public static Dictionary<string, FileTypes.FileType> FileTypes = new Dictionary<string, FileTypes.FileType>();
         public static Dictionary<string, Project> Projects = new Dictionary<string, Project>();
-        //public static Dictionary<string, codeEditorPlugin.IPlugin> Plugins = new Dictionary<string, codeEditorPlugin.IPlugin>();
+        public static Dictionary<string, CodeEditorPlugin.IPlugin> Plugins = new Dictionary<string, CodeEditorPlugin.IPlugin>();
 
         public static Setup Setup = new Setup();
         //public static Dictionary<string, codeEditorPlugin.PluginSetup> PluginSetups = new Dictionary<string, codeEditorPlugin.PluginSetup>();
@@ -22,7 +23,7 @@ namespace RtlEditor2
         internal static Views.MainWindow mainWindow;
 
 
-        //public static ajkControls.CodeTextbox.CodeDrawStyle DefaultDrawStyle = new codeEditor.CodeDrawStyle();
+        public static CodeDrawStyle DefaultDrawStyle = new CodeDrawStyle();
         //public static IWshRuntimeLibrary.WshShell WshShell = new IWshRuntimeLibrary.WshShell();
 
         //public static class IconImages
