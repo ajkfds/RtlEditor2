@@ -1,3 +1,18 @@
 [submodule "AjkAvaloniaLibs"]
 	path = AjkAvaloniaLibs
 	url = git@github.com:ajkfds/AjkAvaloniaLibs.git
+[submodule "CodeEditor2Plugin"]
+	path = CodeEditor2Plugin
+	url = git@github.com:ajkfds/CodeEditor2Plugin.git
+[submodule "AvaloniaEdit"]
+	path = AvaloniaEdit
+	url = git@github.com:AvaloniaUI/AvaloniaEdit.git
+[submodule "CodeEditor2MarkdownPlugin"]
+	path = CodeEditor2MarkdownPlugin
+	url = git@github.com:ajkfds/CodeEditor2MarkdownPlugin.git
+[submodule "CodeEditor2VerilogPlugin"]
+	path = CodeEditor2VerilogPlugin
+	url = git@github.com:ajkfds/CodeEditor2VerilogPlugin.git
+[submodule "CodeEditor2"]
+	path = CodeEditor2
+	url = git@github.com:ajkfds/CodeEditor2.git
