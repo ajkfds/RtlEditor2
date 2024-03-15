@@ -3,6 +3,7 @@
 using Avalonia;
 using Avalonia.ReactiveUI;
 using Avalonia.Svg.Skia;
+using CodeEditor2;
 
 namespace RtlEditor2.Desktop;
 
@@ -15,6 +16,8 @@ class Program
     public static void Main(string[] args)
     {
         new pluginMarkdown.Plugin().Register();
+//        new pluginVerilog.Plugin().Register();
+
         BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
     }
