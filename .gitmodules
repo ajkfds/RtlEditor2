@@ -13,3 +13,6 @@
 [submodule "CodeEditor2"]
 	path = CodeEditor2
 	url = git@github.com:ajkfds/CodeEditor2.git
+[submodule "AjkAvaloniaLibs"]
+	path = AjkAvaloniaLibs
+	url = git@github.com:ajkfds/AjkAvaloniaLibs.git
