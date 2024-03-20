@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin.csproj" />
+    <ProjectReference Include="..\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2\CodeEditor2\CodeEditor2\CodeEditor2.csproj" />
   </ItemGroup>
 </Project>

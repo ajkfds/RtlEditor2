@@ -5,8 +5,6 @@ VisualStudioVersion = 17.8.34316.72
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RtlEditor2.Desktop", "RtlEditor2.Desktop\RtlEditor2.Desktop.csproj", "{F04A1E8C-F8BE-49F8-BCCA-5F091CA3BAE4}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AjkAvaloniaLibs", "..\AjkAvaloniaLibs\AjkAvaloniaLibs\AjkAvaloniaLibs.csproj", "{22DF82D1-A149-47A4-B692-BDD7CE82C2E9}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditor2", "CodeEditor2\CodeEditor2\CodeEditor2\CodeEditor2.csproj", "{98DEA9B6-5386-49BB-AA3B-FAE886A179AA}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditor2Plugin", "CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin.csproj", "{437F4D7E-9772-4527-9548-BD2218C13C18}"
@@ -14,6 +12,10 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AvaloniaEdit", "AvaloniaEdit\src\AvaloniaEdit\AvaloniaEdit.csproj", "{36635FF4-70CC-49E7-95C9-37E492870F91}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditor2MarkdownPlugin", "CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin.csproj", "{498B3672-F113-4781-894A-4F4035B143B0}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditor2VerilogPlugin", "CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.csproj", "{5A5B5C43-12B2-4080-8B6F-66E219122138}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AjkAvaloniaLibs", "AjkAvaloniaLibs\AjkAvaloniaLibs\AjkAvaloniaLibs.csproj", "{0A7D4D86-C681-4E57-B9FB-89053586F11A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -25,10 +27,6 @@ Global
 		{F04A1E8C-F8BE-49F8-BCCA-5F091CA3BAE4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F04A1E8C-F8BE-49F8-BCCA-5F091CA3BAE4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F04A1E8C-F8BE-49F8-BCCA-5F091CA3BAE4}.Release|Any CPU.Build.0 = Release|Any CPU
-		{22DF82D1-A149-47A4-B692-BDD7CE82C2E9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{22DF82D1-A149-47A4-B692-BDD7CE82C2E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{22DF82D1-A149-47A4-B692-BDD7CE82C2E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{22DF82D1-A149-47A4-B692-BDD7CE82C2E9}.Release|Any CPU.Build.0 = Release|Any CPU
 		{98DEA9B6-5386-49BB-AA3B-FAE886A179AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{98DEA9B6-5386-49BB-AA3B-FAE886A179AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{98DEA9B6-5386-49BB-AA3B-FAE886A179AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -45,6 +43,14 @@ Global
 		{498B3672-F113-4781-894A-4F4035B143B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{498B3672-F113-4781-894A-4F4035B143B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{498B3672-F113-4781-894A-4F4035B143B0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5A5B5C43-12B2-4080-8B6F-66E219122138}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5A5B5C43-12B2-4080-8B6F-66E219122138}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5A5B5C43-12B2-4080-8B6F-66E219122138}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5A5B5C43-12B2-4080-8B6F-66E219122138}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0A7D4D86-C681-4E57-B9FB-89053586F11A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0A7D4D86-C681-4E57-B9FB-89053586F11A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0A7D4D86-C681-4E57-B9FB-89053586F11A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0A7D4D86-C681-4E57-B9FB-89053586F11A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -16,7 +16,7 @@ class Program
     public static void Main(string[] args)
     {
         new pluginMarkdown.Plugin().Register();
-//        new pluginVerilog.Plugin().Register();
+        new pluginVerilog.Plugin().Register();
 
         BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
