@@ -3,7 +3,7 @@
 	url = git@github.com:ajkfds/CodeEditor2Plugin.git
 [submodule "AvaloniaEdit"]
 	path = AvaloniaEdit
-	url = git@github.com:AvaloniaUI/AvaloniaEdit.git
+url=git@github.com:ajkfds/AvaloniaEdit.git
 [submodule "CodeEditor2MarkdownPlugin"]
 	path = CodeEditor2MarkdownPlugin
 	url = git@github.com:ajkfds/CodeEditor2MarkdownPlugin.git
