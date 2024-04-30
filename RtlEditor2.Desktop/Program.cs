@@ -15,8 +15,15 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        new pluginMarkdown.Plugin().Register();
-        new pluginVerilog.Plugin().Register();
+        {
+            var plugin = new pluginMarkdown.Plugin();
+            Global.Plugins.Add(plugin.Id, plugin);
+        }
+        {
+            var plugin = new pluginVerilog.Plugin();
+            Global.Plugins.Add(plugin.Id, plugin);
+        }
+
 
         BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
