@@ -25,6 +25,27 @@ class Program
         }
 
 
+
+        // Windows
+
+        {
+            var plugin = new pluginIcarusVerilog.Plugin();
+            Global.Plugins.Add(plugin.Id, plugin);
+        }
+
+        {
+            var plugin = new pluginVivado.Plugin();
+            Global.Plugins.Add(plugin.Id, plugin);
+        }
+
+
+
+
+        // Linux
+
+
+
+
         BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
     }

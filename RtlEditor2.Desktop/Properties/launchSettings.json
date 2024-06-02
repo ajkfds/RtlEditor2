@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "RtlEditor2.Desktop": {
+      "commandName": "Project",
+      "nativeDebugging": false
+    }
+  }
+}
