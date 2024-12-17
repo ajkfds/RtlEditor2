@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AjkAvaloniaLibs\AjkAvaloniaLibs\AjkAvaloniaLibs.csproj" />
     <ProjectReference Include="..\CodeEditor2IcarusVerilogPlugin\CodeEditor2IcarusVerilogPlugin\CodeEditor2IcarusVerilogPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin.csproj" />
