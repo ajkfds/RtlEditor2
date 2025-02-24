@@ -1,6 +1,7 @@
 ﻿using System;
 
 using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.ReactiveUI;
 using Avalonia.Svg.Skia;
 using CodeEditor2;
@@ -49,6 +50,7 @@ class Program
         BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
     }
+
     //public static void Main(string[] args) => BuildAvaloniaApp()
     //    .StartWithClassicDesktopLifetime(args);
 
@@ -63,7 +65,7 @@ class Program
     {
         GC.KeepAlive(typeof(SvgImageExtension).Assembly);
         GC.KeepAlive(typeof(Avalonia.Svg.Skia.Svg).Assembly);
-        return AppBuilder.Configure<App>()
+        return AppBuilder.Configure<CodeEditor2.App>()
                 .UsePlatformDetect()
                 .WithInterFont()
                 .LogToTrace()
