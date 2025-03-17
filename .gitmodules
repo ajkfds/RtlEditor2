@@ -22,3 +22,12 @@ url=git@github.com:ajkfds/AvaloniaEdit.git
 [submodule "CodeEditor2IcarusVerilogPlugin"]
 	path = CodeEditor2IcarusVerilogPlugin
 	url = git@github.com:ajkfds/CodeEditor2IcarusVerilogPlugin.git
+[submodule "ajkCefGlue"]
+	path = ajkCefGlue
+	url = git@github.com:ajkfds/ajkCefGlue.git
+[submodule "CodeEditor2AiAssistant"]
+	path = CodeEditor2AiAssistant
+	url = git@github.com:ajkfds/CodeEditor2AiAssistant.git
+[submodule "CodeEditor2AiPlugin"]
+	path = CodeEditor2AiPlugin
+	url = git@github.com:ajkfds/CodeEditor2AiPlugin.git
