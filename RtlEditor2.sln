@@ -23,6 +23,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditor2VivadoPlugin", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ajkCefGlue", "ajkCefGlue\ajkCefGlue\ajkCefGlue.csproj", "{88E39000-F9D3-47B3-99D7-48329DCFFB04}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2AiPlugin", "CodeEditor2AiPlugin\CodeEditor2AiPlugin\CodeEditor2AiPlugin.csproj", "{B48C27C5-FB11-4D39-8691-641235970B36}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -111,6 +113,14 @@ Global
 		{88E39000-F9D3-47B3-99D7-48329DCFFB04}.Release|Any CPU.Build.0 = Release|Any CPU
 		{88E39000-F9D3-47B3-99D7-48329DCFFB04}.Release|x64.ActiveCfg = Release|x64
 		{88E39000-F9D3-47B3-99D7-48329DCFFB04}.Release|x64.Build.0 = Release|x64
+		{B48C27C5-FB11-4D39-8691-641235970B36}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B48C27C5-FB11-4D39-8691-641235970B36}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B48C27C5-FB11-4D39-8691-641235970B36}.Debug|x64.ActiveCfg = Debug|x64
+		{B48C27C5-FB11-4D39-8691-641235970B36}.Debug|x64.Build.0 = Debug|x64
+		{B48C27C5-FB11-4D39-8691-641235970B36}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B48C27C5-FB11-4D39-8691-641235970B36}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B48C27C5-FB11-4D39-8691-641235970B36}.Release|x64.ActiveCfg = Release|x64
+		{B48C27C5-FB11-4D39-8691-641235970B36}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

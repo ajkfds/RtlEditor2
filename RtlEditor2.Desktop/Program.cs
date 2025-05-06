@@ -39,7 +39,12 @@ class Program
             Global.Plugins.Add(plugin.Id, plugin);
         }
 
+        // AI
 
+        {
+            var plugin = new pluginAi.Plugin();
+            Global.Plugins.Add(plugin.Id, plugin);
+        }
 
 
         // Linux
