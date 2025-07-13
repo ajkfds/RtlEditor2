@@ -34,3 +34,6 @@ url=git@github.com:ajkfds/AvaloniaEdit.git
 [submodule "CodeEditor2DrawIo"]
 	path = CodeEditor2DrawIo
 	url = https://github.com/ajkfds/CodeEditor2DrawIo
+[submodule "CodeEditor2DrawIoPlugin"]
+	path = CodeEditor2DrawIoPlugin
+	url = git@github.com:ajkfds/CodeEditor2DrawIoPlugin.git
