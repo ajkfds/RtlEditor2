@@ -14,12 +14,13 @@
     <PackageReference Include="Avalonia" Version="11.2.3" />
     <PackageReference Include="Avalonia.Controls.TreeDataGrid" Version="11.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="System.Text.Json" Version="8.0.6" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AjkAvaloniaLibs\AjkAvaloniaLibs\AjkAvaloniaLibs.csproj" />
     <ProjectReference Include="..\CodeEditor2AiPlugin\CodeEditor2AiPlugin\CodeEditor2AiPlugin.csproj" />
+    <ProjectReference Include="..\CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2IcarusVerilogPlugin\CodeEditor2IcarusVerilogPlugin\CodeEditor2IcarusVerilogPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin.csproj" />

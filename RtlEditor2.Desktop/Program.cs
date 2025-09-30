@@ -40,12 +40,17 @@ class Program
         }
 
         // AI
-
         {
             var plugin = new pluginAi.Plugin();
             Global.Plugins.Add(plugin.Id, plugin);
         }
 
+
+        // DrawIo
+        {
+            var plugin = new pluginDrawIo.Plugin();
+            Global.Plugins.Add(plugin.Id, plugin);
+        }
 
         // Linux
 

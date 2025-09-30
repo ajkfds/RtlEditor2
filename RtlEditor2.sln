@@ -25,6 +25,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ajkCefGlue", "ajkCefGlue\aj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2AiPlugin", "CodeEditor2AiPlugin\CodeEditor2AiPlugin\CodeEditor2AiPlugin.csproj", "{B48C27C5-FB11-4D39-8691-641235970B36}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{47C4CA36-5540-4F33-B224-8F180BC3E40E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2DrawIoPlugin", "CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin.csproj", "{CC0D73F0-273F-431D-97DB-BAFD738D5610}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -121,6 +125,14 @@ Global
 		{B48C27C5-FB11-4D39-8691-641235970B36}.Release|Any CPU.Build.0 = Release|Any CPU
 		{B48C27C5-FB11-4D39-8691-641235970B36}.Release|x64.ActiveCfg = Release|x64
 		{B48C27C5-FB11-4D39-8691-641235970B36}.Release|x64.Build.0 = Release|x64
+		{CC0D73F0-273F-431D-97DB-BAFD738D5610}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CC0D73F0-273F-431D-97DB-BAFD738D5610}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CC0D73F0-273F-431D-97DB-BAFD738D5610}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{CC0D73F0-273F-431D-97DB-BAFD738D5610}.Debug|x64.Build.0 = Debug|Any CPU
+		{CC0D73F0-273F-431D-97DB-BAFD738D5610}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CC0D73F0-273F-431D-97DB-BAFD738D5610}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CC0D73F0-273F-431D-97DB-BAFD738D5610}.Release|x64.ActiveCfg = Release|Any CPU
+		{CC0D73F0-273F-431D-97DB-BAFD738D5610}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
