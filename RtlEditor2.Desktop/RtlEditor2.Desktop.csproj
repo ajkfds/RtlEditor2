@@ -30,4 +30,9 @@
     <ProjectReference Include="..\CodeEditor2VivadoPlugin\CodeEditor2VivadoPlugin\CodeEditor2VivadoPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2\CodeEditor2\CodeEditor2\CodeEditor2.csproj" />
   </ItemGroup>
+
+	<ItemGroup>
+		<AvaloniaResource Include="Assets\**" />
+	</ItemGroup>
+	
 </Project>

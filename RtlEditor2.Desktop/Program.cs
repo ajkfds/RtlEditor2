@@ -1,10 +1,12 @@
-﻿using System;
-
-using Avalonia;
+﻿using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Platform;
 using Avalonia.ReactiveUI;
 using Avalonia.Svg.Skia;
 using CodeEditor2;
+using System;
+using System.Reflection.Metadata;
 
 namespace RtlEditor2.Desktop;
 
@@ -52,12 +54,17 @@ class Program
             Global.Plugins.Add(plugin.Id, plugin);
         }
 
-        // Linux
+        CodeEditor2.Setups.Setup.ApplicationName = "RtlEditor";
+        CodeEditor2.Setups.Setup.InitializeWindow = (window) =>
+        {
+            using (var stream = AssetLoader.Open(new Uri("avares://RtlEditor2.Desktop/Assets/RtlEditor.ico")))
+            {
+                window.Icon = new WindowIcon(stream);
+            }
+        };
+        CodeEditor2.Setups.Setup.GetIconImage += () => { return AjkAvaloniaLibs.Libs.Icons.GetSvgBitmap("RtlEditor2.Desktop/Assets/RtlEditor.svg"); };
 
-
-
-
-        BuildAvaloniaApp()
+    BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
     }
 
