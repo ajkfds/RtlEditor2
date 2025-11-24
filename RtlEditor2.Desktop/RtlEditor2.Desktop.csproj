@@ -34,5 +34,8 @@
 	<ItemGroup>
 		<AvaloniaResource Include="Assets\**" />
 	</ItemGroup>
+	<PropertyGroup>
+		<ApplicationIcon>Assets/RtlEditor.ico</ApplicationIcon>
+	</PropertyGroup>
 	
 </Project>
