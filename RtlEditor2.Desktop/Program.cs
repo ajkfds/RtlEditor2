@@ -84,6 +84,11 @@ class Program
         GC.KeepAlive(typeof(Avalonia.Svg.Skia.Svg).Assembly);
         return AppBuilder.Configure<CodeEditor2.App>()
                 .UsePlatformDetect()
+                .With(new X11PlatformOptions
+                {
+                    // Tooltipがメインウィンドウの上に表示されるように試みる
+                    OverlayPopups = true
+                })
                 .WithInterFont()
                 .LogToTrace()
                 .UseReactiveUI();
