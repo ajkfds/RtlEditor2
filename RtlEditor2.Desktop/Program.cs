@@ -86,7 +86,7 @@ class Program
                 .UsePlatformDetect()
                 .With(new X11PlatformOptions
                 {
-                    // Tooltipがメインウィンドウの上に表示されるように試みる
+                    // Tooltipがメインウィンドウの上に表示するworkaround
                     OverlayPopups = true
                 })
                 .WithInterFont()
