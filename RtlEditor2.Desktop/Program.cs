@@ -23,6 +23,10 @@ class Program
             Global.Plugins.Add(plugin.Id, plugin);
         }
         {
+            //pluginVerilog.Global.GetLLM = () =>
+            //{
+            //    return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_oss_20b, false));
+            //};
             var plugin = new pluginVerilog.Plugin();
             Global.Plugins.Add(plugin.Id, plugin);
         }
@@ -43,6 +47,17 @@ class Program
 
         // AI
         {
+            pluginAi.Snippet.CleanEnglishSnippet.GetLLM = () =>
+            {
+                return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_oss_20b, false));
+            };
+            using (System.IO.StreamReader sw = new System.IO.StreamReader(@"C:\ApiKey\openrouter.txt"))
+            {
+                string apiKey = sw.ReadToEnd().Trim();
+                if (apiKey == "") throw new Exception();
+                pluginAi.OpenRouterChat.ApiKey = apiKey;
+            }
+
             var plugin = new pluginAi.Plugin();
             Global.Plugins.Add(plugin.Id, plugin);
         }
@@ -67,6 +82,7 @@ class Program
     BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
     }
+
 
     //public static void Main(string[] args) => BuildAvaloniaApp()
     //    .StartWithClassicDesktopLifetime(args);
