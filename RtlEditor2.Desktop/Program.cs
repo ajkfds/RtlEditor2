@@ -18,6 +18,15 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        CodeEditor2.Setups.Setup.ApplicationName = "RtlEditor";
+        CodeEditor2.Setups.Setup.GetIconImage += () => { return AjkAvaloniaLibs.Libs.Icons.GetSvgBitmap("RtlEditor2.Desktop/Assets/RtlEditor.svg"); };
+        CodeEditor2.Setups.Setup.InitializeWindow = (window) =>
+        {
+            using (var stream = AssetLoader.Open(new Uri("avares://RtlEditor2.Desktop/Assets/RtlEditor.ico")))
+            {
+                window.Icon = new WindowIcon(stream);
+            }
+        };
         {
             var plugin = new pluginMarkdown.Plugin();
             Global.Plugins.Add(plugin.Id, plugin);
@@ -69,17 +78,9 @@ class Program
             Global.Plugins.Add(plugin.Id, plugin);
         }
 
-        CodeEditor2.Setups.Setup.ApplicationName = "RtlEditor";
-        CodeEditor2.Setups.Setup.InitializeWindow = (window) =>
-        {
-            using (var stream = AssetLoader.Open(new Uri("avares://RtlEditor2.Desktop/Assets/RtlEditor.ico")))
-            {
-                window.Icon = new WindowIcon(stream);
-            }
-        };
-        CodeEditor2.Setups.Setup.GetIconImage += () => { return AjkAvaloniaLibs.Libs.Icons.GetSvgBitmap("RtlEditor2.Desktop/Assets/RtlEditor.svg"); };
 
-    BuildAvaloniaApp()
+
+        BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
     }
 
