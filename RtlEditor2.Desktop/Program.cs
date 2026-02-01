@@ -59,6 +59,7 @@ class Program
             pluginAi.Snippet.CleanEnglishSnippet.GetLLM = () =>
             {
                 return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_oss_20b, false));
+//                return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.google_gemini_3_pro_preview, false));
             };
             using (System.IO.StreamReader sw = new System.IO.StreamReader(@"C:\ApiKey\openrouter.txt"))
             {
