@@ -1,17 +1,18 @@
 # RtlEditor2
 
-A lightweight, modular Integrated Development Environment (IDE) for RTL design, focusing on Verilog and SystemVerilog.
+A lightweight, modular Integrated Development Environment (IDE) for RTL design, built with **Avalonia UI**.
+
+![screenShot](images/screenShot.png)
 
 > [!IMPORTANT]
 > **Beta Version Notice**: This project is currently in the early prototype stage. While functional, features are subject to change, and SystemVerilog support is ongoing.
-
-![screenShot](images/screenShot.png)
 
 ## Key Features
 
 * **Hierarchy Awareness**: Built-in Verilog/SystemVerilog parser that understands `parameter` and `generate` blocks.
 * **Tree Navigation**: Visualize and navigate through complex module instance hierarchies.
 * **Intelligent Completion**: Context-aware code completion based on the parsed RTL structure.
+* **Cross-Platform**: Powered by Avalonia UI, supporting both **Linux** and **Windows**.
 * **Modular Architecture**: Highly customizable through a plugin-based system. You can reconfigure and recompile the editor to tailor the environment to your specific workflow.
 
 ## Language Support
@@ -23,6 +24,7 @@ A lightweight, modular Integrated Development Environment (IDE) for RTL design, 
 
 This editor is designed with modularity at its core. By swapping out or modifying plugins and recompiling the source, you can optimize the IDE for your specific HDL environment.
 
+---
 
 ## Roadmap / Known Limitations
 
@@ -33,3 +35,4 @@ This editor is designed with modularity at its core. By swapping out or modifyin
 ## License
 
 This project is licensed under the **MIT License**. See the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
+
