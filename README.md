@@ -5,6 +5,8 @@ A lightweight, modular Integrated Development Environment (IDE) for RTL design, 
 > [!IMPORTANT]
 > **Beta Version Notice**: This project is currently in the early prototype stage. While functional, features are subject to change, and SystemVerilog support is ongoing.
 
+![screenShot](images/screenShot.png)
+
 ## Key Features
 
 * **Hierarchy Awareness**: Built-in Verilog/SystemVerilog parser that understands `parameter` and `generate` blocks.
