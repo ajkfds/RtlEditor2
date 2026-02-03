@@ -5,6 +5,9 @@ using Avalonia.Platform;
 using Avalonia.ReactiveUI;
 using Avalonia.Svg.Skia;
 using CodeEditor2;
+using CodeEditor2.LLM;
+using pluginAi;
+using pluginVerilog.LLM;
 using System;
 using System.Reflection.Metadata;
 
@@ -26,6 +29,7 @@ class Program
             {
                 window.Icon = new WindowIcon(stream);
             }
+
         };
         {
             var plugin = new pluginMarkdown.Plugin();
@@ -58,8 +62,10 @@ class Program
         {
             pluginAi.Snippet.CleanEnglishSnippet.GetLLM = () =>
             {
-                return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_oss_20b, false));
-//                return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.google_gemini_3_pro_preview, false));
+                //return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_oss_20b, false));
+                return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_oss_120b, false));
+                //return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_5_1_codex_mini , false));
+                //                return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.google_gemini_3_pro_preview, false));
             };
             using (System.IO.StreamReader sw = new System.IO.StreamReader(@"C:\ApiKey\openrouter.txt"))
             {
@@ -79,10 +85,32 @@ class Program
             Global.Plugins.Add(plugin.Id, plugin);
         }
 
-
+        CodeEditor2.NavigatePanel.ProjectNode.CustomizeSpecificNodeContextMenu += ((m) => {
+            ContextMenu menu = m;
+            MenuItem menuItem_Agent = CodeEditor2.Global.CreateMenuItem(
+                "LLM Agent", "menuItem_Agent",
+                "CodeEditor2/Assets/Icons/play.svg",
+                Avalonia.Media.Colors.White
+                );
+            menu.Items.Add(menuItem_Agent);
+            menuItem_Agent.Click += MenuItem_Agent_Click;
+        });
 
         BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
+
+
+    }
+
+    private static void MenuItem_Agent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        // chat agent tab
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
+        CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
+        if (node == null) return;
+
+        LLMAgent agent = new LLMAgent(node.GetProject());
+        agent.Show();
     }
 
 
