@@ -36,10 +36,6 @@ class Program
             Global.Plugins.Add(plugin.Id, plugin);
         }
         {
-            //pluginVerilog.Global.GetLLM = () =>
-            //{
-            //    return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_oss_20b, false));
-            //};
             var plugin = new pluginVerilog.Plugin();
             Global.Plugins.Add(plugin.Id, plugin);
         }
@@ -89,8 +85,8 @@ class Program
             ContextMenu menu = m;
             MenuItem menuItem_Agent = CodeEditor2.Global.CreateMenuItem(
                 "LLM Agent", "menuItem_Agent",
-                "CodeEditor2/Assets/Icons/play.svg",
-                Avalonia.Media.Colors.White
+                "CodeEditor2/Assets/Icons/ai.svg",
+                Avalonia.Media.Colors.Pink
                 );
             menu.Items.Add(menuItem_Agent);
             menuItem_Agent.Click += MenuItem_Agent_Click;

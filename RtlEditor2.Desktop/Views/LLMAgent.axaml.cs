@@ -20,7 +20,7 @@ public partial class LLMAgent : Window
         pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, useFunctionCallApi);
 
         CodeEditor2.LLM.LLMAgent agent = new CodeEditor2.LLM.LLMAgent();
-        InitializeLLMAgent.Run(project, agent, useFunctionCallApi);
+        LLM.InitializeLLMAgent.Run(project, agent, useFunctionCallApi);
 
         ChatControl.SetModel(chat, agent);
         Content = ChatControl;
