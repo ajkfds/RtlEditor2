@@ -10,6 +10,7 @@ using pluginAi;
 using pluginVerilog.LLM;
 using System;
 using System.Reflection.Metadata;
+using static CodeEditor2.Controller;
 
 namespace RtlEditor2.Desktop;
 
@@ -86,7 +87,7 @@ class Program
             MenuItem menuItem_Agent = CodeEditor2.Global.CreateMenuItem(
                 "LLM Agent", "menuItem_Agent",
                 "CodeEditor2/Assets/Icons/ai.svg",
-                Avalonia.Media.Colors.Pink
+                Avalonia.Media.Colors.YellowGreen
                 );
             menu.Items.Add(menuItem_Agent);
             menuItem_Agent.Click += MenuItem_Agent_Click;
@@ -97,6 +98,25 @@ class Program
 
 
     }
+    public static void CustomizeNavigateNodeContextMenuHandler(Avalonia.Controls.ContextMenu contextMenu)
+    {
+        Avalonia.Media.Color themeColor = Avalonia.Media.Colors.YellowGreen;
+
+        MenuItem menuItem_LLM = CodeEditor2.Global.CreateMenuItem(
+            "LLM", "menuItem_LLM",
+            "CodeEditor2/Assets/Icons/ai.svg",
+             themeColor);
+        contextMenu.Items.Add(menuItem_LLM);
+
+        MenuItem menuItem_Agent = CodeEditor2.Global.CreateMenuItem(
+            "LLM Agent", "menuItem_Agent",
+            "CodeEditor2/Assets/Icons/ai.svg",
+            Avalonia.Media.Colors.YellowGreen
+            );
+        menuItem_LLM.Items.Add(menuItem_Agent);
+        menuItem_Agent.Click += MenuItem_Agent_Click;
+    }
+
 
     private static void MenuItem_Agent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
