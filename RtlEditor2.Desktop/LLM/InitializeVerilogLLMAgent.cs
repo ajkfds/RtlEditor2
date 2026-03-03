@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace RtlEditor2.Desktop.LLM
 {
-    public static class InitializeLLMAgent
+    public static class InitializeVerilogLLMAgent
     {
         public static void Run(CodeEditor2.Data.Project project, CodeEditor2.LLM.LLMAgent agent, bool useFunctioncallApi)
         {
@@ -29,6 +29,7 @@ namespace RtlEditor2.Desktop.LLM
 
             sb.Append(getAssetString("avares://CodeEditor2VerilogPlugin/Assets/LLMPrompt/RtlEditSkill.md"));
 
+            sb.Append(getAssetString("avares://CodeEditor2VerilogPlugin/Assets/LLMPrompt/RtlEditSkill.md"));
             sb.Append("""
                 
                 ===

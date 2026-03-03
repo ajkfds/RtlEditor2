@@ -6,9 +6,11 @@ using Avalonia.ReactiveUI;
 using Avalonia.Svg.Skia;
 using CodeEditor2;
 using CodeEditor2.LLM;
+using CodeEditor2.LLM.Tools;
 using pluginAi;
 using pluginVerilog.LLM;
 using System;
+using System.Collections.Generic;
 using System.Reflection.Metadata;
 using static CodeEditor2.Controller;
 
@@ -40,8 +42,6 @@ class Program
             var plugin = new pluginVerilog.Plugin();
             Global.Plugins.Add(plugin.Id, plugin);
         }
-
-
 
         // Windows
 
@@ -82,16 +82,17 @@ class Program
             Global.Plugins.Add(plugin.Id, plugin);
         }
 
-        CodeEditor2.NavigatePanel.ProjectNode.CustomizeSpecificNodeContextMenu += ((m) => {
-            ContextMenu menu = m;
-            MenuItem menuItem_Agent = CodeEditor2.Global.CreateMenuItem(
-                "LLM Agent", "menuItem_Agent",
-                "CodeEditor2/Assets/Icons/ai.svg",
-                Avalonia.Media.Colors.YellowGreen
-                );
-            menu.Items.Add(menuItem_Agent);
-            menuItem_Agent.Click += MenuItem_Agent_Click;
-        });
+        CodeEditor2.NavigatePanel.ProjectNode.CustomizeSpecificNodeContextMenu += CustomizeNavigateNodeContextMenuHandler;
+        //CodeEditor2.NavigatePanel.ProjectNode.CustomizeSpecificNodeContextMenu += ((m) => {
+        //    ContextMenu menu = m;
+        //    MenuItem menuItem_Agent = CodeEditor2.Global.CreateMenuItem(
+        //        "LLM Agent", "menuItem_Agent",
+        //        "CodeEditor2/Assets/Icons/ai.svg",
+        //        Avalonia.Media.Colors.YellowGreen
+        //        );
+        //    menu.Items.Add(menuItem_Agent);
+        //    menuItem_Agent.Click += MenuItem_Agent_Click;
+        //});
 
         BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
@@ -108,24 +109,41 @@ class Program
              themeColor);
         contextMenu.Items.Add(menuItem_LLM);
 
-        MenuItem menuItem_Agent = CodeEditor2.Global.CreateMenuItem(
-            "LLM Agent", "menuItem_Agent",
+        MenuItem menuItem_VerilogAgent = CodeEditor2.Global.CreateMenuItem(
+            "Verilog LLM Agent", "menuItem_VerilogAgent",
             "CodeEditor2/Assets/Icons/ai.svg",
             Avalonia.Media.Colors.YellowGreen
             );
-        menuItem_LLM.Items.Add(menuItem_Agent);
-        menuItem_Agent.Click += MenuItem_Agent_Click;
+        menuItem_LLM.Items.Add(menuItem_VerilogAgent);
+        menuItem_VerilogAgent.Click += MenuItem_VerilogAgent_Click;
+
+        MenuItem menuItem_DotNetAgent = CodeEditor2.Global.CreateMenuItem(
+            "DotNet LLM Agent", "menuItem_DotNetAgent",
+            "CodeEditor2/Assets/Icons/ai.svg",
+            Avalonia.Media.Colors.YellowGreen
+            );
+        menuItem_LLM.Items.Add(menuItem_DotNetAgent);
+        menuItem_DotNetAgent.Click += MenuItem_DotNetAgent_Click;
+
     }
-
-
-    private static void MenuItem_Agent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private static void MenuItem_VerilogAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         // chat agent tab
         pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
         if (node == null) return;
 
-        LLMAgent agent = new LLMAgent(node.GetProject());
+        LLMAgent agent = new LLMAgent(node.GetProject(), (agent) => { LLM.InitializeVerilogLLMAgent.Run(node.GetProject(), agent, false); });
+        agent.Show();
+    }
+    private static void MenuItem_DotNetAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        // chat agent tab
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
+        CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
+        if (node == null) return;
+
+        LLMAgent agent = new LLMAgent(node.GetProject(), (agent) => { LLM.InitializeCSharpLLMAgent.Run(node.GetProject(), agent, false); });
         agent.Show();
     }
 
