@@ -30,12 +30,13 @@ namespace RtlEditor2.Desktop.LLM
             sb.Append(getAssetString("avares://CodeEditor2VerilogPlugin/Assets/LLMPrompt/RtlEditSkill.md"));
 
             sb.Append(getAssetString("avares://CodeEditor2/Assets/LLMPrompt/CheckAgentMd.md"));
-            //sb.Append("""
+            sb.Append("""
 
-            //    ===
-            //    まず上記の指示を理解し、ユーザのタスク指示に備えて待機してください。
+                ===
+                実装を行った場合、execute_command toolを使って```dotnet build```を実行し、ビルドエラーがないか確認してください。
+                最後にexecute_command toolを使って適切なコミットメッセージをつけて全修正をgit repositoryにcommitしてください。
 
-            //    """);
+                """);
 
 
             agent.BasePrompt = sb.ToString();
@@ -61,14 +62,18 @@ namespace RtlEditor2.Desktop.LLM
             CodeEditor2.LLM.Tools.BuildDotNet buildDotNet = new CodeEditor2.LLM.Tools.BuildDotNet(project);
             agent.Tools.Add(buildDotNet.GetAIFunction());
 
-            CodeEditor2.LLM.Tools.DocExtractor.LibraryPath = new Dictionary<string, string>()
-            {
-                { "Terminal.Gui", @"C:\Users\tomok\.nuget\packages\terminal.gui\2.0.0-develop.5097\lib\net10.0\Terminal.Gui.dll" },
-                { "Avalonia",@"C:\Users\tomok\.nuget\packages\avalonia\11.2.3\Avalonia.dll" }
-            };
+            CodeEditor2.LLM.Tools.ExecuteCommand gitExcute = new CodeEditor2.LLM.Tools.ExecuteCommand(project);
+            agent.Tools.Add(gitExcute.GetAIFunction());
 
-            CodeEditor2.LLM.Tools.GetLibDefinition getLibDefinition = new CodeEditor2.LLM.Tools.GetLibDefinition(project);
-            agent.Tools.Add(getLibDefinition.GetAIFunction());
+
+            //CodeEditor2.LLM.Tools.DocExtractor.LibraryPath = new Dictionary<string, string>()
+            //{
+            //    { "Terminal.Gui", @"C:\Users\tomok\.nuget\packages\terminal.gui\2.0.0-develop.5097\lib\net10.0\Terminal.Gui.dll" },
+            //    { "Avalonia",@"C:\Users\tomok\.nuget\packages\avalonia\11.2.3\Avalonia.dll" }
+            //};
+
+            //CodeEditor2.LLM.Tools.GetLibDefinition getLibDefinition = new CodeEditor2.LLM.Tools.GetLibDefinition(project);
+            //agent.Tools.Add(getLibDefinition.GetAIFunction());
 
             //GetBuildingBlockDefinedFilePath getBuildingBlockDefinedFilePath = new GetBuildingBlockDefinedFilePath(project);
             //agent.Tools.Add(getBuildingBlockDefinedFilePath.GetAIFunction());

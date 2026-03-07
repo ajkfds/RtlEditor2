@@ -133,17 +133,19 @@ class Program
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
         if (node == null) return;
 
-        LLMAgent agent = new LLMAgent(node.GetProject(), (agent) => { LLM.InitializeVerilogLLMAgent.Run(node.GetProject(), agent, false); });
+        LLMAgent agent = new LLMAgent(node.GetProject(), chat ,(agent) => { LLM.InitializeVerilogLLMAgent.Run(node.GetProject(), agent, false); });
         agent.Show();
     }
     private static void MenuItem_DotNetAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         // chat agent tab
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
+//        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_5　, false);
+//        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.openai_gpt_oss_120b , false);
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
         if (node == null) return;
 
-        LLMAgent agent = new LLMAgent(node.GetProject(), (agent) => { LLM.InitializeCSharpLLMAgent.Run(node.GetProject(), agent, false); });
+        LLMAgent agent = new LLMAgent(node.GetProject(), chat ,(agent) => { LLM.InitializeCSharpLLMAgent.Run(node.GetProject(), agent, false); });
         agent.Show();
     }
 
