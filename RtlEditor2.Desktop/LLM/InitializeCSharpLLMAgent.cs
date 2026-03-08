@@ -1,4 +1,4 @@
-﻿using Avalonia.Platform;
+using Avalonia.Platform;
 using pluginVerilog.LLM.Tools;
 using System;
 using System.Collections.Generic;
