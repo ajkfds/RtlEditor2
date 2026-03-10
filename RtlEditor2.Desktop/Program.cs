@@ -140,7 +140,7 @@ class Program
     {
         // chat agent tab
 //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_5縲, false);
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_5　, false);
 //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.openai_gpt_oss_120b , false);
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
         if (node == null) return;
@@ -168,7 +168,7 @@ class Program
                 .UsePlatformDetect()
                 .With(new X11PlatformOptions
                 {
-                    // Tooltip縺後Γ繧､繝ｳ繧ｦ繧｣繝ｳ繝峨え縺ｮ荳翫↓陦ｨ遉ｺ縺吶ｋworkaround
+                    // Tooltipがメインウィンドウの上に表示するworkaround
                     OverlayPopups = true
                 })
                 .WithInterFont()
