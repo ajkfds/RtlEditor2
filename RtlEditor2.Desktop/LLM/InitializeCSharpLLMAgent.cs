@@ -33,8 +33,8 @@ namespace RtlEditor2.Desktop.LLM
             sb.Append("""
 
                 ===
-                実装を行った場合、execute_command toolを使って```dotnet build```を実行し、ビルドエラーがないか確認してください。
-                最後にexecute_command toolを使って適切なコミットメッセージをつけて全修正をgit repositoryにcommitしてください。
+                螳溯｣・ｒ陦後▲縺溷ｴ蜷医‘xecute_command tool繧剃ｽｿ縺｣縺ｦ```dotnet build```繧貞ｮ溯｡後＠縲√ン繝ｫ繝峨お繝ｩ繝ｼ縺後↑縺・°遒ｺ隱阪＠縺ｦ縺上□縺輔＞縲・
+                譛蠕後↓execute_command tool繧剃ｽｿ縺｣縺ｦ驕ｩ蛻・↑繧ｳ繝溘ャ繝医Γ繝・そ繝ｼ繧ｸ繧偵▽縺代※蜈ｨ菫ｮ豁｣繧暖it repository縺ｫcommit縺励※縺上□縺輔＞縲・
 
                 """);
 
