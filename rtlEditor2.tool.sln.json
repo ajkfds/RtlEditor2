@@ -1,0 +1,20 @@
+{
+  "Name": "rtlEditor2.tool",
+  "LastUpdate": "2026-03-08T22:02:14.9784355+09:00",
+  "ProjectSetups": [
+    {
+      "Name": "RtlEditor2",
+      "RootPath": "D:\\Document\\RtlEditor2",
+      "LocalFileCasheEnable": false,
+      "LocalFileCashePath": "c:\\temp",
+      "ProjectProperties": {
+        "Verilog": {
+          "ID": "Verilog",
+          "test": "verilogTest",
+          "CompileOption": ""
+        }
+      }
+    }
+  ],
+  "AbsolutePath": "D:\\Document\\RtlEditor2\\rtlEditor2.tool.sln.json"
+}
