@@ -10,9 +10,9 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace RtlEditor2.Desktop;
 
-public partial class LLMAgent : Window
+public partial class LLMAgentWindow : Window
 {
-    public LLMAgent(CodeEditor2.Data.Project project,pluginAi.OpenRouterChat openRouterChat,Action<CodeEditor2.LLM.LLMAgent> initialize)
+    public LLMAgentWindow(CodeEditor2.Data.Project project,pluginAi.OpenRouterChat openRouterChat,Action<CodeEditor2.LLM.LLMAgent> initialize)
     {
         InitializeComponent();
 

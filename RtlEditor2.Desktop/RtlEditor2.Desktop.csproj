@@ -33,6 +33,12 @@
 	<ItemGroup>
 		<AvaloniaResource Include="Assets\**" />
 	</ItemGroup>
+
+	<ItemGroup>
+	  <Compile Update="Views\LLMAgentWindow.axaml.cs">
+	    <DependentUpon>LLMAgentWindow.axaml</DependentUpon>
+	  </Compile>
+	</ItemGroup>
 	<PropertyGroup>
 		<ApplicationIcon>Assets/RtlEditor.ico</ApplicationIcon>
 	</PropertyGroup>

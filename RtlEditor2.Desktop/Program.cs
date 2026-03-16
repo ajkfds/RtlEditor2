@@ -133,7 +133,7 @@ class Program
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
         if (node == null) return;
 
-        LLMAgent agent = new LLMAgent(node.GetProject(), chat ,(agent) => { LLM.InitializeVerilogLLMAgent.Run(node.GetProject(), agent, false); });
+        LLMAgentWindow agent = new LLMAgentWindow(node.GetProject(), chat ,(agent) => { LLM.InitializeVerilogLLMAgent.Run(node.GetProject(), agent, false); });
         agent.Show();
     }
     private static void MenuItem_DotNetAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -145,7 +145,7 @@ class Program
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
         if (node == null) return;
 
-        LLMAgent agent = new LLMAgent(node.GetProject(), chat ,(agent) => { LLM.InitializeCSharpLLMAgent.Run(node.GetProject(), agent, false); });
+        LLMAgentWindow agent = new LLMAgentWindow(node.GetProject(), chat ,(agent) => { LLM.InitializeCSharpLLMAgent.Run(node.GetProject(), agent, false); });
         agent.Show();
     }
 
