@@ -54,6 +54,10 @@ RtlEditor2/
   - `FileTypes/`: File type detection
   - `NavigatePanel/`: Tree navigation
 
+## Recent Fixes
+
+- Fixed CS0246 and CS1503 errors in TextFile.cs by adding `using CodeEditor2.CodeEditor.TextDecollation;` directive to resolve `LineInformation` type reference.
+
 ## License
 
 MIT License
