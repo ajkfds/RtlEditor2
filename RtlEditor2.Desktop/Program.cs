@@ -169,7 +169,11 @@ class Program
                 .With(new X11PlatformOptions
                 {
                     // Tooltipがメインウィンドウの上に表示するworkaround
-                    OverlayPopups = true
+                    OverlayPopups = true,
+                    RenderingMode = new[] {X11RenderingMode.Egl,X11RenderingMode.Glx,X11RenderingMode.Software}
+                })
+                .With(new SkiaOptions { 
+                    MaxGpuResourceSizeBytes = 1024*1024*1024
                 })
                 .WithInterFont()
                 .LogToTrace()
