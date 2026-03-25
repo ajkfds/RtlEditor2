@@ -96,8 +96,6 @@ class Program
 
         BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
-
-
     }
     public static void CustomizeNavigateNodeContextMenuHandler(Avalonia.Controls.ContextMenu contextMenu)
     {
