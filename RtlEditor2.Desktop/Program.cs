@@ -1,18 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform;
 using Avalonia.ReactiveUI;
 using Avalonia.Svg.Skia;
 using CodeEditor2;
-using CodeEditor2.LLM;
-using CodeEditor2.LLM.Tools;
 using pluginAi;
-using pluginVerilog.LLM;
 using System;
-using System.Collections.Generic;
-using System.Reflection.Metadata;
-using static CodeEditor2.Controller;
 
 namespace RtlEditor2.Desktop;
 
@@ -131,19 +124,19 @@ class Program
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
         if (node == null) return;
 
-        LLMAgentWindow agent = new LLMAgentWindow(node.GetProject(), chat ,(agent) => { LLM.InitializeVerilogLLMAgent.Run(node.GetProject(), agent, false); });
+        LLMAgentWindow agent = new LLMAgentWindow(node.GetProject(), chat, (agent) => { LLM.InitializeVerilogLLMAgent.Run(node.GetProject(), agent, false); });
         agent.Show();
     }
     private static void MenuItem_DotNetAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         // chat agent tab
-//        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_5　, false);
-//        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.openai_gpt_oss_120b , false);
+        //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_5, false);
+        //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.openai_gpt_oss_120b , false);
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
         if (node == null) return;
 
-        LLMAgentWindow agent = new LLMAgentWindow(node.GetProject(), chat ,(agent) => { LLM.InitializeCSharpLLMAgent.Run(node.GetProject(), agent, false); });
+        LLMAgentWindow agent = new LLMAgentWindow(node.GetProject(), chat, (agent) => { LLM.InitializeCSharpLLMAgent.Run(node.GetProject(), agent, false); });
         agent.Show();
     }
 
@@ -168,10 +161,11 @@ class Program
                 {
                     // Tooltipがメインウィンドウの上に表示するworkaround
                     OverlayPopups = true,
-                    RenderingMode = new[] {X11RenderingMode.Egl,X11RenderingMode.Glx,X11RenderingMode.Software}
+                    RenderingMode = new[] { X11RenderingMode.Egl, X11RenderingMode.Glx, X11RenderingMode.Software }
                 })
-                .With(new SkiaOptions { 
-                    MaxGpuResourceSizeBytes = 1024*1024*1024
+                .With(new SkiaOptions
+                {
+                    MaxGpuResourceSizeBytes = 1024 * 1024 * 1024
                 })
                 .WithInterFont()
                 .LogToTrace()
