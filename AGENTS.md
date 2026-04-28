@@ -57,6 +57,7 @@ RtlEditor2/
 ## Recent Fixes
 
 - Fixed CS0246 and CS1503 errors in TextFile.cs by adding `using CodeEditor2.CodeEditor.TextDecollation;` directive to resolve `LineInformation` type reference.
+- Added restart resilience to FileBasedPipe receiver: `InitializeAsReceiver()` now reads existing `ack.dat` file to restore `_lastProcessedId` instead of always starting from 0, preventing duplicate message reception when receiver restarts while `data.dat` still contains unacknowledged messages.
 
 ## License
 
