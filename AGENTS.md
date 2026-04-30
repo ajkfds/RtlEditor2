@@ -97,8 +97,14 @@ Tree navigation produces inconsistent parse results. Clicking through tree nodes
 5. **Parse Mode Sequencing Gate**: Ensure proper parse mode ordering
 6. **Version-Stamped Color Copy**: Add version checking during color copy
 
+### Fixed Issues
+
+| # | Issue | Status | Commit |
+|---|-------|--------|--------|
+| 1 | Parse Request Queue | ✅ Fixed | b8afce6 |
+
 ### Next Actions
-- [ ] Implement Parse Request Queue in ParseHierarchy
+- [x] Implement Parse Request Queue in ParseHierarchy
 - [ ] Add atomic BuildingBlock registration
 - [ ] Fix Updater.UpdateAsync atomicity
 - [ ] Add composite key lock to VerilogModuleInstance
