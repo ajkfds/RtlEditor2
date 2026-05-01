@@ -58,6 +58,7 @@ RtlEditor2/
 
 - Fixed CS0246 and CS1503 errors in TextFile.cs by adding `using CodeEditor2.CodeEditor.TextDecollation;` directive to resolve `LineInformation` type reference.
 - Added restart resilience to FileBasedPipe receiver: `InitializeAsReceiver()` now reads existing `ack.dat` file to restore `_lastProcessedId` instead of always starting from 0, preventing duplicate message reception when receiver restarts while `data.dat` still contains unacknowledged messages.
+- Fixed `SynchronizationLockException` in `Item.Dispose()`: Wrapped `itemLock?.Dispose()` in try-catch to handle exceptions that can occur when the lock is held during disposal or when other threads are still using the lock.
 
 ---
 
@@ -102,14 +103,13 @@ Tree navigation produces inconsistent parse results. Clicking through tree nodes
 | # | Issue | Status | Commit |
 |---|-------|--------|--------|
 | 1 | Parse Request Queue | ✅ Fixed | b8afce6 |
+| 2 | Add atomic BuildingBlock registration | ✅ Fixed | - |
+| 3 | Fix Updater.UpdateAsync atomicity | ✅ Fixed | - |
+| 4 | Add composite key lock to VerilogModuleInstance | ✅ Fixed | - |
+| 5 | Implement Parse Mode Sequencing Gate | ✅ Fixed | - |
+| 6 | Add version-stamped color copy | ✅ Fixed | - |
 
 ### Next Actions
-- [x] Implement Parse Request Queue in ParseHierarchy
-- [ ] Add atomic BuildingBlock registration
-- [ ] Fix Updater.UpdateAsync atomicity
-- [ ] Add composite key lock to VerilogModuleInstance
-- [ ] Implement Parse Mode Sequencing Gate
-- [ ] Add version-stamped color copy
 - [ ] Create test cases to verify fixes
 - [ ] Performance testing under rapid node clicks
 
