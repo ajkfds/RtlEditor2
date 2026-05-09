@@ -129,7 +129,7 @@ Tree navigation produces inconsistent parse results. Clicking through tree nodes
 |---|------|---------|----------|------|
 | 1 | **Checker Declaration** | `Verilog/BuildingBlocks/Checker.cs` | ❌ 未実装 | BNFコメントのみ、解析処理なし |
 | 2 | **Clocking Declaration** | `Verilog/ModuleItems/` | ⚠️ 一部実装 | キーワード登録のみ、本文解析なし |
-| 3 | **Interface Class Declaration** | `Verilog/BuildingBlocks/Class.cs` | ❌ 未実装 | Class内にextendsのコメントあり |
+| 3 | **Interface Class Declaration** | `Verilog/BuildingBlocks/Class.cs` | ✅ 実装完了 | extends/implements 解析対応済み |
 
 #### 2. 制約・機能検証 (Constraint & Coverage)
 
@@ -819,6 +819,7 @@ constraint name_c { solve var1 before var2; }
 | 2024-XX-XX | Interconnect, Default Nettype, Import/Export 等追加 (第6回) | 60件 |
 | 2024-XX-XX | Fork Control, Join variants, Action Block 等追加 (第7回) | 65件 |
 | 2025-01-XX | SVA assertions 完全実装完了 | 51件 |
+| 2025-01-XX | Class extends/implements 実装完了 | 64件 |
 
 ## License
 
@@ -839,7 +840,7 @@ MIT License
 |----------|------|------------|------------|
 | SVA (アサーション) | 0件 | ✅ Sequence, Property, Immediate Assertion 全て実装完了 | 完了 |
 | Binding & Configuration | 8件 | Bind Directive, Clocking, Config | 未実装 |
-| Class & Type System | 10件 | Checker, Constraint, Interface Class | 一部未実装 |
+| Class & Type System | 9件 | Checker, Constraint | extends/implements 実装完了 ✅ |
 | Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins | 未実装 |
 | Data & Variables | 6件 | Virtual Interface, Interconnect, Timeunits | 一部未実装 |
 | Rand/Control | 3件 | Randsequence, Randcase | 未実装 |
