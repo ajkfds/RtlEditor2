@@ -108,6 +108,8 @@ Tree navigation produces inconsistent parse results. Clicking through tree nodes
 | 4 | Add composite key lock to VerilogModuleInstance | ✅ Fixed | - |
 | 5 | Implement Parse Mode Sequencing Gate | ✅ Fixed | - |
 | 6 | Add version-stamped color copy | ✅ Fixed | - |
+| 7 | Wait Order Statement (#41) | ✅ Fixed | - |
+| 8 | Sequence Expression + Sequence Instance | ✅ Fixed | - |
 
 ### Next Actions
 - [ ] Create test cases to verify fixes
@@ -291,6 +293,8 @@ public static void parseExport(WordScanner word, NameSpace nameSpace)
 | 19 | **Deferred Immediate Assertion** | `Verilog/Assertion/AssertionItemXX.cs` | ❌ BNFのみ | `assert #0`, `assert final` 等未実装 |
 | 20 | **Checker Instantiation** | `Verilog/` | ❌ 未実装 | AssertionItemXX.cs BNFで言及のみ |
 | 21 | **Expect Property Statement** | `Verilog/Statements/` | ❌ 存在せず | Statements.csで言及されているがファイルなし |
+| 8 | **Sequence Expression** | `Verilog/Sequence/SequenceExpr.cs` | ✅ 実装完了 | `SequenceExpr.ParseCreate` 等 |
+| 8a | **Sequence Instance** | `Verilog/Sequence/SequenceInstance.cs` | ✅ 実装完了 | 識別子参照と引数リスト対応 |
 
 #### 9. rand/randsequence
 
@@ -539,7 +543,7 @@ cover (expression) statement_or_null
 
 | # | 仕様 | ファイル | ステータス | 備考 |
 |---|------|---------|----------|------|
-| 41 | **Wait Order** | `Verilog/Statements/WaitStatement.cs` | ⚠️ バグ疑い | `wait_order` が `parseCreate_wait_fork` にリダイレクトされている |
+| 41 | **Wait Order** | `Verilog/Statements/WaitStatement.cs` | ✅ 実装完了 | `parseCreate_wait_order` で既に実装済み |
 
 #### 16. Alias
 
@@ -808,6 +812,7 @@ constraint name_c { solve var1 before var2; }
 | 2024-XX-XX | Program Instantiation, Distribution, Primitive, Config 等追加 (第5回) | 55件 |
 | 2024-XX-XX | Interconnect, Default Nettype, Import/Export 等追加 (第6回) | 60件 |
 | 2024-XX-XX | Fork Control, Join variants, Action Block 等追加 (第7回) | 65件 |
+| 2025-01-XX | Sequence Expression/Instance 実装 (#8), Wait Order は既に実装済み (#41) | 63件 |
 
 ## License
 
@@ -839,8 +844,8 @@ MIT License
 
 ### 特に注意すべき問題
 
-1. **Wait Statement bug**: `wait_order` が `wait fork` に誤リダイレクトされている
-2. **Sequence/Property Expressions**: BNFコメントのみで実際の解析処理がない
+1. ~~**Wait Statement bug**: `wait_order` が `wait fork` に誤リダイレクトされている~~ ✅ 調査の結果、`parseCreate_wait_order` は既に正しく実装されていた
+2. ~~**Sequence/Property Expressions**: BNFコメントのみで実際の解析処理がない~~ ✅ `Verilog/Sequence/SequenceExpr.cs` で完全実装済み、`SequenceInstance` を追加
 3. **Constraint/Covergroup**: キーワード登録済みだがブロック解析が未実装
 4. **Clocking Declaration**: キーワードスキップのみで完全な解析がない
 
