@@ -135,8 +135,8 @@ class Program
     {
         // chat agent tab
         //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
-        //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_7, false);
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_5, false);
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_7, false);
+        //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_5, false);
         //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.openai_gpt_oss_120b , false);
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
         if (node == null) return;
@@ -165,6 +165,11 @@ class Program
         GC.KeepAlive(typeof(Avalonia.Svg.Skia.Svg).Assembly);
         return AppBuilder.Configure<CodeEditor2.App>()
                 .UsePlatformDetect()
+                .With(new Win32PlatformOptions
+                {
+                    // IME の動作不良対策
+                    OverlayPopups = true,
+                })
                 .With(new X11PlatformOptions
                 {
                     // Tooltipがメインウィンドウの上に表示するworkaround
