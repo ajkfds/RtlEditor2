@@ -144,8 +144,16 @@ Tree navigation produces inconsistent parse results. Clicking through tree nodes
 
 | # | 仕様 | ファイル | ステータス | 備考 |
 |---|------|---------|----------|------|
-| 8 | **Sequence Expression** | `Verilog/Assertion/SequenceExpression.cs` | ❌ 未実装 | BNFコメントのみ |
-| 9 | **Property Expression** | `Verilog/Property/PropertyExpr.cs` | ⚠️ 部分実装 | PropertyOperator ParseCreateのみ実装 |
+| 8 | **Sequence Expression** | `Verilog/Sequence/SequenceExpr.cs` | ✅ 実装完了 | `SequenceExpr.ParseCreate` 等 |
+| 8a | **Sequence Instance** | `Verilog/Sequence/SequenceInstance.cs` | ✅ 実装完了 | 識別子参照と引数リスト対応 |
+| 8b | **Sequence Declaration** | `Verilog/Sequence/SequenceDeclaration.cs` | ✅ 実装完了 | port list, assertion variables対応 |
+| 8c | **Sequence Match Item** | `Verilog/Sequence/SequenceMatchItem.cs` | ✅ 実装完了 | operator_assignment, inc/dec対応 |
+| 8d | **Dist Expression** | `Verilog/Sequence/DistExpression.cs` | ✅ 実装完了 | `dist {}` 対応 |
+| 9 | **Property Expression** | `Verilog/Property/PropertyExpr.cs` | ✅ 実装完了 | 完全実装済み |
+| 9a | **Property Declaration** | `Verilog/Property/PropertyDeclaration.cs` | ✅ 実装完了 | port list, assertion variables対応 |
+| 9b | **Property Spec** | `Verilog/Assertion/PropertySpec.cs` | ✅ 実装完了 | clocking_event, disable iff対応 |
+| 9c | **Property Instance** | `Verilog/Property/PropertyInstance.cs` | ✅ 実装完了 | property instance対応 |
+| 9d | **Property Operator** | `Verilog/Property/PropertyOperator.cs` | ✅ 実装完了 | 全演算子対応 |
 | 10 | **Randsequence** | `Verilog/` | ❌ 未実装 | キーワード登録済みのみ |
 
 #### 4. DPI & 外部連携
@@ -153,7 +161,7 @@ Tree navigation produces inconsistent parse results. Clicking through tree nodes
 | # | 仕様 | ファイル | ステータス | 備考 |
 |---|------|---------|----------|------|
 | 11 | **DPI Export** | `Verilog/DpiImportExport.cs` | ⚠️ 部分実装 | parseExport メソッドが空 |
-| 12 | **Let Declaration** | `Verilog/` | ❌ 未実装 | Task.csコメント内で言及のみ |
+| 12 | **Let Declaration** | `Verilog/` | ⚠️ 部分実装 | キーワード登録済みのみ |
 
 #### 5. データ型・宣言
 
@@ -290,11 +298,9 @@ public static void parseExport(WordScanner word, NameSpace nameSpace)
 
 | # | 仕様 | ファイル | ステータス | 備考 |
 |---|------|---------|----------|------|
-| 19 | **Deferred Immediate Assertion** | `Verilog/Assertion/AssertionItemXX.cs` | ❌ BNFのみ | `assert #0`, `assert final` 等未実装 |
-| 20 | **Checker Instantiation** | `Verilog/` | ❌ 未実装 | AssertionItemXX.cs BNFで言及のみ |
-| 21 | **Expect Property Statement** | `Verilog/Statements/` | ❌ 存在せず | Statements.csで言及されているがファイルなし |
-| 8 | **Sequence Expression** | `Verilog/Sequence/SequenceExpr.cs` | ✅ 実装完了 | `SequenceExpr.ParseCreate` 等 |
-| 8a | **Sequence Instance** | `Verilog/Sequence/SequenceInstance.cs` | ✅ 実装完了 | 識別子参照と引数リスト対応 |
+| 19 | **Deferred Immediate Assertion** | `Verilog/Statements/ImmidiateAssertionStatement.cs` | ✅ 実装完了 | `assert #0`, `assert final` 対応済み |
+| 20 | **Checker Instantiation** | `Verilog/` | ❌ 未実装 | BNFで言及のみ |
+| 21 | **Expect Property Statement** | `Verilog/Statements/ExpectPropertyStatement.cs` | ✅ 実装完了 | `ExpectPropertyStatement.ParseCreate` 実装済み |
 
 #### 9. rand/randsequence
 
@@ -392,23 +398,23 @@ deferred_immediate_cover_statement ::=
 
 | # | 仕様 | ファイル | ステータス | 備考 |
 |---|------|---------|----------|------|
-| 24 | **Property Declaration** | `Verilog/Items/AssertionItem.cs` | ❌ BNFのみ | `property` ~ `endproperty` の解析処理なし |
-| 25 | **Property Port List** | `Verilog/Items/AssertionItem.cs` | ❌ 未実装 | local, input direction 等サポートなし |
-| 26 | **Property Case Item** | `Verilog/Items/AssertionItem.cs` | ❌ 未実装 | `case` ~ `endcase` のプロパティ版 |
-| 27 | **Sequence Declaration** | `Verilog/Items/AssertionItem.cs` | ❌ BNFのみ | `sequence` ~ `endsequence` の解析処理なし |
-| 28 | **Sequence Port List** | `Verilog/Items/AssertionItem.cs` | ❌ 未実装 | inout 方向等のサポートなし |
-| 29 | **Sequence Match Item** | `Verilog/Verilog/` | ❌ 未実装 | operator_assignment 等 |
+| 24 | **Property Declaration** | `Verilog/Property/PropertyDeclaration.cs` | ✅ 実装完了 | port list, assertion variables対応 |
+| 25 | **Property Port List** | `Verilog/Property/PropertyDeclaration.cs` | ✅ 実装完了 | local, input direction対応 |
+| 26 | **Property Case Item** | `Verilog/Property/PropertyExpr.cs` | ✅ 実装完了 | `if`/`case` 式対応 |
+| 27 | **Sequence Declaration** | `Verilog/Sequence/SequenceDeclaration.cs` | ✅ 実装完了 | port list, assertion variables対応 |
+| 28 | **Sequence Port List** | `Verilog/Sequence/SequenceDeclaration.cs` | ✅ 実装完了 | inout 方向対応 |
+| 29 | **Sequence Match Item** | `Verilog/Sequence/SequenceMatchItem.cs` | ✅ 実装完了 | operator_assignment, inc/dec対応 |
 
 #### 11. Procedural Assertion Statement
 
 | # | 仕様 | ファイル | ステータス | 備考 |
 |---|------|---------|----------|------|
-| 30 | **Assert Property Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ エラー出力のみ | "concurrent assertion is not supported yet" |
-| 31 | **Assume Property Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ 未実装 | |
-| 32 | **Cover Property Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ 未実装 | |
-| 33 | **Restrict Property Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ 未実装 | |
-| 34 | **Cover Sequence Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ 未実装 | disable iff 対応も含む |
-| 35 | **Immediate Assertion** | `Verilog/Statements/` | ❌ 未実装 | assert/assume/cover (式) 形式 |
+| 30 | **Assert Property Statement** | `Verilog/Assertion/AssertPropertyStatement.cs` | ✅ 実装完了 | action_block対応 |
+| 31 | **Assume Property Statement** | `Verilog/Assertion/AssumePropertyStatement.cs` | ✅ 実装完了 | action_block対応 |
+| 32 | **Cover Property Statement** | `Verilog/Assertion/CoverPropertyStatement.cs` | ✅ 実装完了 | statement_or_null対応 |
+| 33 | **Restrict Property Statement** | `Verilog/Assertion/RestrictPropertyStatement.cs` | ✅ 実装完了 | `;` 対応 |
+| 34 | **Cover Sequence Statement** | `Verilog/Assertion/CoverSequenceStatement.cs` | ✅ 実装完了 | disable iff対応 |
+| 35 | **Immediate Assertion** | `Verilog/Statements/ImmidiateAssertionStatement.cs` | ✅ 実装完了 | simple, deferred #0, final対応 |
 
 #### 12. Package & Export
 
@@ -511,13 +517,13 @@ cover (expression) statement_or_null
 
 ---
 
-### 優先度別 待実装リスト (全38件)
+### 優先度別 待実装リスト (全38件 → 実装済みにより減少)
 
 | 優先度 | 件数 | 対象 |
 |--------|------|------|
-| High | 5件 | Sequence Expression, Property Expression, Clocking Declaration, Sequence Declaration, Property Declaration |
-| Medium | 10件 | Constraint, Covergroup, Bind Directive, Deferred Immediate, Event Decl, Immediate Assertion, Procedural Assertions |
-| Low | 23件 | Checker, DPI Export, Let, Type Reference, Net Alias, Randsequence, Randcase, Expect Property, Checker Instantiation, etc. |
+| High | 0件 | Sequence/Property Expression/Declaration 全て実装完了 ✅ |
+| Medium | 5件 | Constraint, Covergroup, Bind Directive, Event Decl, Checker Instantiation |
+| Low | 18件 | DPI Export, Let, Type Reference, Net Alias, Randsequence, Randcase, etc. |
 
 ### 実装優先度推奨
 
@@ -660,8 +666,8 @@ constraint name_c { solve var1 before var2; }
 
 | # | 仕様 | ファイル | ステータス | 備考 |
 |---|------|---------|----------|------|
-| 51 | **Dist List** | `Verilog/Sequence/SequenceExpr.cs` | ❌ BNFのみ | `expression_or_dist ::= expression [ dist { dist_list } ]` が未実装 |
-| 52 | **Distribution Weight** | `Verilog/` | ❌ 未実装 | `:=`, `:/` ウェイト指定 |
+| 51 | **Dist List** | `Verilog/Sequence/DistExpression.cs` | ✅ 実装完了 | `DistExpression.ParseCreate` 実装済み |
+| 52 | **Distribution Weight** | `Verilog/Sequence/DistExpression.cs` | ✅ 実装完了 | `:=`, `:/` ウェイト指定対応 |
 | 53 | **With Dist** | `Verilog/` | ❌ 未実装 | `randomize() with constraint` 形式 |
 
 #### 21. Primitive & Table
@@ -782,22 +788,22 @@ constraint name_c { solve var1 before var2; }
 
 ---
 
-### 待実装リスト合計 (65件)
+### 待実装リスト合計 (65件 → 実装により減少)
 
-| カテゴリ | 件数 | 主な仕様 |
-|----------|------|----------|
-| SVA (Sequence/Property) | 9件 | Declaration, Expression, Procedural, Dist |
-| Binding & Configuration | 8件 | Bind, Clocking, Config, Cell/Library, Default Nettype |
-| Class & Type | 10件 | Checker, Class Constructor, Constraint, Typedef |
-| Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins |
-| Data & Variables | 6件 | Type Reference, Virtual Interface, Event, Timeunits, Interconnect |
-| DPI & External | 2件 | DPI Export, Let |
-| Rand/Control | 5件 | Randsequence, Randcase, Expect, Immediate, Dist |
-| Primitive/Table | 3件 | UDP, Table Entry |
-| Package/Import | 3件 | Import specific items, Wildcard Import |
-| Net Strength | 2件 | Charge Strength, Drive Strength |
-| Fork/Join Control | 4件 | Disable Fork, Join variants, Action Block |
-| Other | 9件 | Alias, Net Alias, Wait Order, Program, etc. |
+| カテゴリ | 件数 | 主な仕様 | 備考 |
+|----------|------|----------|------|
+| SVA (Sequence/Property) | 0件 | ✅ 全実装完了 | Declaration, Expression, Procedural, Dist |
+| Binding & Configuration | 8件 | Bind, Clocking, Config, Cell/Library, Default Nettype | |
+| Class & Type | 10件 | Checker, Class Constructor, Constraint, Typedef | |
+| Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins | |
+| Data & Variables | 6件 | Type Reference, Virtual Interface, Event, Timeunits, Interconnect | |
+| DPI & External | 2件 | DPI Export, Let | |
+| Rand/Control | 3件 | Randsequence, Randcase | Expect, Immediate, Dist 実装完了 ✅ |
+| Primitive/Table | 3件 | UDP, Table Entry | |
+| Package/Import | 3件 | Import specific items, Wildcard Import | |
+| Net Strength | 2件 | Charge Strength, Drive Strength | |
+| Fork/Join Control | 4件 | Disable Fork, Join variants, Action Block | |
+| Other | 8件 | Alias, Net Alias, Program, etc. | Wait Order 実装完了 ✅ |
 
 ---
 
@@ -812,7 +818,7 @@ constraint name_c { solve var1 before var2; }
 | 2024-XX-XX | Program Instantiation, Distribution, Primitive, Config 等追加 (第5回) | 55件 |
 | 2024-XX-XX | Interconnect, Default Nettype, Import/Export 等追加 (第6回) | 60件 |
 | 2024-XX-XX | Fork Control, Join variants, Action Block 等追加 (第7回) | 65件 |
-| 2025-01-XX | Sequence Expression/Instance 実装 (#8), Wait Order は既に実装済み (#41) | 63件 |
+| 2025-01-XX | SVA assertions 完全実装完了 | 51件 |
 
 ## License
 
@@ -829,25 +835,27 @@ MIT License
 
 ### 主要カテゴリ
 
-| カテゴリ | 件数 | 代表的仕様 |
-|----------|------|------------|
-| SVA (アサーション) | 12件 | Sequence, Property, Immediate Assertion |
-| Binding & Configuration | 8件 | Bind Directive, Clocking, Config |
-| Class & Type System | 12件 | Checker, Constraint, Interface Class |
-| Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins |
-| Data & Variables | 7件 | Virtual Interface, Interconnect, Timeunits |
-| Rand/Control | 6件 | Randsequence, Randcase, Expect |
-| Package/Import | 4件 | Wildcard Import, Anonymous Program |
-| Primitive/Net | 5件 | UDP, Charge Strength, Net Alias |
-| Fork/Join Control | 3件 | Disable Fork, Join variants |
-| Other | 4件 | Alias, Tagged Union, Wait Order bug |
+| カテゴリ | 件数 | 代表的仕様 | ステータス |
+|----------|------|------------|------------|
+| SVA (アサーション) | 0件 | ✅ Sequence, Property, Immediate Assertion 全て実装完了 | 完了 |
+| Binding & Configuration | 8件 | Bind Directive, Clocking, Config | 未実装 |
+| Class & Type System | 10件 | Checker, Constraint, Interface Class | 一部未実装 |
+| Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins | 未実装 |
+| Data & Variables | 6件 | Virtual Interface, Interconnect, Timeunits | 一部未実装 |
+| Rand/Control | 3件 | Randsequence, Randcase | 未実装 |
+| Package/Import | 3件 | Wildcard Import, Anonymous Program | 一部未実装 |
+| Primitive/Net | 5件 | UDP, Charge Strength, Net Alias | 未実装 |
+| Fork/Join Control | 4件 | Disable Fork, Join variants | 未実装 |
+| Other | 8件 | Alias, Tagged Union, Program, etc. | 未実装 |
 
 ### 特に注意すべき問題
 
 1. ~~**Wait Statement bug**: `wait_order` が `wait fork` に誤リダイレクトされている~~ ✅ 調査の結果、`parseCreate_wait_order` は既に正しく実装されていた
 2. ~~**Sequence/Property Expressions**: BNFコメントのみで実際の解析処理がない~~ ✅ `Verilog/Sequence/SequenceExpr.cs` で完全実装済み、`SequenceInstance` を追加
-3. **Constraint/Covergroup**: キーワード登録済みだがブロック解析が未実装
-4. **Clocking Declaration**: キーワードスキップのみで完全な解析がない
+3. ~~**Sequence/Property Declaration**: `AssertionItem.cs` のみBNF~~ ✅ `Verilog/Sequence/SequenceDeclaration.cs`, `Verilog/Property/PropertyDeclaration.cs` で実装
+4. ~~**Immediate Assertion**: simple/deferred未対応~~ ✅ `ImmidiateAssertionStatement.cs` で全対応
+5. **Constraint/Covergroup**: キーワード登録済みだがブロック解析が未実装
+6. **Clocking Declaration**: キーワードスキップのみで完全な解析がない
 
 ### 推奨実装優先度
 
