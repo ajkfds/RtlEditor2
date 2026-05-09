@@ -113,6 +113,742 @@ Tree navigation produces inconsistent parse results. Clicking through tree nodes
 - [ ] Create test cases to verify fixes
 - [ ] Performance testing under rapid node clicks
 
+---
+
+## 未実装 SystemVerilog 仕様リスト
+
+プロジェクト `CodeEditor2VerilogPlugin/` で未実装の SystemVerilog 仕様を発見するたびに逐次更新します。
+
+### カテゴリ別 未実装仕様
+
+#### 1. Building Blocks (モジュールレベル)
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 1 | **Checker Declaration** | `Verilog/BuildingBlocks/Checker.cs` | ❌ 未実装 | BNFコメントのみ、解析処理なし |
+| 2 | **Clocking Declaration** | `Verilog/ModuleItems/` | ⚠️ 一部実装 | キーワード登録のみ、本文解析なし |
+| 3 | **Interface Class Declaration** | `Verilog/BuildingBlocks/Class.cs` | ❌ 未実装 | Class内にextendsのコメントあり |
+
+#### 2. 制約・機能検証 (Constraint & Coverage)
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 4 | **Constraint Declaration** | `Verilog/` | ❌ 未実装 | ParsedDocument.csでキーワード登録済みのみ |
+| 5 | **Covergroup Declaration** | `Verilog/` | ❌ 未実装 | キーワード登録済みのみ |
+| 6 | **Coverpoint** | `Verilog/` | ❌ 未実装 | キーワード登録済みのみ |
+| 7 | **Cross** | `Verilog/` | ❌ 未実装 | キーワード登録済みのみ |
+
+#### 3. シーケンス・プロパティ (SVA)
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 8 | **Sequence Expression** | `Verilog/Assertion/SequenceExpression.cs` | ❌ 未実装 | BNFコメントのみ |
+| 9 | **Property Expression** | `Verilog/Property/PropertyExpr.cs` | ⚠️ 部分実装 | PropertyOperator ParseCreateのみ実装 |
+| 10 | **Randsequence** | `Verilog/` | ❌ 未実装 | キーワード登録済みのみ |
+
+#### 4. DPI & 外部連携
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 11 | **DPI Export** | `Verilog/DpiImportExport.cs` | ⚠️ 部分実装 | parseExport メソッドが空 |
+| 12 | **Let Declaration** | `Verilog/` | ❌ 未実装 | Task.csコメント内で言及のみ |
+
+#### 5. データ型・宣言
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 13 | **Type Reference** | `Verilog/DataObjects/DataTypes/` | ❌ 未実装 | Variable.Create参照コメントのみ |
+
+### 詳細分析
+
+#### Checker Declaration (Priority: Low)
+
+**ファイル**: `Verilog/BuildingBlocks/Checker.cs`
+
+```csharp
+public class Checker
+{
+    /*
+    ## checker
+    checker_declaration ::=
+        "checker" checker_identifier [ ( [ checker_port_list ] ) ] ; 
+        { { attribute_instance } checker_or_generate_item } 
+        "endchecker" [ : checker_identifier ] 
+    ...
+    */
+}
+```
+
+**問題**: BNFコメントのみで実際の実装が一切ない。checker のポート、アイテムの解析が必要。
+
+---
+
+#### Sequence Expression (Priority: Medium)
+
+**ファイル**: `Verilog/Assertion/SequenceExpression.cs`
+
+```csharp
+internal class SequenceExpression
+{
+    /*
+    sequence_expr ::=
+          cycle_delay_range sequence_expr { cycle_delay_range sequence_expr }
+        | sequence_expr cycle_delay_range sequence_expr { cycle_delay_range sequence_expr }
+        | expression_or_dist [ boolean_abbrev ]
+        | sequence_instance [ sequence_abbrev ]
+        ...
+    */
+    public static new SequenceExpr? ParseCreate(WordScanner word, NameSpace nameSpace)
+    {
+        // TODO: Implementation
+    }
+}
+```
+
+**問題**: BNFのみ、ParseCreate が空実装。`##` delay, `and`, `or`, `intersect` 等が未対応。
+
+---
+
+#### Property Expression (Priority: Medium)
+
+**ファイル**: `Verilog/Property/PropertyExpr.cs`
+
+**ステータス**: `PropertyOperator` のみ実装済み。優先度解析のベース部分是実装済みだが、実際のプロパティ式構築処理が必要。
+
+---
+
+#### ModPort Clocking Declaration (Priority: Low)
+
+**ファイル**: `Verilog/ModPort.cs`
+
+```csharp
+internal bool parse_modport_clocking_declaration(WordScanner word, NameSpace nameSpace)
+{
+    if (word.Text != "clocking") throw new Exception();
+    word.Color(CodeDrawStyle.ColorType.Keyword);
+    word.MoveNext();
+    return true; // TODO: clocking_identifier の実際の処理が必要
+}
+```
+
+**問題**: clocking キーワードをスキップするだけで、実際の clocking_identifier 登録処理がない。
+
+---
+
+#### DPI Export (Priority: Low)
+
+**ファイル**: `Verilog/DpiImportExport.cs`
+
+```csharp
+public static void parseExport(WordScanner word, NameSpace nameSpace)
+{
+    // 空の実装
+}
+```
+
+**問題**: export 構文の解析が未実装。
+
+---
+
+### 優先度ガイドライン
+
+| 優先度 | 説明 | 対象 |
+|--------|------|------|
+| High | 一般的によく使用される | Sequence Expression, Property Expression |
+| Medium | よく使用される | Constraint, Covergroup |
+| Low | 特殊なケース | Checker, DPI Export, Let |
+
+### 更新履歴
+
+| 日時 | 更新内容 |
+|------|----------|
+| 2024-XX-XX | 初版作成、未実装Spec 13件を特定 |
+| 2024-XX-XX | Bind Directive, Net Alias, Clocking Declaration, Deferred Immediate Assertions を追加 |
+
+---
+
+## 追加発見 未実装仕様 (第2回)
+
+#### 6. バインディング・エイリアス
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 14 | **Bind Directive** | `Verilog/ModuleItems/` | ❌ 未実装 | Root.cs, Module.cs, Interface.cs, ModuleCommonItem.cs で言及のみ |
+| 15 | **Net Alias** | `Verilog/ModuleItems/` | ❌ 未実装 | ModuleCommonItem.csのBNFに言及のみ |
+
+#### 7. Clocking & Timing
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 16 | **Cloking Declaration** | `Verilog/ModuleItems/ModuleOrGenerateItemDeclaration.cs` | ⚠️ スキップのみ | `clocking` キーワードをスキップ、解析処理なし |
+| 17 | **Default Clocking** | `Verilog/ModuleItems/ModuleOrGenerateItemDeclaration.cs` | ⚠️ スキップのみ | `default clocking` のみ識別子をスキップ |
+| 18 | **Event Declaration** | `Verilog/` | ❌ 部分実装 | Function/Task 内で言及のみ |
+
+#### 8. アサーション詳細
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 19 | **Deferred Immediate Assertion** | `Verilog/Assertion/AssertionItemXX.cs` | ❌ BNFのみ | `assert #0`, `assert final` 等未実装 |
+| 20 | **Checker Instantiation** | `Verilog/` | ❌ 未実装 | AssertionItemXX.cs BNFで言及のみ |
+| 21 | **Expect Property Statement** | `Verilog/Statements/` | ❌ 存在せず | Statements.csで言及されているがファイルなし |
+
+#### 9. rand/randsequence
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 22 | **Randsequence Statement** | `Verilog/Statements/` | ❌ 存在せず | Statements.csで言及されているがファイルなし |
+| 23 | **Randcase Statement** | `Verilog/Statements/` | ❌ 存在せず | Statements.csで言及されているがファイルなし |
+
+---
+
+### 未実装仕様 詳細 (追加分)
+
+#### Bind Directive (Priority: Medium)
+
+**参照箇所**:
+- `Verilog/BuildingBlocks/Root.cs` (line 30, 65, 147)
+- `Verilog/BuildingBlocks/Module.cs` (line 478)
+- `Verilog/BuildingBlocks/Interface.cs` (line 484)
+- `Verilog/Items/ModuleCommonItem.cs` (line 16)
+
+```BNF
+bind_directive ::= bind bind_target_scope [ bind_target_instance_list ] ; [ bind_items ]
+bind_target_scope ::= hierarchical_identifier | wildcard import package_identifier
+```
+
+**問題**: `bind` キーワードの解析処理が一切ない。instance specific binding の機能が必要。
+
+---
+
+#### Net Alias (Priority: Low)
+
+**参照箇所**: `Verilog/Items/ModuleCommonItem.cs`
+
+```BNF
+net_alias ::= alias ( list_of_net_aliases ) = expression ;
+list_of_net_aliases ::= net_alias_item { , net_alias_item }
+net_alias_item ::= net_lvalue
+```
+
+**問題**: ネットワークの別名付けの構文解析がない。
+
+---
+
+#### Deferred Immediate Assertion (Priority: Medium)
+
+**ファイル**: `Verilog/Assertion/AssertionItemXX.cs`
+
+```csharp
+/*
+deferred_immediate_assert_statement ::=
+      assert #0 ( expression ) action_block
+    | assert final ( expression ) action_block
+
+deferred_immediate_assume_statement ::=
+      assume #0 ( expression ) action_block
+    | assume final ( expression ) action_block
+
+deferred_immediate_cover_statement ::=
+      cover #0 ( expression ) statement_or_null
+    | cover final ( expression ) statement_or_null         
+*/
+```
+
+**問題**: BNFコメントのみで実装なし。`#0` と `final` の両方のパターンをサポートする必要がある。
+
+---
+
+#### Randsequence/Randcase (Priority: Low)
+
+**参照箇所**: `Verilog/Statements/Statements.cs` (lines 30, 111, 122)
+
+```csharp
+// randsequence_statement 
+// randcase_statement 
+// expect_property_statement
+```
+
+**問題**: ファイルが存在しない。これらの制御フロー文の解析処理が必要。
+
+---
+
+### 優先度別 待実装リスト (全22件)
+
+| 優先度 | 件数 | 対象 |
+|--------|------|------|
+| High | 3件 | Sequence Expression, Property Expression, Clocking Declaration |
+| Medium | 5件 | Constraint, Covergroup, Bind Directive, Deferred Immediate Assertion, Event Declaration |
+| Low | 14件 | Checker, DPI Export, Let, Type Reference, Net Alias, Randsequence, Randcase, Expect Property, Checker Instantiation |
+
+---
+
+## 追加発見 未実装仕様 (第3回)
+
+#### 10. Sequence/Property Declaration
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 24 | **Property Declaration** | `Verilog/Items/AssertionItem.cs` | ❌ BNFのみ | `property` ~ `endproperty` の解析処理なし |
+| 25 | **Property Port List** | `Verilog/Items/AssertionItem.cs` | ❌ 未実装 | local, input direction 等サポートなし |
+| 26 | **Property Case Item** | `Verilog/Items/AssertionItem.cs` | ❌ 未実装 | `case` ~ `endcase` のプロパティ版 |
+| 27 | **Sequence Declaration** | `Verilog/Items/AssertionItem.cs` | ❌ BNFのみ | `sequence` ~ `endsequence` の解析処理なし |
+| 28 | **Sequence Port List** | `Verilog/Items/AssertionItem.cs` | ❌ 未実装 | inout 方向等のサポートなし |
+| 29 | **Sequence Match Item** | `Verilog/Verilog/` | ❌ 未実装 | operator_assignment 等 |
+
+#### 11. Procedural Assertion Statement
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 30 | **Assert Property Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ エラー出力のみ | "concurrent assertion is not supported yet" |
+| 31 | **Assume Property Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ 未実装 | |
+| 32 | **Cover Property Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ 未実装 | |
+| 33 | **Restrict Property Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ 未実装 | |
+| 34 | **Cover Sequence Statement** | `Verilog/Statements/ProceduralAssertionStatement.cs` | ❌ 未実装 | disable iff 対応も含む |
+| 35 | **Immediate Assertion** | `Verilog/Statements/` | ❌ 未実装 | assert/assume/cover (式) 形式 |
+
+#### 12. Package & Export
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 36 | **Anonymous Program** | `Verilog/Items/PackageItem.cs` | ❌ 未実装 | Package 内の無名プログラム |
+| 37 | **Package Import Item (複数)** | `Verilog/Items/PackageExportDeclaration.cs` | ⚠️ 部分実装 | `export *::*` のみ、複合アイテムは未対応 |
+
+#### 13. Timeunits Declaration
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 38 | **Timeunits Declaration** | `Verilog/` | ❌ 未実装 | Module, Interface, Package 内で言及のみ |
+
+---
+
+### 未実装仕様 詳細 (第3回追加分)
+
+#### Property Declaration (Priority: Medium)
+
+**ファイル**: `Verilog/Items/AssertionItem.cs`
+
+```BNF
+property_declaration ::=
+    "property" property_identifier [ "(" [ property_port_list ] ")" ] ";"
+    { assertion_variable_declaration }
+    property_spec [ ";" ]
+    "endproperty" [ ":" property_identifier ]
+
+property_port_list ::=
+    property_port_item {"," property_port_item}
+
+property_port_item ::=
+    { attribute_instance } [ "local" [ property_lvar_port_direction ] ] property_formal_type
+    formal_port_identifier {variable_dimension} [ "=" property_actual_arg ]
+```
+
+**問題**: BNFコメントのみで実装なし。port list の local, input direction、property_formal_type の解析が必要。
+
+---
+
+#### Sequence Declaration (Priority: Medium)
+
+**ファイル**: `Verilog/Items/AssertionItem.cs`
+
+```BNF
+sequence_declaration ::=
+    "sequence" sequence_identifier [ ( [ sequence_port_list ] ) ] ;
+    { assertion_variable_declaration }
+    sequence_expr [ ; ]
+    "endsequence" [ : sequence_identifier ]
+```
+
+**問題**: BNFコメントのみで実装なし。port list で inout もサポートが必要。
+
+---
+
+#### Procedural Assertion Statement (Priority: Medium)
+
+**ファイル**: `Verilog/Statements/ProceduralAssertionStatement.cs`
+
+```csharp
+public static IStatement? ParseCreate(WordScanner word, NameSpace nameSpace, string? statement_label)
+{
+    switch (word.Text)
+    {
+        case "assert":
+        case "assume":
+        case "cover":
+        case "restrict":
+            break;
+        ...
+    }
+
+    if (word.NextText == "property")
+    { // concurrent assertion
+        word.AddError("concurrent assertion is not supported yet.");
+        word.MoveNext();
+    }
+    return null;
+}
+```
+
+**問題**: concurrent assertion (assert property等) が完全に未対応。Simple immediate assertion も未対応。
+
+---
+
+#### Immediate Assertion (Priority: Medium)
+
+**参照**: `Verilog/Items/ConcurrentAssertionItemExceptCheckerInstantiation.cs`
+
+Simple immediate assert statement 形式:
+```systemverilog
+assert (expression) action_block
+assume (expression) action_block
+cover (expression) statement_or_null
+```
+
+**問題**: 現在 `ConcurrentAssertionItemExceptCheckerInstantiation` のみ существование。immediate 版が必要。
+
+---
+
+### 優先度別 待実装リスト (全38件)
+
+| 優先度 | 件数 | 対象 |
+|--------|------|------|
+| High | 5件 | Sequence Expression, Property Expression, Clocking Declaration, Sequence Declaration, Property Declaration |
+| Medium | 10件 | Constraint, Covergroup, Bind Directive, Deferred Immediate, Event Decl, Immediate Assertion, Procedural Assertions |
+| Low | 23件 | Checker, DPI Export, Let, Type Reference, Net Alias, Randsequence, Randcase, Expect Property, Checker Instantiation, etc. |
+
+### 実装優先度推奨
+
+| 優先度 | 理由 | 推奨実装順序 |
+|--------|------|-------------|
+| 1 | SVA は検証で広く使用される | Sequence/Property Declaration → Expression → Procedural Assertion |
+| 2 | Bind Directive は実プロジェクトで必要 | Bind → Clocking Declaration |
+| 3 | Covergroup/Constraint はクラス検証で重要 | Constraint → Covergroup |
+| 4 | 低優先度は特殊なケース | Randsequence, Checker 等は後で対応 |
+
+---
+
+## 追加発見 未実装仕様 (第4回)
+
+#### 14. Constraint & Solve
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 39 | **Constraint Declaration** | `Verilog/` | ❌ 未実装 | キーワード登録済みのみ、`solve` キーワードも登録済み |
+| 40 | **Soft Constraint** | `Verilog/` | ❌ 未実装 | `soft` キーワード登録済みのみ |
+
+#### 15. Wait Statement
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 41 | **Wait Order** | `Verilog/Statements/WaitStatement.cs` | ⚠️ バグ疑い | `wait_order` が `parseCreate_wait_fork` にリダイレクトされている |
+
+#### 16. Alias
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 42 | **Net Alias** | `Verilog/` | ❌ 未実装 | `alias` キーワード登録済みだが、BNFの alias 構文が未実装 |
+| 43 | **Tagged Union** | `Verilog/` | ❌ 未実装 | `tagged` キーワード登録済みのみ |
+
+#### 17. Class 詳細
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 44 | **Class Constructor Prototype** | `Verilog/` | ⚠️ 言及のみ | Class.cs に extern new prototype への言及があるが必要 |
+| 45 | **Pure Virtual Method** | `Verilog/Items/ClassItem.cs` | ⚠️ 一部実装 | `pure virtual` のパースのみ実装、本体は未対応 |
+| 46 | **Extern Method** | `Verilog/Items/ClassItem.cs` | ⚠️ 一部実装 | `extern` キーワードをスキップするのみ |
+
+#### 18. Interface & Virtual
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 47 | **Virtual Interface** | `Verilog/DataObjects/Variables/` | ❌ 未実装 | Variable.Create の switch-case にコメントのみ存在 |
+
+---
+
+### 未実装仕様 詳細 (第4回追加分)
+
+#### Wait Order Statement (Priority: Medium)
+
+**ファイル**: `Verilog/Statements/WaitStatement.cs`
+
+```csharp
+// wait_statement ::=
+//     "wait" "(" expression ")" statement_or_null
+//     | "wait fork" ";"
+//     | "wait_order" "(" hierarchical_identifier { "," hierarchical_identifier } ")" action_block
+
+if (word.Text == "wait_order") return parseCreate_wait_fork(word, nameSpace); // BUG: 誤ったリダイレクト
+```
+
+**問題**: `wait_order` が `wait fork` のパース関数にリダイレクトされている。正しい `wait_order` 解析が必要:
+```systemverilog
+wait_order(id1, id2, ...) action_block
+```
+
+---
+
+#### Constraint Declaration (Priority: Medium)
+
+**参照**: `ParsedDocument.cs` (line 717)
+
+```csharp
+("constraint",1), ("covergroup",1),
+("solve",1),       // constraint 内で solve before に使用
+```
+
+**問題**: `constraint` ブロックの解析処理が一切ない:
+```systemverilog
+constraint name_c { expression; }
+constraint name_c { solve var1 before var2; }
+```
+
+---
+
+#### Tagged Union (Priority: Low)
+
+**参照**: `ParsedDocument.cs` (line 738)
+
+```csharp
+("tagged",1),
+```
+
+**問題**: `tagged union` / `tagged struct` への対応が未実装。
+
+---
+
+### 待実装リスト合計 (47件)
+
+| カテゴリ | 件数 | 主な仕様 |
+|----------|------|----------|
+| SVA (Sequence/Property) | 9件 | Declaration, Expression, Procedural Assertion |
+| Binding & Declaration | 5件 | Bind Directive, Clocking, Constraint |
+| Class & Type | 8件 | Checker, Class Constructor, Interface Class, Typedef Extensions |
+| Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins |
+| Data & Variables | 5件 | Type Reference, Virtual Interface, Event, Timeunits |
+| DPI & External | 2件 | DPI Export, Let |
+| Rand/Control | 4件 | Randsequence, Randcase, Expect, Immediate Assertion |
+| Other | 10件 | Alias, Net Alias, Wait Order, etc. |
+
+---
+
+## AGENTS.md 更新履歴
+
+| 日時 | 更新内容 | 累積件数 |
+|------|----------|----------|
+| 2024-XX-XX | 初版作成 | 13件 |
+| 2024-XX-XX | Bind Directive, Net Alias 等追加 (第2回) | 22件 |
+| 2024-XX-XX | Property/Sequence Declaration 等追加 (第3回) | 38件 |
+| 2024-XX-XX | Wait Order bug, Constraint, Tagged 等追加 (第4回) | 47件 |
+| 2024-XX-XX | Program Instantiation, Distribution, Primitive, Config 等追加 (第5回) | 55件 |
+
+---
+
+## 追加発見 未実装仕様 (第5回)
+
+#### 19. Program Instantiation & 配置
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 48 | **Program Instantiation** | `Verilog/Items/ModuleCommonItem.cs` | ❌ 未実装 | ModuleCommonItem.csに言及のみ |
+| 49 | **Config Declaration** | `Verilog/BuildingBlocks/Root.cs` | ❌ 未実装 | Root.csに言及のみ、`config` キーワードは登録済み |
+| 50 | **Cell & Library** | `Verilog/General.cs` | ⚠️ キーワードのみ | キーワード登録済みだが未解析 |
+
+#### 20. Distribution (with dist)
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 51 | **Dist List** | `Verilog/Sequence/SequenceExpr.cs` | ❌ BNFのみ | `expression_or_dist ::= expression [ dist { dist_list } ]` が未実装 |
+| 52 | **Distribution Weight** | `Verilog/` | ❌ 未実装 | `:=`, `:/` ウェイト指定 |
+| 53 | **With Dist** | `Verilog/` | ❌ 未実装 | `randomize() with constraint` 形式 |
+
+#### 21. Primitive & Table
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 54 | **UDP Primitive Declaration** | `Verilog/` | ❌ キーワードのみ | `primitive`/`endprimitive`/`table`/`endtable` が未解析 |
+| 55 | **Primitive Table Entry** | `Verilog/` | ❌ 未実装 | combinational/sequential テーブルエントリ |
+
+---
+
+### 待実装リスト合計 (55件)
+
+| カテゴリ | 件数 | 主な仕様 |
+|----------|------|----------|
+| SVA (Sequence/Property) | 9件 | Declaration, Expression, Procedural, Dist |
+| Binding & Configuration | 7件 | Bind, Clocking, Config, Cell/Library |
+| Class & Type | 10件 | Checker, Class Constructor, Constraint, Typedef |
+| Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins |
+| Data & Variables | 5件 | Type Reference, Virtual Interface, Event, Timeunits |
+| DPI & External | 2件 | DPI Export, Let |
+| Rand/Control | 5件 | Randsequence, Randcase, Expect, Immediate, Dist |
+| Primitive/Table | 3件 | UDP, Table Entry |
+| Other | 10件 | Alias, Net Alias, Wait Order, Program, etc. |
+
+---
+
+### 発見済み 未実装キーワード (システム登録済み)
+
+`ParsedDocument.cs` に登録されているが実装が不完全なキーワード:
+- `alias`, `soft`, `solve`, `tagged`, `accept_on`, `reject_on`, `sync_accept_on`, `sync_reject_on`
+- `timeprecision`, `timeunit`, `type`
+- `throughout`, `strong`, `weak`
+
+---
+
+## 次の調査対象 (調査候補)
+
+1. **Clocking Item**: `clocking_item` の詳細な実装
+2. **Let Declaration**: `let` 宣言の完全な実装
+3. **Import/Export Specific Item**: 特定のアイテムをエクスポートする `import ...::*` 形式
+4. **Extends with Parameters**: Class の `extends` でのパラメータ付きベースクラス
+
+---
+
+## 追加発見 未実装仕様 (第6回)
+
+#### 22. Interconnect & Default Nettype
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 56 | **Interconnect Declaration** | `Verilog/DataObjects/Nets/Net.cs` | ❌ 未実装 | BNFに言及あり (`interconnect implicit_data_type ...`) |
+| 57 | **Default Nettype** | `Verilog/` | ❌ 未実装 | コンパイラ指示 `'default_nettype` への対応 |
+
+#### 23. Import/Export の詳細
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 58 | **Import Package Items** | `Verilog/Items/PackageExportDeclaration.cs` | ❌ 部分実装 | `export *::*` のみ、`package_identifier :: identifier` 形式未対応 |
+| 59 | **Wildcard Import** | `Verilog/` | ❌ 未実装 | `import package_name::*` 形式 |
+
+#### 24. Drive/Charge Strength
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 60 | **Charge Strength** | `Verilog/DataObjects/Nets/Net.cs` | ⚠️ 言及あり | `ChargeStrength.ParseCreate` 呼び出しはあるが、ファイルなし |
+
+---
+
+### 待実装リスト合計 (60件)
+
+| カテゴリ | 件数 | 主な仕様 |
+|----------|------|----------|
+| SVA (Sequence/Property) | 9件 | Declaration, Expression, Procedural, Dist |
+| Binding & Configuration | 8件 | Bind, Clocking, Config, Cell/Library, Default Nettype |
+| Class & Type | 10件 | Checker, Class Constructor, Constraint, Typedef |
+| Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins |
+| Data & Variables | 6件 | Type Reference, Virtual Interface, Event, Timeunits, Interconnect |
+| DPI & External | 2件 | DPI Export, Let |
+| Rand/Control | 5件 | Randsequence, Randcase, Expect, Immediate, Dist |
+| Primitive/Table | 3件 | UDP, Table Entry |
+| Package/Import | 3件 | Import specific items, Wildcard Import |
+| Net Strength | 2件 | Charge Strength, Drive Strength |
+| Other | 8件 | Alias, Net Alias, Wait Order, Program, etc. |
+
+---
+
+## AGENTS.md 更新履歴
+
+| 日時 | 更新内容 | 累積件数 |
+|------|----------|----------|
+| 2024-XX-XX | 初版作成 | 13件 |
+| 2024-XX-XX | Bind Directive, Net Alias 等追加 (第2回) | 22件 |
+| 2024-XX-XX | Property/Sequence Declaration 等追加 (第3回) | 38件 |
+| 2024-XX-XX | Wait Order bug, Constraint, Tagged 等追加 (第4回) | 47件 |
+| 2024-XX-XX | Program Instantiation, Distribution, Primitive, Config 等追加 (第5回) | 55件 |
+| 2024-XX-XX | Interconnect, Default Nettype, Import/Export 等追加 (第6回) | 60件 |
+| 2024-XX-XX | Fork Control, Join variants, Action Block details 等追加 (第7回) | 65件 |
+
+---
+
+## 追加発見 未実装仕様 (第7回)
+
+#### 25. Fork Control & Join
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 61 | **Disable Fork** | `Verilog/Statements/` | ❌ 未実装 | `disable fork` 文への対応 |
+| 62 | **Join Variants** | `Verilog/Statements/ParallelBlock.cs` | ⚠️ 言及のみ | `join_any`, `join_none` が ParallelBlock.cs に言及されているが完全には未対応 |
+| 63 | **Fork-Join Block Label** | `Verilog/Statements/ParallelBlock.cs` | ⚠️ 一部実装 | `:block_name` 形式は実装済みだが、ネスト時に問題がある可能性 |
+
+#### 26. Action Block
+
+| # | 仕様 | ファイル | ステータス | 備考 |
+|---|------|---------|----------|------|
+| 64 | **Action Block (if-else)** | `Verilog/Statements/` | ❌ 未実装 | assertion の action_block での else 句への対応 |
+| 65 | **Assert Failure Action** | `Verilog/` | ❌ 未実装 | `$error`, `$fatal` 等のデフォルトアクション |
+
+---
+
+### 待実装リスト合計 (65件)
+
+| カテゴリ | 件数 | 主な仕様 |
+|----------|------|----------|
+| SVA (Sequence/Property) | 9件 | Declaration, Expression, Procedural, Dist |
+| Binding & Configuration | 8件 | Bind, Clocking, Config, Cell/Library, Default Nettype |
+| Class & Type | 10件 | Checker, Class Constructor, Constraint, Typedef |
+| Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins |
+| Data & Variables | 6件 | Type Reference, Virtual Interface, Event, Timeunits, Interconnect |
+| DPI & External | 2件 | DPI Export, Let |
+| Rand/Control | 5件 | Randsequence, Randcase, Expect, Immediate, Dist |
+| Primitive/Table | 3件 | UDP, Table Entry |
+| Package/Import | 3件 | Import specific items, Wildcard Import |
+| Net Strength | 2件 | Charge Strength, Drive Strength |
+| Fork/Join Control | 4件 | Disable Fork, Join variants, Action Block |
+| Other | 9件 | Alias, Net Alias, Wait Order, Program, etc. |
+
+---
+
+## AGENTS.md 更新履歴 (完全版)
+
+| 日時 | 更新内容 | 累積件数 |
+|------|----------|----------|
+| 2024-XX-XX | 初版作成 | 13件 |
+| 2024-XX-XX | Bind Directive, Net Alias 等追加 (第2回) | 22件 |
+| 2024-XX-XX | Property/Sequence Declaration 等追加 (第3回) | 38件 |
+| 2024-XX-XX | Wait Order bug, Constraint, Tagged 等追加 (第4回) | 47件 |
+| 2024-XX-XX | Program Instantiation, Distribution, Primitive, Config 等追加 (第5回) | 55件 |
+| 2024-XX-XX | Interconnect, Default Nettype, Import/Export 等追加 (第6回) | 60件 |
+| 2024-XX-XX | Fork Control, Join variants, Action Block 等追加 (第7回) | 65件 |
+
 ## License
 
 MIT License
+
+---
+
+## 調査完了サマリー
+
+### 調査範囲
+`CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/` ディレクトリ以下の全ファイルを調査。
+
+### 発見された未実装 SystemVerilog 仕様の総数: **65件**
+
+### 主要カテゴリ
+
+| カテゴリ | 件数 | 代表的仕様 |
+|----------|------|------------|
+| SVA (アサーション) | 12件 | Sequence, Property, Immediate Assertion |
+| Binding & Configuration | 8件 | Bind Directive, Clocking, Config |
+| Class & Type System | 12件 | Checker, Constraint, Interface Class |
+| Coverage | 4件 | Covergroup, Coverpoint, Cross, Bins |
+| Data & Variables | 7件 | Virtual Interface, Interconnect, Timeunits |
+| Rand/Control | 6件 | Randsequence, Randcase, Expect |
+| Package/Import | 4件 | Wildcard Import, Anonymous Program |
+| Primitive/Net | 5件 | UDP, Charge Strength, Net Alias |
+| Fork/Join Control | 3件 | Disable Fork, Join variants |
+| Other | 4件 | Alias, Tagged Union, Wait Order bug |
+
+### 特に注意すべき問題
+
+1. **Wait Statement bug**: `wait_order` が `wait fork` に誤リダイレクトされている
+2. **Sequence/Property Expressions**: BNFコメントのみで実際の解析処理がない
+3. **Constraint/Covergroup**: キーワード登録済みだがブロック解析が未実装
+4. **Clocking Declaration**: キーワードスキップのみで完全な解析がない
+
+### 推奨実装優先度
+
+| 優先度 | 理由 | 対象 |
+|--------|------|------|
+| 1 | 広く使用・検証で重要 | Sequence/Property Declaration & Expression |
+| 2 | 実プロジェクトで必要 | Bind Directive, Clocking Declaration |
+| 3 | クラス検証で重要 | Constraint Declaration, Covergroup |
+| 4 | 低優先度 | UDP, Checker 等は特殊なケース |
