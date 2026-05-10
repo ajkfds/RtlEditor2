@@ -59,6 +59,12 @@ RtlEditor2/
 - Fixed CS0246 and CS1503 errors in TextFile.cs by adding `using CodeEditor2.CodeEditor.TextDecollation;` directive to resolve `LineInformation` type reference.
 - Added restart resilience to FileBasedPipe receiver: `InitializeAsReceiver()` now reads existing `ack.dat` file to restore `_lastProcessedId` instead of always starting from 0, preventing duplicate message reception when receiver restarts while `data.dat` still contains unacknowledged messages.
 - Fixed `SynchronizationLockException` in `Item.Dispose()`: Wrapped `itemLock?.Dispose()` in try-catch to handle exceptions that can occur when the lock is held during disposal or when other threads are still using the lock.
+- ✅ **Parse Request Queue**: Implemented request queuing instead of immediate cancellation to prevent race conditions in `Tool/ParseHierarchy.cs`.
+- ✅ **Atomic BuildingBlock Registration**: Added locks to `Root.BuildingBlocks` dictionary for thread-safe updates in `BuildingBlock.cs`.
+- ✅ **Updater.UpdateAsync Atomicity**: Fixed clear-then-add pattern in `VerilogCommon/Updater.cs` to ensure atomic items update.
+- ✅ **Composite Key Lock**: Protected key generation in `VerilogModuleInstance.cs` to prevent race conditions.
+- ✅ **Parse Mode Sequencing Gate**: Ensured proper parse mode ordering in `Root.cs` and `Module.cs`.
+- ✅ **Version-Stamped Color Copy**: Added version checking during color copy in `CodeDocument.cs` and `ColorHandler.cs`.
 
 ---
 
@@ -114,6 +120,7 @@ Tree navigation produces inconsistent parse results. Clicking through tree nodes
 ### Next Actions
 - [ ] Create test cases to verify fixes
 - [ ] Performance testing under rapid node clicks
+- [ ] Address remaining unimplemented SystemVerilog specs (65 items total)
 
 ---
 

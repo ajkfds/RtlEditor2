@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.5.11709.299 stable
+VisualStudioVersion = 18.5.11709.299
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RtlEditor2.Desktop", "RtlEditor2.Desktop\RtlEditor2.Desktop.csproj", "{F04A1E8C-F8BE-49F8-BCCA-5F091CA3BAE4}"
 EndProject
@@ -30,6 +30,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2DrawIoPlugin", "CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin.csproj", "{CC0D73F0-273F-431D-97DB-BAFD738D5610}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AjkLibs", "AjkLibs\AjkLibs\AjkLibs.csproj", "{252524A4-FEAF-6232-2ABB-CF81022E8FF4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2LiveMarkdownPlugin", "CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin.csproj", "{F452EC54-3B18-C5F1-0005-0737B263CEFE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -89,6 +91,10 @@ Global
 		{252524A4-FEAF-6232-2ABB-CF81022E8FF4}.Debug|x64.Build.0 = Debug|Any CPU
 		{252524A4-FEAF-6232-2ABB-CF81022E8FF4}.Release|x64.ActiveCfg = Release|Any CPU
 		{252524A4-FEAF-6232-2ABB-CF81022E8FF4}.Release|x64.Build.0 = Release|Any CPU
+		{F452EC54-3B18-C5F1-0005-0737B263CEFE}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F452EC54-3B18-C5F1-0005-0737B263CEFE}.Debug|x64.Build.0 = Debug|Any CPU
+		{F452EC54-3B18-C5F1-0005-0737B263CEFE}.Release|x64.ActiveCfg = Release|Any CPU
+		{F452EC54-3B18-C5F1-0005-0737B263CEFE}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -169,6 +169,7 @@ class Program
                 {
                     // IME の動作不良対策
                     OverlayPopups = true,
+                    ShouldRenderOnUIThread = true,
                 })
                 .With(new X11PlatformOptions
                 {
