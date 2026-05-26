@@ -36,112 +36,144 @@ RtlEditor2/
 └── TemplateEngineHost/           # Template engine
 ```
 
-## Recent Fixes
+## build方法
 
-- ✅ **Parse Request Queue**: Implemented request queuing instead of immediate cancellation.
-- ✅ **Atomic BuildingBlock Registration**: Added locks to `Root.BuildingBlocks` dictionary.
-- ✅ **Updater.UpdateAsync Atomicity**: Fixed clear-then-add pattern.
-- ✅ **Composite Key Lock**: Protected key generation in `VerilogModuleInstance`.
-- ✅ **Parse Mode Sequencing Gate**: Ensured proper parse mode ordering.
-- ✅ **Version-Stamped Color Copy**: Added version checking during color copy.
-- ✅ **Wait Order Statement**: `parseCreate_wait_order` implementation verified.
-- ✅ **Sequence/Property Expressions**: Complete implementation in dedicated files.
-- ✅ **Function Constructor Access (CS0122)**: Changed `Function` constructor from `protected` to `internal` to allow access from `MethodPrototype.ParseConstructorPrototype`.
+ワーニングが大量にあるので、build時にはerrorのみ参照してください。
 
----
+dotnet build -clp:ErrorsOnly
 
-## 未実装 SystemVerilog 仕様リスト
+全体build
+```
+dotnet build -clp:ErrorsOnly RtlEditor2.sln
+```
 
-プロジェクト `CodeEditor2VerilogPlugin/` で未実装の SystemVerilog 仕様を記載します。
+pulgin単位のbuild
+```
+dotnet build -clp:ErrorsOnly CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.sln
+```
 
-### 実装完了した仕様 (✅)
-
-| # | 仕様 | ファイル |
-|---|------|---------|
-| 1 | Clocking Declaration | `Verilog/BuildingBlocks/Clocking.cs` |
-| 2 | Constraint Declaration | `Verilog/Coverage/ConstraintDeclaration.cs` |
-| 3 | Covergroup/Coverpoint/Cross | `Verilog/Coverage/CovergroupDeclaration.cs` |
-| 4 | Sequence Expression | `Verilog/Sequence/SequenceExpr.cs` |
-| 5 | Sequence Instance | `Verilog/Sequence/SequenceInstance.cs` |
-| 6 | Sequence Declaration | `Verilog/Sequence/SequenceDeclaration.cs` |
-| 7 | Sequence Match Item | `Verilog/Sequence/SequenceMatchItem.cs` |
-| 8 | Dist Expression | `Verilog/Sequence/DistExpression.cs` |
-| 9 | Property Expression | `Verilog/Property/PropertyExpr.cs` |
-| 10 | Property Declaration | `Verilog/Property/PropertyDeclaration.cs` |
-| 11 | Property Spec | `Verilog/Assertion/PropertySpec.cs` |
-| 12 | Property Instance | `Verilog/Property/PropertyInstance.cs` |
-| 13 | Property Operator | `Verilog/Property/PropertyOperator.cs` |
-| 14 | Randsequence | `Verilog/Statements/RandsequenceStatement.cs` |
-| 15 | Randcase | `Verilog/Statements/RandcaseStatement.cs` |
-| 16 | DPI Export | `Verilog/DpiImportExport.cs` |
-| 17 | Let Declaration | `Verilog/DataObjects/LetDeclaration.cs` |
-| 18 | Bind Directive | `Verilog/ModuleItems/BindDirective.cs` |
-| 19 | Net Alias | `Verilog/ModuleItems/NetAlias.cs` |
-| 20 | Default Clocking | `Verilog/BuildingBlocks/Clocking.cs` |
-| 21 | Deferred Immediate Assertion | `Verilog/Statements/ImmidiateAssertionStatement.cs` |
-| 22 | Expect Property Statement | `Verilog/Statements/ExpectPropertyStatement.cs` |
-| 23 | Assert Property Statement | `Verilog/Assertion/AssertPropertyStatement.cs` |
-| 24 | Assume Property Statement | `Verilog/Assertion/AssumePropertyStatement.cs` |
-| 25 | Cover Property Statement | `Verilog/Assertion/CoverPropertyStatement.cs` |
-| 26 | Restrict Property Statement | `Verilog/Assertion/RestrictPropertyStatement.cs` |
-| 27 | Cover Sequence Statement | `Verilog/Assertion/CoverSequenceStatement.cs` |
-| 28 | Immediate Assertion | `Verilog/Statements/ImmidiateAssertionStatement.cs` |
-| 29 | Anonymous Program | `Verilog/BuildingBlocks/Program.cs` |
-| 30 | Timeunits Declaration | `Verilog/DataObjects/TimeunitsDeclaration.cs` |
-| 31 | Wait Order | `Verilog/Statements/WaitStatement.cs` |
-| 32 | Virtual Interface | `Verilog/DataObjects/DataTypes/VirtualInterfaceType.cs` |
-| 33 | Program Instantiation | `Verilog/ModuleItems/ProgramInstantiation.cs` |
-| 34 | Disable Fork | `Verilog/Statements/ParallelBlock.cs` |
-| 35 | Join Variants | `Verilog/Statements/ParallelBlock.cs` |
-| 36 | Fork-Join Block Label | `Verilog/Statements/ParallelBlock.cs` |
-| 37 | Action Block (if-else) | `Verilog/Statements/ImmidiateAssertionStatement.cs` |
 
 ---
 
-### 未実装仕様
+## SystemVerilog Parse Errorリスト
 
-#### 高優先度
+### module instance .* parse error (bug 10.6.2)
 
-| # | 仕様 | ファイル | 備考 |
-|---|------|---------|------|
-| 1 | **Checker Declaration** | `Verilog/BuildingBlocks/Checker.cs` | BNFコメントのみ、解析処理なし |
-| 2 | **Type Reference** | `Verilog/DataObjects/DataTypes/` | Variable.Create参照コメントのみ |
+flop u_flop (.*);
 
-#### 中優先度
+.*は１wordとして認識されるが、parseできていない
 
-| # | 仕様 | ファイル | 備考 |
-|---|------|---------|------|
-| 3 | **With Dist** | `Verilog/` | `randomize() with constraint` 形式 |
-| 4 | **Interconnect Declaration** | `Verilog/DataObjects/Nets/Net.cs` | BNFに言及あり |
-| 5 | **Default Nettype** | `Verilog/` | コンパイラ指示 `'default_nettype` |
-| 6 | **Assert Failure Action** | `Verilog/` | `$error`, `$fatal` 等 |
+### let constructのparse error (bug 11.12)
 
-#### 低優先度
+```
+let op(x, y, z) = |((x | y) & z);
+```
 
-| # | 仕様 | ファイル | 備考 |
-|---|------|---------|------|
-| 7 | **UDP Primitive Declaration** | `Verilog/` | `primitive`/`endprimitive`/`table`/`endtable` |
-| 8 | **Primitive Table Entry** | `Verilog/` | combinational/sequential テーブルエントリ |
-| 9 | **Charge Strength** | `Verilog/DataObjects/Nets/Net.cs` | `ChargeStrength.ParseCreate` 呼び出しあり |
-| 10 | **Config Declaration** | `Verilog/BuildingBlocks/Root.cs` | `config` キーワード登録済み |
-| 11 | **Cell & Library** | `Verilog/General.cs` | キーワードのみ登録 |
-| 12 | **Tagged Union** | `Verilog/` | `tagged` キーワード登録済み |
-| 13 | **Class Constructor Prototype** | `Verilog/BuildingBlocks/Class.cs` | `extern new` prototype |
 
----
+### typedef union未対応 (bug 11.14)
 
-### 実装状況サマリー
+### string arrayのforeachインデックスparseエラー (bug 12.7.3)
 
-| カテゴリ | 実装済み | 未実装 | 備考 |
-|----------|---------|--------|------|
-| SVA (アサーション) | ✅ 全対応 | - | Sequence, Property, Immediate |
-| Constraint & Coverage | ✅ 全対応 | - | Constraint, Covergroup |
-| Fork/Join Control | ✅ 全対応 | - | Disable Fork, Join variants |
-| Binding & Configuration | ✅ 部分対応 | 2件 | Config, Default Nettype |
-| Data & Variables | ✅ 部分対応 | 1件 | Type Reference |
-| Primitive/Table | ❌ | 2件 | UDP |
-| Net Strength | ⚠️ | 1件 | Charge Strength |
-| 其他 | 36件実装 | 5件 | Checker, Tagged Union等 |
+	string test [4] = '{"111", "222", "333", "444"};
+	initial begin
+		foreach(test[i])
+			$display(i, test[i]);
+	end
+	
+	
+foreach(test[i])の箇所でエラーがでる
+
+### stream concat 未対応(bug 11.4.14)
+
+	c = {>> 8 {a, b}};
+
+
+### case判定の一部未対応 (bug 12.5.4)
+```
+	reg [3:0] a = 0;
+	reg [3:0] b = 0;
+	always @* begin
+		case(a) inside
+			1, 3: b = 1;
+			4'b01??, [5:6]: b = 2;
+			default b = 3;
+		endcase
+	end
+```
+[5:6]の位置でエラーが出る
+
+### パラメタライズドクラス未対応
+```
+	class par_cls #(int a = 25);
+		parameter int b = 23;
+	endclass
+```
+moduleと同じくparameter　IDつきでparseしてparse結果をストックする必要がある。
+
+### named blocks (bug 9.3.5)
+
+```
+		name: begin
+			a = 1;
+			b = a;
+			c = b;
+		end: name
+```
+end:name位置でエラーがでる
+
+### const function (bug 13.4.3)
+
+```
+localparam a = fun(3);
+```
+
+
+### associtave arrayの参照エラー
+
+```
+module top ();
+
+int arr [ int ];
+
+initial begin
+	$display(":assert: (%d == 0)", arr.size);
+	arr[10] = 10;
+	$display(":assert: (%d == 1)", arr.size);
+end
+
+endmodule
+```
+
+arrの位置でnot defined hereエラーがでます。
+
+### dynamic arrayのシステムメソッド未対応
+
+```
+module top ();
+
+bit [7:0] arr[];
+
+initial begin
+    arr = new [ 16 ];
+    $display(":assert: (%d == 16)", arr.size);
+    arr.delete;
+    $display(":assert: (%d == 0)", arr.size);
+end
+
+endmodule
+```
+size,delete箇所でエラー
+
+## clockeing event (bug 14.3)
+
+```
+default clocking @(posedge clk);
+	default input #10ns output #5ns;
+endclocking
+
+```
+posedge 箇所でエラー
+
 
 ---
 
@@ -616,6 +648,192 @@ public override async Task UpdateAsync()
 - `VerilogHeaderInstanceNode` は `PostParseAsync` を呼び出さない（ヘッダーファイルは親ファイルと一体でパースされるため）
 
 ---
+
+## 調査記録: NavigatePanel フォルダ追加问题（Project直下）
+
+### 问题概要
+NavigatePanelNodeを右クリック -> Add -> Folderでフォルダを追加する際、Projectフォルダ直下だとフォルダが生成されない。
+
+### 调用链
+
+```
+menuItem_AddFolder_Click() [NavigatePanelNode.cs:375]
+    ↓
+Directory.CreateDirectory() ← 成功（物理フォルダ作成済み）
+    ↓
+await UpdateFolder(node) [NavigatePanelNode.cs:395]
+    ↓
+folderNode.UpdateAsync() [FolderNode.cs:66]
+    ↓
+Dispatcher.UIThread.Post(() => updateFolder()) [FolderNode.cs:71]
+    ↓
+await folder.UpdateAsync() [FolderNode.cs:101]
+    ↓
+if (!await _fileSemaphore.WaitAsync(0)) return; [Folder.cs:86]
+    ↓
+★ Nodes 更新処理がスキップされる
+```
+
+### 主要因 (調査済み - 修正なし)
+
+| # | 原因 | 場所 | 重要度 |
+|---|------|------|--------|
+| 1 | `_fileSemaphore.WaitAsync(0)` による早期リターン | `Folder.cs:86` | **高** |
+| 2 | `FolderNode.updateFolder()` 内の `folder.UpdateAsync()` 待機失敗 | `FolderNode.cs:101` | **高** |
+| 3 | Project.CreateAsync 時の UpdateAsync との競合 | `Project.cs` | 中 |
+| 4 | semaphore取得失敗時の Nodes更新スキップ | `FolderNode.cs` | 高 |
+
+### 詳細分析
+
+#### 1. semaphore待機時間の競合 (高)
+
+```csharp
+// Folder.cs
+private readonly SemaphoreSlim _fileSemaphore = new SemaphoreSlim(1, 1);
+public override async Task UpdateAsync()
+{
+    // 待ち時間 0 でトライ。取得できなければ即座にリターン
+    if (!await _fileSemaphore.WaitAsync(0))
+    {
+        // すでに実行中のため、何もせずリターン
+        return;
+    }
+    // ... フォルダ内容の更新処理 ...
+}
+```
+
+**問題点**: `WaitAsync(0)` はsemaphoreが取得できない場合、**即座にfalseを返してリターン**する。他の`UpdateAsync()`が実行中の場合、処理がスキップされる。
+
+#### 2. FolderNode.updateFolder() 内の待機 (高)
+
+```csharp
+// FolderNode.cs - updateFolder() 内
+private async Task updateFolder()
+{
+    // ...
+    await folder.UpdateAsync();  // ← ここでsemaphore競合発生
+
+    List<Item> addItems = new List<Item>();
+    foreach (Item item in folder.Items)
+    {
+        addItems.Add(item);  // ← folder.UpdateAsync() が早期リターンした場合、新しいフォルダが.itemsに追加されていない
+    }
+
+    // ... Nodes更新処理 ...
+    // folder.Items に新しいフォルダが含まれていないため、Nodesに追加されない
+}
+```
+
+**問題点**: `folder.UpdateAsync()` が早期リターンした場合、`folder.Items` に新しいフォルダがまだ追加されていない状態のまま、Nodes更新処理が行われる。
+
+#### 3. Project.CreateAsync 時の競合 (中)
+
+```csharp
+// Project.cs
+public static async Task<Project> CreateAsync(string rootPath)
+{
+    Project project = new Project(name, actualPath, "");
+    await initProjectAsync(project, setup);  // ← 内部で project.UpdateAsync() 呼び出し
+    return project;
+}
+
+private static async Task initProjectAsync(Project project, Setup? setup)
+{
+    await project.UpdateAsync();  // ← _fileSemaphore を保持
+    await DataAccess.UpdateFieSystemInfoAsync(project);
+}
+```
+
+**問題点**: Project作成時に`UpdateAsync()`が実行されsemaphoreを保持するため、その間にフォルダを追加すると競合が発生する。
+
+#### 4. Nodes更新スキップの连锁 (高)
+
+```csharp
+// FolderNode.cs - updateFolder()
+private async Task updateFolder()
+{
+    await folder.UpdateAsync();  // 早期リターン
+
+    // folder.Items には新しいフォルダがまだない
+    List<Item> addItems = new List<Item>();
+    foreach (Item item in folder.Items)
+    {
+        addItems.Add(item);  // 新しいフォルダが含まれない
+    }
+
+    // ... removeNodes との差分比較 ...
+    // 新しいフォルダは addItems に含まれないため、Nodes に追加されない
+}
+```
+
+**問題点**: `folder.UpdateAsync()` が完了しないと、新しいフォルダが `folder.Items` に追加されないため、`Nodes` にも追加されない。
+
+### 競合フロー詳細
+
+```
+時刻 T=0ms: Project.CreateAsync() 開始
+    ↓
+時刻 T=1ms: project.UpdateAsync() 開始、_fileSemaphore 取得成功
+    ↓
+時刻 T=50ms: GetFolderContents() 等を実行中（semaphore保持中）
+    ↓
+時刻 T=100ms: ユーザがProjectノードを右クリック -> Add -> Folder
+    ↓
+時刻 T=101ms: Directory.CreateDirectory() 実行、成功
+    ↓
+時刻 T=102ms: await UpdateFolder(node) 呼び出し
+    ↓
+時刻 T=103ms: FolderNode.updateFolder() 開始
+    ↓
+時刻 T=104ms: await folder.UpdateAsync() 呼び出し
+    ↓
+時刻 T=105ms: _fileSemaphore.WaitAsync(0) → false（取得失敗）
+    ↓
+時刻 T=106ms: folder.UpdateAsync() 即座にリターン
+    ↓
+時刻 T=107ms: folder.Items には新しいフォルダがまだない
+    ↓
+時刻 T=108ms: addItems に新しいフォルダが含まれない
+    ↓
+時刻 T=109ms: Nodes 更新処理完了（新しいフォルダなし）
+    ↓
+時刻 T=200ms: project.UpdateAsync() 完了、_fileSemaphore 解放
+```
+
+### 備考
+- 調査のみの実施。修正は未実施。
+- `_fileSemaphore` を共用しているため競合状態が発生
+- `FolderNode.updateFolder()` が `folder.UpdateAsync()` の完了を前提とした処理になっている
+- Project直下でのみ発生する理由は、Project作成時に `UpdateAsync()` が実行中のため
+
+---
+
+## Status
+
+- [x] Read AGENTS.md - Ready to process tasks
+- [x] Agent initialized and ready for next instruction
+
+---
+
+## 修正履歴
+
+### TreeNode.Nodes差し替え時のTreeControl表示消失問題 (修正済み)
+
+**問題**: `TreeNode.Nodes = newNodes` でノードを差し替えた際、TreeControlの表示が全て消え、操作できなくなる。
+
+**原因**: 
+1. `Nodes` setter内で古いノードを即座に`Dispose()`していた
+2. `Dispose()`で`TreeItem = null`に設定されていた
+3. `Reset`通知の処理時に`ownerItem.TreeItem`がnullになっていた
+4. `removeAllTreeItem`が呼ばれず、古いTreeViewItemsが残ったままだった
+5. 新しいノードは`Add`通知でなく`Reset`のみで処理されたため、再作成されなかった
+
+**修正**: `Nodes` setterの処理順序を変更
+1. まず`RemoveFromPropagateTree()`で古いノードの传播链だけを解除（TreeItemは維持）
+2. `OnCollectionChanged()`で`Reset`通知を発生させる
+3. その後、`Dispose()`で古いノードを完全解放
+
+**修正ファイル**: `AjkAvaloniaLibs/Controls/TreeNode.cs`
 
 ## License
 
