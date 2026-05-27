@@ -44,12 +44,12 @@ dotnet build -clp:ErrorsOnly
 
 全体build
 ```
-dotnet build -clp:ErrorsOnly RtlEditor2.sln
+dotnet build RtlEditor2.sln -clp:ErrorsOnly
 ```
 
 pulgin単位のbuild
 ```
-dotnet build -clp:ErrorsOnly CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.sln
+dotnet build CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.sln -clp:ErrorsOnly
 ```
 
 
@@ -817,23 +817,46 @@ private async Task updateFolder()
 
 ## 修正履歴
 
+### TreeControl.addNodeでのNextToノード追加問題 (修正済み)
+
+**問題**: 親ノードがcollapsed状态下で子ノードを追加する際、`GetNextTo`が親を返しても親の`TreeViewItem`が`Items`に存在しないため、子の`TreeViewItem`が作成されない。
+
+**原因**:
+1. `GetNextTo`が親ノードを`nextTo`として返す
+2. 親ノードは閉じられているため`Items`に`TreeViewItem`が存在しない
+3. `parent.TreeItem != null && Items.Contains(parent.TreeItem)`の条件がfalse
+4. `TreeViewItem`が作成されないままリターン
+
+**修正**:
+1. `node.Visible`がfalseでも`TreeViewItem`を作成（将来親が展開されたときのため）
+2. 親チェーンを辿って有効な挿入ポイントを探す
+3. 親チェーンに有効なノードがない場合、ルードノードの位置に挿入
+4. それでも挿入ポイントがない場合は`TreeViewItem`を作成（参照用）
+
+**修正ファイル**:
+- `AjkAvaloniaLibs/Controls/TreeControl.axaml.cs`
+
 ### TreeNode.Nodes差し替え時のTreeControl表示消失問題 (修正済み)
 
 **問題**: `TreeNode.Nodes = newNodes` でノードを差し替えた際、TreeControlの表示が全て消え、操作できなくなる。
 
 **原因**: 
-1. `Nodes` setter内で古いノードを即座に`Dispose()`していた
-2. `Dispose()`で`TreeItem = null`に設定されていた
-3. `Reset`通知の処理時に`ownerItem.TreeItem`がnullになっていた
-4. `removeAllTreeItem`が呼ばれず、古いTreeViewItemsが残ったままだった
+1. `Nodes` setter内で古いノードに対して`RemoveFromPropagateTree()`を呼び出していた
+2. `RemoveFromPropagateTree()`で`PropageteCollectionChange = null`に設定されていた
+3. その後`OnCollectionChanged()`で`Reset`通知を発生させたが、`PropageteCollectionChange`がnullのためTreeControlに通知が届かなかった
+4. TreeControlが`Reset`処理を行わず、古いTreeViewItemsが残ったままだった
 5. 新しいノードは`Add`通知でなく`Reset`のみで処理されたため、再作成されなかった
 
-**修正**: `Nodes` setterの処理順序を変更
-1. まず`RemoveFromPropagateTree()`で古いノードの传播链だけを解除（TreeItemは維持）
-2. `OnCollectionChanged()`で`Reset`通知を発生させる
-3. その後、`Dispose()`で古いノードを完全解放
+**修正**: 
+1. `TreeNode.Nodes` setterの処理順序を変更
+   - まず新しいコレクションを設定し、`OnCollectionChanged()`で`Reset`通知を発生させる
+   - その後、`RemoveFromPropagateTree()`と`Dispose()`で古いノードを解放
+2. `TreeControl.PropageteCollectionChange()` の `Reset` 処理を強化
+   - 古いノードの削除後、新しいノードの`addNode()`を呼び出す
 
-**修正ファイル**: `AjkAvaloniaLibs/Controls/TreeNode.cs`
+**修正ファイル**: 
+- `AjkAvaloniaLibs/Controls/TreeNode.cs`
+- `AjkAvaloniaLibs/Controls/TreeControl.axaml.cs`
 
 ## License
 
