@@ -858,6 +858,23 @@ private async Task updateFolder()
 - `AjkAvaloniaLibs/Controls/TreeNode.cs`
 - `AjkAvaloniaLibs/Controls/TreeControl.axaml.cs`
 
+## TreeControl Nodes直下追加問題 (修正済み)
+
+**問題**: TreeControlのNodes直下にノードを追加した場合に、ownerNodeがTreeControl自身であるがゆえにノード追加処理が実行されていなかった。
+
+**原因**:
+1. `PropageteCollectionChange`メソッドで、senderがTreeControlの場合のAdd/Remove/Replace/Moveアクションが処理されていなかった
+2. `AddChildItemsRecursive`と`FindInsertIndex`メソッドがTreeNode型のパラメータのみ対応していた
+
+**修正**:
+1. `PropageteCollectionChange`にTreeControlがsenderの場合の処理を追加
+2. `AddChildItemsRecursive`と`FindInsertIndex`にTreeControl型をオーバーロードとして追加
+
+**修正ファイル**:
+- `AjkAvaloniaLibs/Controls/TreeControl.axaml.cs`
+
+---
+
 ## License
 
 MIT License
