@@ -812,6 +812,18 @@ private async Task updateFolder()
 
 - [x] Read AGENTS.md - Ready to process tasks
 - [x] Agent initialized and ready for next instruction
+- [x] AGENTS.md loaded and understood
+- [x] AGENTS.md read and processed
+- [ ] Awaiting user instructions...
+
+---
+
+## Latest Agent Session
+
+- **Started**: 2025-01-XX - AGENTS.md processed, awaiting user task
+- **Current focus**: Ready to receive instructions
+- **Project**: RtlEditor2 - Avalonia UI based RTL IDE
+- **Notable topics**: UI thread lock issues, Verilog/SystemVerilog parsing
 
 ---
 
@@ -872,6 +884,418 @@ private async Task updateFolder()
 
 **修正ファイル**:
 - `AjkAvaloniaLibs/Controls/TreeControl.axaml.cs`
+
+---
+
+## 調査記録: VerilogModuleInstanceノードのちらつき問題
+
+### 問題概要
+VerilogFile-ModuleInstance-ModuleInstanceの孫ノードがTreeControl上で見えたり見えたりするチカチカ現象が発生。
+
+### 呼び出しフロー分析
+
+```
+ノード選択 [UI Thread]
+    ↓
+OnSelected() [VerilogModuleInstanceNode.cs:77]
+    ├→ SetTextFileAsync()
+    ├→ UpdateVisual() ←─────────────────────────┐
+    │     └→ UpdateSubNodes()                  │
+    │           └→ Nodes = nodes（子の更新）   │
+    │                                         │
+    └→ PostParseAsync() [Background Task] ────┘
+              ↓
+        ParseHierarchy.runParallel()
+              ↓
+        parseTextFile() [Worker]
+              ↓
+        await verilogFile.AcceptParsedDocumentAsync(parser)
+                    ↓
+              VerilogModuleInstance.AcceptParsedDocumentAsync()
+                    ├→ RegisterInstanceParsedDocument()
+                    ├→ acceptParameterizedParsedDocumentAsync()
+                    │     ├→ VerilogFile.updateIncludeFilesAsync()
+                    │     └→ await UpdateAsync() ←─────────────┐
+                    │           └→ Updater.UpdateAsync()       │
+                    │                 └→ Items 更新（原子操作）│
+                    │                                         │
+                    └→ NavigatePanelNode.UpdateVisual() ←─────┘
+                          └→ UpdateSubNodes() ← 再描画
+```
+
+### 詳細分析
+
+#### 1. Updater.UpdateAsync の Items 更新処理
+
+```csharp
+// Updater.cs:71-98
+await _semaphore.WaitAsync();
+try
+{
+    var oldItems = new List<CodeEditor2.Data.Item>();
+    foreach (var oldItem in item.Items)
+    {
+        oldItems.Add(oldItem);
+    }
+    item.Items.Clear();  // ← ここで子のItemsを一括クリア
+    foreach (CodeEditor2.Data.Item i in newSubItems.Values)
+    {
+        item.Items.AddOrUpdate(i.Name, i);  // ← 新しいItemsを追加
+    }
+    // 古いItemsをDispose
+    foreach (var oldItem in oldItems)
+    {
+        oldItem.Dispose();
+    }
+}
+finally
+{
+    _semaphore.Release();
+}
+```
+
+**問題点**: Items のクリアと新しい Items の追加が atomic だが、その間に他のスレッドが Items を読み込む場合がある。
+
+#### 2. Item.NavigatePanelNode 生成の Lazy 評価
+
+```csharp
+// Item.cs:322-335
+public virtual NavigatePanel.NavigatePanelNode NavigatePanelNode
+{
+    get
+    {
+        if (node == null)
+        {
+            Dispatcher.UIThread.Invoke(() =>
+            {
+                if (node == null)
+                {
+                    node = CreateNode();
+                }
+            });
+        }
+        return node;
+    }
+}
+```
+
+**問題点**: NavigatePanelNode は lazy 評価で生成される。Items が更新された直後に `UpdateSubNodes()` が `item.NavigatePanelNode` を参照すると、まだ node が null の場合がある。
+
+#### 3. UpdateSubNodes の Nodes 設定
+
+```csharp
+// VerilogModuleInstanceNode.cs:123-141
+public void UpdateSubNodes()
+{
+    List<CodeEditor2.NavigatePanel.NavigatePanelNode> newNodes = new List<...>();
+    
+    if (VerilogFile != null)
+    {
+        foreach (CodeEditor2.Data.Item item in VerilogModuleInstance.Items)
+        {
+            newNodes.Add(item.NavigatePanelNode);  // ← lazy 生成
+        }
+    }
+    
+    lock (Nodes)
+    {
+        Nodes = nodes;  // ← ここでNodesを入れ替え
+    }
+}
+```
+
+**問題点**: 
+- `item.NavigatePanelNode` が null の場合がある
+- `Nodes = nodes` で CollectionChanged イベントが発生
+- TreeControl の updateAllTreeViewItems が呼ばれる
+
+#### 4. TreeControl.updateAllTreeViewItems の問題
+
+```csharp
+// TreeControl.axaml.cs:234-310
+private void updateAllTreeViewItems()
+{
+    var existingItemsMap = new Dictionary<object, TreeControlViewItem>();
+    foreach (var oldItem in Items)
+    {
+        if (oldItem.treeNode != null)
+        {
+            existingItemsMap[oldItem.treeNode] = oldItem;
+            oldItem.treeNode.Visible = false;  // ← 全ノードを一旦非表示に
+        }
+        else
+        {
+            existingItemsMap[this] = oldItem;
+        }
+    }
+
+    // 新しいリストを構築
+    List<TreeControlViewItem> expectedItems = new List<...>();
+    updateSubTreeViewItemsIncremental(expectedItems, this, existingItemsMap);
+
+    // 差分更新
+    // ...
+}
+```
+
+**問題点**: 
+- `oldItem.treeNode.Visible = false` で全ノードを一旦非表示に
+- その後 `updateSubTreeViewItemsIncremental` で新しいリストを構築
+- **この間に UI が描画更新された場合、孫ノードがまだ Visible=false の状態で見える**
+
+#### 5. 非同期処理の競合状態
+
+```
+時刻 T=0: PostParseAsync() が Background Task を開始
+    ↓
+時刻 T=10: parseTextFile() がパースを完了、AcceptParsedDocumentAsync を呼び出し
+    ↓
+時刻 T=15: VerilogModuleInstance.UpdateAsync() が semaphore を待つ
+    ↓
+時刻 T=20: Updater.UpdateAsync() が Items を更新（Clear → Add）
+    ↓
+時刻 T=25: NavigatePanelNode.UpdateVisual() → UpdateSubNodes()
+    ↓
+時刻 T=30: UpdateSubNodes() が item.NavigatePanelNode を参照
+    │       ← このとき、まだ node == null の可能性がある
+    ↓
+時刻 T=35: TreeControl.updateAllTreeViewItems() が 全ノードの Visible=false を設定
+    ↓
+時刻 T=40: updateSubTreeViewItemsIncremental() が新しいリストを構築
+    ↓
+時刻 T=45: UI Thread が 描画を更新 ← Visible=false のまま描画される可能性
+```
+
+### 前提
+- Data (Item, Items, etc.) はスレッドセーフ
+- NavigatePanel は UI スレッドからのみアクセス
+
+### 問題点の再評価（前提変更後）
+
+| # | 原因 | 場所 | 重要度 |
+|---|------|------|--------|
+| 1 | **TreeControl.updateAllTreeViewItems の Visible 制御と描画タイミング** | `TreeControl.axaml.cs:261` | **高** |
+| 2 | **UpdateSubNodes での Nodes 設定と CollectionChanged の競合** | `VerilogModuleInstanceNode.cs:130-141` | **高** |
+| 3 | **Nodes = nodes 代入による CollectionChanged と updateAllTreeViewItems の再帰的呼び出し** | `VerilogModuleInstanceNode.cs:140` | 高 |
+| 4 | **instanceKey による Repeated AcceptParsedDocumentAsync** | `VerilogModuleInstance.cs:261-264` | 中 |
+
+### 詳細分析
+
+#### 1. UpdateSubNodes と TreeControl の updateAllTreeViewItems の競合
+
+```csharp
+// VerilogModuleInstanceNode.cs - UpdateSubNodes()
+public void UpdateSubNodes()
+{
+    // ... newNodes を構築 ...
+    lock (Nodes)
+    {
+        // ↓ Nodes に新しいリストを代入 → CollectionChanged イベント発生
+        Nodes = nodes;  // ← ここで TreeControl.Nodes_CollectionChanged() が呼ばれる
+    }
+}
+
+// TreeControl.axaml.cs - Nodes_CollectionChanged()
+internal void Nodes_CollectionChanged(object? sender, ...)
+{
+    updateAllTreeViewItems();  // ← これが実行される
+    updateVisual();
+}
+
+// TreeControl.axaml.cs - updateAllTreeViewItems()
+private void updateAllTreeViewItems()
+{
+    // 既存ノードの Visible を false に設定
+    foreach (var oldItem in Items)
+    {
+        if (oldItem.treeNode != null)
+        {
+            existingItemsMap[oldItem.treeNode] = oldItem;
+            oldItem.treeNode.Visible = false;  // ← 全ノードを一時的に非表示
+        }
+    }
+    // ... 新しいリストを構築 ...
+    updateSubTreeViewItemsIncremental(expectedItems, this, existingItemsMap);
+    // ... 差分更新 ...
+}
+```
+
+**問題**: `Nodes = nodes` で CollectionChanged が発生し、`updateAllTreeViewItems()` が呼ばれる。Visible=false の設定後、新しい TreeControlViewItem が作成されるまでの間に UI 描画更新が入ると、ノードが見えない状態で描画される。
+
+#### 2. ParseHierarchy.runParallel の並列パースとの競合
+
+```
+時刻 T=0: PostParseAsync() が Background Task を開始
+    ↓
+時刻 T=10: Worker A がパース完了、AcceptParsedDocumentAsync を呼び出し
+    ↓
+時刻 T=15: Worker A が UpdateAsync() → UpdateSubNodes() を実行
+    ↓
+時刻 T=20: TreeControl.Nodes_CollectionChanged() → updateAllTreeViewItems()
+    ↓
+時刻 T=25: oldItem.treeNode.Visible = false (全ノード非表示)
+    ↓
+時刻 T=30: UI Thread が描画更新 ← Visible=false のまま描画
+    ↓
+時刻 T=35: updateSubTreeViewItemsIncremental() が新しいリストを構築
+    ↓
+時刻 T=40: 同時に Worker B もパース完了、別の UpdateSubNodes() を呼び出し
+    ↓
+時刻 T=45: CollectionChanged が競合
+```
+
+#### 3. instanceKey による Repeated AcceptParsedDocumentAsync
+
+```csharp
+// VerilogModuleInstance.cs
+if (source.ParsedDocument?.Root?.BuildingBlocks.Count == 1)
+{
+    await source.AcceptParsedDocumentAsync(parser);  // ← ソースファイルにも伝播
+}
+```
+
+**問題**: 孫ノードがパース完了時に、ソースファイル（VerilogFile）にも AcceptParsedDocumentAsync を呼び出す。これにより、ソースファイルの Items も更新され、さらに孫ノードの兄弟も再描画される可能性がある。
+
+### 備考
+- 調査のみの実施。修正は未実施。
+- Data はスレッドセーフだが、NavigatePanel は UI スレッドからのみアクセスという前提。
+- `TreeControl.updateAllTreeViewItems()` での `Visible = false` の設定と、UI 描画更新のタイミングが競合している可能性がある。
+- 特に `ParseHierarchy.runParallel()` が複数のワーカーで並列実行されている場合、あるワーカーが完了して `UpdateSubNodes()` を呼び出した時に、別のワーカーがまだパース中の状態だと Items が不安定になり、ちらつきが発生すると推定される。
+
+---
+
+## 調査記録: ノードちらつき問題 - 詳細分析（追加）
+
+### 分析背景
+`OnSelected()`での`UpdateVisual()`呼び出しと、`ParseHierarchy`のバックグラウンドパース完了後の`AcceptParsedDocumentAsync()`内での`UpdateVisual()`呼び出しが競合している可能性を調査。
+
+### 呼び出しフローの詳細
+
+#### パス1: OnSelected()からの呼び出し（UI Thread）
+```
+ノード選択 [UI Thread]
+    ↓
+OnSelected() [VerilogModuleInstanceNode.cs:77]
+    ├→ SetTextFileAsync()
+    ├→ UpdateVisual() [UI Thread] ←──────────────────┐
+    │     └→ UpdateSubNodes()                       │
+    │           └→ Nodes = nodes（子の更新）         │
+    │                                             │
+    └→ PostParseAsync() [Background Task] ──────────┘
+```
+
+#### パス2: AcceptParsedDocumentAsync()からの呼び出し（Background → UI Marshal）
+```
+ParseHierarchy.runParallel() [Background Task]
+    ↓
+parseTextFile() [Worker]
+    ↓
+await verilogFile.AcceptParsedDocumentAsync(parser)
+    ↓
+VerilogModuleInstance.AcceptParsedDocumentAsync()
+    ├→ await acceptParameterizedParsedDocumentAsync()
+    │     ├→ await VerilogFile.updateIncludeFilesAsync()
+    │     └→ await UpdateAsync()
+    │           └→ Updater.UpdateAsync() → Items更新 (semaphore保護下)
+    │
+    └→ NavigatePanelNode.UpdateVisual() [Background → UI Thread Marshal]
+          └→ UpdateSubNodes() ← UI Thread
+                └→ Nodes = nodes
+```
+
+### 根本原因
+
+#### 1. Items更新とNavigatePanelNode生成のRace Condition（最重要）
+
+```
+時刻 T=0: Worker A - ParentのAcceptParsedDocumentAsync() 開始
+    ↓
+時刻 T=10: Parent.UpdateAsync() → Items.Clear() → Items.Add(child_B)
+    ↓
+時刻 T=20: Parent.NavigatePanelNode.UpdateVisual() [Marshal後]
+    ↓
+時刻 T=25: UpdateSubNodes()内で item.NavigatePanelNode アクセス
+    │       → child_B.NavigatePanelNode が lazy 生成される
+    │       → child_B.Items はまだ古い状態（GrandChild_C なし）
+    ↓
+時刻 T=30: Worker B - child_B のparse完了
+    ↓
+時刻 T=35: child_B.AcceptParsedDocumentAsync()
+    ↓
+時刻 T=40: child_B.UpdateAsync() → Items.Add(GrandChild_C)
+    ↓
+時刻 T=45: child_B.NavigatePanelNode.UpdateVisual()
+    ↓
+時刻 T=50: UpdateSubNodes() → GrandChild_C が突然 Nodes に追加される
+    ↓
+★ ちらつき発生（孫ノードが突然現れる）
+```
+
+**問題の本質**: `Updater.UpdateAsync()`がItemsを更新した後、`NavigatePanelNode.UpdateVisual()`が実行されるまでの間に、子のItemsがまだ更新されていない可能性がある。
+
+#### 2. UpdateSubNodes()でのNodes代入がバックグラウンドスレッドから行われる可能性
+
+`VerilogModuleInstanceNode.UpdateSubNodes()`:
+```csharp
+public void UpdateSubNodes()
+{
+    // ★ UIスレッドチェックがない！
+    // foreachでItemsを走査
+    foreach (CodeEditor2.Data.Item item in VerilogModuleInstance.Items)
+    {
+        newNodes.Add(item.NavigatePanelNode);  // ← lazy生成
+    }
+    // Nodes代入 → CollectionChanged発生
+    Nodes = nodes;
+}
+```
+
+`UpdateVisual()`ではmarshalされるが、`UpdateSubNodes()`自体は直接UI Threadから呼ばれる場合はチェックされない。
+
+#### 3. CollectionChangedの連鎖
+
+```csharp
+Nodes = nodes;  // CollectionChanged発生
+    ↓
+TreeControl.Nodes_CollectionChanged()
+    ↓
+updateAllTreeViewItems()
+    ↓
+oldItem.treeNode.Visible = false  // 全ノードを一時非表示
+    ↓
+updateSubTreeViewItemsIncremental()
+    ↓
+新しいTreeControlViewItemを作成
+```
+
+この処理中に別の`CollectionChanged`が発生すると、再帰的な処理になる。
+
+### 問題となるコード箇所
+
+| # | 場所 | 問題 |
+|---|------|------|
+| 1 | `VerilogModuleInstanceNode.UpdateSubNodes()` | UIスレッドチェックがない |
+| 2 | `VerilogModuleInstance.AcceptParsedDocumentAsync()` | Items更新後に直接UpdateVisual()を呼んでいる |
+| 3 | `Updater.UpdateAsync()` | ItemsのAtomic更新，但しNavigatePanelNode生成とは別トランザクション |
+| 4 | `Item.NavigatePanelNode` (lazy生成) | Items更新→NavigatePanelNode生成の間隔で他Workerが参照する |
+
+### 仮説: ちらつきの真の原因
+
+**孫ノードが「突然現れる」原因**:
+
+1. ParentのItemsが更新され、`UpdateSubNodes()`が呼ばれる
+2. `UpdateSubNodes()`内で`child_B.NavigatePanelNode`がlazy生成される
+3. **この時`child_B.Items`はまだ古い**（GrandChild_Cがいない）
+4. `child_B`用の`TreeControlViewItem`が作成されるが、そのChildrenは空
+5. その後`child_B`のパースが完了し、`GrandChild_C`が`child_B.Items`に追加される
+6. `child_B.NavigatePanelNode.UpdateVisual()`が呼ばれ、`UpdateSubNodes()`で`GrandChild_C`がNodesに追加される
+7. **孫ノードが突然TreeControlに中出现** → ちらつき
+
+### 備考
+- 調査のみの実施、修正は未実施
+- Data層はスレッドセーフ、NavigatePanelはUIスレッドからのみアクセスという前提
+- しかし`UpdateSubNodes()`は`UpdateVisual()`経由でmarshalされる，但其の前半（Items走査部分）はmarshal前に実行される可能性
+- `ParseHierarchy.runParallel()`のparallel workersが同時に`UpdateSubNodes()`を呼ぶ可能性がある
 
 ---
 
