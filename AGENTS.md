@@ -183,108 +183,114 @@ posedge 箇所でエラー
 ## 調査記録: UIスレッドロック問題
 
 ### 問題概要
-SystemVerilogコードを大量入力時に、パース中にUIスレッドがロックされ редактирование が長時間できなくなる。
+パース中にBackground Task間のsemaphore競合により、パース処理全体が遅延する。
+**※注意**: UIスレッド自体はブロックされません。問題は処理遅延です。
 
-### 主要因 (調査済み - 修正なし)
+### 主要因 (調査済み: 2025-02-12 更新)
 
-| # | 原因 | 場所 | 重要度 |
-|---|------|------|--------|
-| 1 | `Updater.UpdateAsync`がUIスレッド前提の設計 | `VerilogCommon/Updater.cs:14` | **最優先** |
-| 2 | `UpdateAsync`での`InvokeAsync`使用 (同期的marshal) | `VerilogFile.cs:489`, `VerilogModuleInstance.cs:511` | 高 |
-| 3 | `AcceptParsedDocumentAsync`呼び出しチェーン | `ParseHierarchy.cs`, `VerilogFile.cs` | 高 |
-| 4 | 編集時パースにデバウンスなし | `CodeView.axaml.cs:269` | 中 |
-| 5 | Includeファイルの再帰的処理でのmarshal | `VerilogFile.cs:208` | 中 |
+| # | 原因 | 場所 | 重要度 | 備考 |
+|---|------|------|--------|------|
+| 1 | **Background Task間のsemaphore競合** | `Updater.cs:71-98` | **高** | 複数のワーカーがsemaphoreを奪い合う |
+| 2 | `AcceptParsedDocumentAsync`内での`UpdateAsync`呼び出しチェーン | `VerilogFile.cs:180`, `VerilogModuleInstance.cs` | 高 | パース完了ごとに呼び出し |
+| 3 | `VerilogHeaderInstance.UpdateAsync`での親ファイルへのUpdate伝搬 | `VerilogHeaderInstance.cs:336-368` | 高 | 不要な処理が発生 |
+| 4 | Includeファイルの再帰的処理 | `VerilogFile.updateIncludeFilesAsync` | 中 | 深くネストすると遅延増大 |
 
-### 詳細
+### 呼び出しフロー (現在)
 
-#### 呼び出しフロー
 ```
-編集操作 → CodeViewParser.EntryParse() [UI]
+ParseHierarchy.runParallel() [Background Task - 複数ワーカー並列実行]
     ↓
-ParseWorker.Parse() [Task.Run - Background]
+各Worker: parseTextFile() → parser.ParseAsync()
     ↓
-AcceptParsedDocumentAsync() [Background]
-    ↓
-verilogFile.UpdateAsync() [Background → UI marshal via InvokeAsync] ← ブロック!
-    ↓
-Updater.UpdateAsync() [UI Thread]
+await verilogFile.AcceptParsedDocumentAsync(parser) [Background]
+    ├→ ParsedDocument設定
+    ├→ await VerilogFile.updateIncludeFilesAsync() [再帰処理]
+    └→ await UpdateAsync()
+              ↓
+        VerilogFile.UpdateAsync()
+              ├→ await base.UpdateAsync()
+              └→ await VerilogCommon.Updater.UpdateAsync()
+                    ↓
+                    // UI thread check → false (Background Taskなので)
+                    // ↓ そのまま処理続行
+                    await _semaphore.WaitAsync() ←── ★ Worker Aがsemaphore保持中
+                          ↓
+                          // → Worker B, C, D...がここでブロック!
+                    Items更新処理
 ```
 
-#### 根本原因
-1. **`Dispatcher.UIThread.InvokeAsync`** の使用は**同期的marshal**であり、呼び出し元をブロックする
-2. パース完了後の後処理が背景スレッドで実行される
-3. デバウンス機構の不足
+### semaphore競合の具体例
+
+```
+Worker A: UpdateAsync() → semaphore取得成功 → Items更新中...
+Worker B: UpdateAsync() → semaphore.WaitAsync()で待機... ★ ブロック
+Worker C: UpdateAsync() → semaphore.WaitAsync()で待機... ★ ブロック
+Worker D: UpdateAsync() → semaphore.WaitAsync()で待機... ★ ブロック
+
+Worker A: Items更新完了 → semaphore解放
+Worker B: semaphore取得成功 → Items更新開始...
+(Worker C, Dは引き続き待機)
+```
+
+### 既知の修正済み箇所 ✅
+
+| 箇所 | 修正内容 |
+|------|----------|
+| `Updater.UpdateAsync` | UI thread check追加 (line 22-30): UIスレッドから呼ばれたらTask.Runにディスパッチ |
+| `TextFile.UpdateAsync` | `InvokeAsync()` → `Post()` (line 507) |
 
 ### 備考
-- 調査のみの実施。修正は未実施。
+- **UIスレッドはブロックされない** - 既に`Updater.UpdateAsync`で対策済み
+- 問題は **Background Task間のsemaphore競合** による処理遅延
+- `ParseHierarchy.runParallel()` は `Environment.ProcessorCount` 個のワーカーを並列実行
+- ワーカー数が多いほどsemaphore競合が激しくなる
 
 ---
 
 ---
 
-## 調査記録: includeファイル編集時のUIスレッドロック問題
+## 調査記録: includeファイル編集時の処理遅延問題
 
 ### 問題概要
-includeファイルを編集したときに、UIスレッドがパース終わるまでロックされている。
+includeファイルを編集したときに、パース処理全体が遅延する。
+**※注意**: UIスレッドはブロックされません。問題は処理遅延です。
 
 ### 呼び出しフロー
 
 ```
-編集操作 → CodeViewParser.EntryParse() [Background Task]
+編集操作 → ParseHierarchy.PostParseAsync() [UI Thread - Post only]
     ↓
-ParseWorker.Parse() → runSingleParse()
+ProcessQueueAsync() → ParseInternalAsync() → runParallel() [Background Task]
+    ↓
+Worker: parseTextFile() → parser.ParseAsync()
     ↓
 VerilogHeaderInstance.AcceptParsedDocumentAsync()
-    ├→ textFile.CodeDocument?.CopyColorMarkFrom() [問題なし]
-    ├→ Controller.CodeEditor.PostRefresh() [Postのみ]
-    └→ await UpdateAsync() ←─────────────────── (A)
+    ├→ textFile.CodeDocument?.CopyColorMarkFrom()
+    ├→ Controller.CodeEditor.PostRefresh()
+    └→ await UpdateAsync()
               ↓
         VerilogHeaderInstance.UpdateAsync()
-              ↓
-        await base.UpdateAsync() [TextFile.UpdateAsync]
-              │  ※UIスレッドチェックなし (Background Task実行中)
-              │  ※内部的にもう一つのawaitパスなし
-              ↓
-        // 親ファイル階層を辿る
-        if (parentItem is VerilogFile)
-        {
-            await VerilogCommon.Updater.UpdateAsync(vFile, ...) ←── (B)
-                  ↓
-            VerilogFile.UpdateAsync()
-                  ├→ await base.UpdateAsync() [TextFile.UpdateAsync]
-                  │     ※ここでUIスレッドチェック発生
-                  │     → Dispatcher.UIThread.InvokeAsync() 同期marshal ← ブロック!
-                  │
-                  ├→ await VerilogCommon.Updater.UpdateAsync()
-                  │
-                  └→ VerilogFile.updateIncludeFilesAsync()
-                        ├→ 各includeのCodeDocument更新
-                        └→ await updateIncludeFilesAsync(nested Include)
-                              └→ 各nested includeでもUpdateAsync() call
-
-    // その後Background Taskが継続
-    VerilogFile.AcceptParsedDocumentAsync()
-        ├→ ParsedDocument設定
-        ├→ textFile.CodeDocument?.CopyColorMarkFrom() [問題なし]
-        ├→ Controller.CodeEditor.PostRefresh() [Postのみ]
-        ├→ await updateIncludeFilesAsync()
-        └→ await UpdateAsync() ←─────────────────── (C)
-              ↓
-          TextFile.UpdateAsync() [再度呼び出し]
-              // UIスレッドで実行already (InvokeAsync完了済み)
-              // → そのままbase.UpdateAsync()続行
-              └→ NavigatePanelNode.UpdateVisual()
-                  └→ Controller.CodeEditor.PostRefresh()
+              ├→ await base.UpdateAsync() [TextFile.UpdateAsync]
+              │     └→ Post() で UI 更新をスケジュール ★ 修正済み
+              │
+              └→ // 親ファイル階層を辿る
+              if (parentItem is VerilogFile)
+              {
+                  await VerilogCommon.Updater.UpdateAsync(vFile, ...)
+                        ↓
+                        // Background Taskから呼ばれるのでsemaphore競合発生
+                        await _semaphore.WaitAsync() ★ ブロック!
+                        Items更新
+              }
 ```
 
-### 主要因
+### 主要因 (2025-02-12 更新)
 
-| # | 原因 | 場所 | 重要度 |
-|---|------|------|--------|
-| 1 | **VerilogHeaderInstance.UpdateAsyncでの親ファイルUpdate** | `VerilogHeaderInstance.cs:363-366` | **高** |
-| 2 | **TextFile.UpdateAsyncでの同期marshal** | `TextFile.cs:517-520` | **高** |
-| 3 | **UpdateAsyncの再帰呼び出しチェーン** | `VerilogFile.updateIncludeFilesAsync` | 中 |
-| 4 | **Includeファイルのネスト処理** | 同上、再帰呼び出し | 中 |
+| # | 原因 | 場所 | 重要度 | 備考 |
+|---|------|------|--------|------|
+| 1 | **Background Task間のsemaphore競合** | `Updater.cs:71-98` | **高** | 複数のワーカーがsemaphoreを奪い合う |
+| 2 | **VerilogHeaderInstance.UpdateAsyncでの親ファイルUpdate** | `VerilogHeaderInstance.cs:336-368` | 高 | 不要な処理も実行 |
+| 3 | **Includeファイルのネスト処理** | `VerilogFile.updateIncludeFilesAsync` | 中 | 再帰呼び出しで処理増大 |
 
 ### 詳細分析
 
@@ -370,10 +376,11 @@ internal static async Task updateIncludeFilesAsync(...)
 
 ---
 
-## 調査記録: NavigatePanel ノードクリック時のUIスレッドロック
+## 調査記録: NavigatePanel ノードクリック時の処理遅延問題
 
 ### 問題概要
-NavigatePanel でノードをクリックした場合に、大規模プロジェクトや深い階層構造を持つファイルで UI スレッドが長時間ロックされる場合がある。
+NavigatePanel でノードをクリックした場合に、大規模プロジェクトや深い階層構造を持つファイルでパース処理全体が遅延する。
+**※注意**: UIスレッドはブロックされません。問題は処理遅延です。
 
 ### 呼び出しフロー (VerilogFileNode/VerilogModuleInstanceNode 共通)
 
@@ -409,11 +416,11 @@ VerilogFileNode.OnSelected() / VerilogModuleInstanceNode.OnSelected() [UI Thread
               │           └→ 各includeの CodeDocument.CopyColorMarkFrom()
               │           └→ 再帰的に nested include 処理
               │
-              ├→ await UpdateAsync() [Background → UI marshal via InvokeAsync] ★ 主要因
+              ├→ await UpdateAsync() [Background Task]
+              │     └→ await Updater.UpdateAsync()
+              │           └→ await _semaphore.WaitAsync() ★ ここでブロック!
               │     └→ VerilogCommon.Updater.UpdateAsync()
-              │           └→ item.Items のアトミック更新 (semaphore使用)
-              │           └→ 各子ノードの NavigatePanelNode.UpdateVisual()
-              │                 └→ ノード数が多いとUI更新が連続発生
+              │           └→ item.Items のアトミック更新
               │
               └→ NavigatePanelNode.UpdateVisual() [Instanceのみ]
                     └→ UpdateSubNodes()
@@ -459,15 +466,14 @@ public override async void OnSelected()
 }
 ```
 
-### 主要因
+### 主要因 (2025-02-12 更新)
 
-| # | 原因 | 場所 | 重要度 |
-|---|------|------|--------|
-| 1 | **AcceptParsedDocumentAsync内でのUpdateAsync呼び出し** | `VerilogFile.cs:208`, `VerilogModuleInstance.cs` | **高** |
-| 2 | **ParseHierarchy キュー処理でのAcceptParsedDocumentAsync呼び出し** | `ParseHierarchy.cs:289`, `ParseHierarchy.cs:351` | **高** |
-| 3 | **UpdateVisualの呼び出しチェーン** | 各NodeクラスのUpdateSubNodes() | 中 |
-| 4 | **UpdateAsync内のInvokeAsync marshal** | `TextFile.UpdateAsync()`, `Updater.UpdateAsync()` | 高 |
-| 5 | **InstanceTextFileでのソースファイルへのAcceptParsedDocumentAsync伝搬** | `VerilogModuleInstance.cs:261-264` | 高 |
+| # | 原因 | 場所 | 重要度 | 備考 |
+|---|------|------|--------|------|
+| 1 | **AcceptParsedDocumentAsync内でのUpdateAsync呼び出し** | `VerilogFile.cs:180`, `VerilogModuleInstance.cs` | **高** | 修正が必要 |
+| 2 | **Updater.UpdateAsync内のsemaphore待機によるブロック** | `Updater.cs:71-98` | 高 | semaphore競合がBackground Taskをブロック |
+| 3 | **UpdateVisualの呼び出しチェーン** | 各NodeクラスのUpdateSubNodes() | 中 | 深くネストすると遅延増大 |
+| 4 | **InstanceTextFileでのソースファイルへのAcceptParsedDocumentAsync伝搬** | `VerilogModuleInstance.cs:260-264` | 中 | 単一モジュールファイルのみ |
 
 ### 詳細分析
 
@@ -819,18 +825,28 @@ private async Task updateFolder()
 - [x] AGENTS.md read and processed
 - [x] Awaiting user instructions...
 
+### Current Session Info
+- **Session Started**: 2025-02-12
+- **Project**: RtlEditor2 (Avalonia UI RTL IDE)
+- **Language**: C# (.NET 8), Verilog/SystemVerilog parser
+- **Known Issues**: UI thread locks, Parse errors, TreeControl issues
+- **Build Command**: `dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly`
+
 ---
 
 ## Latest Agent Session
-- **Last Updated**: 2025-02-12 - AGENTS.md read and processed
+- **Last Updated**: 2025-02-12 - UIスレッドロック問題の情報更新完了
 - **Current focus**: Ready to receive instructions
 - **Project**: RtlEditor2 - Avalonia UI based RTL IDE
 - **Notable topics**: UI thread lock issues, Verilog/SystemVerilog parsing, TreeControl, NavigatePanel
+- **Updated**: 2025-02-12 - UIスレッドロック問題の情報更新完了
 
-- **Started**: 2025-02-12 - AGENTS.md processed, awaiting user task
-- **Current focus**: Ready to receive instructions
-- **Project**: RtlEditor2 - Avalonia UI based RTL IDE
-- **Notable topics**: UI thread lock issues, Verilog/SystemVerilog parsing
+**UIスレッドロック問題 確認結果 (2025-02-12)**:
+- `TextFile.UpdateAsync`: `InvokeAsync()` → `Post()` に変更済み ✅
+- `Updater.UpdateAsync`: UI thread check追加済み (Task.Runにディスパッチ) ✅
+- `VerilogHeaderInstance.UpdateAsync`: 親ファイルへのUpdate伝搬がまだ存在する ❌
+- `AcceptParsedDocumentAsync`: `UpdateAsync`呼び出しチェーンがまだ存在する ❌
+- `semaphore競合`: Background Task間の競合がまだ発生する ❌
 
 ---
 
@@ -876,6 +892,22 @@ private async Task updateFolder()
 **修正ファイル**: 
 - `AjkAvaloniaLibs/Controls/TreeNode.cs`
 - `AjkAvaloniaLibs/Controls/TreeControl.axaml.cs`
+
+## ChatControl 日本語フォント問題 (修正済み: 2025-01-09)
+
+**問題**: ChatControlで日本語表示おかしくなる（中国フォントがデフォルトになっている）
+
+**原因**: フォント指定がないため、システムデフォルト（中国フォント）が使用される
+
+**修正**:
+1. `ChatControl.axaml` に `FontFamily="Yu Gothic UI, Meiryo, MS Gothic, sans-serif"` を追加
+2. `InputItem.cs` の `TextBox` に同上 FontFamily を設定
+3. `LiveMarkdownControl.axaml` に同上 FontFamily を設定
+
+**修正ファイル**:
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/ChatControl.axaml`
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/InputItem.cs`
+- `AjkAvaloniaLibs/AjkAvaloniaLibs/Controls/LiveMarkdownControl.axaml`
 
 ## TreeControl Nodes直下追加問題 (修正済み)
 
