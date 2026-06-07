@@ -44,12 +44,15 @@ dotnet build -clp:ErrorsOnly
 
 全体build
 ```
-dotnet build RtlEditor2.sln -clp:ErrorsOnly
+dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly
 ```
 
 pulgin単位のbuild
 ```
-dotnet build CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.sln -clp:ErrorsOnly
+<execute_command >
+<command>dotnet build "CodeEditor2AiPlugin/CodeEditor2AiPlugin/CodeEditor2AiPlugin.csproj" -clp:ErrorsOnly</command>
+</execute_command >
+
 ```
 
 
