@@ -827,6 +827,7 @@ private async Task updateFolder()
 
 ### Current Session Info
 - **Session Started**: 2025-02-12
+- **Last Updated**: 2025-02-12
 - **Project**: RtlEditor2 (Avalonia UI RTL IDE)
 - **Language**: C# (.NET 8), Verilog/SystemVerilog parser
 - **Known Issues**: UI thread locks, Parse errors, TreeControl issues
@@ -835,11 +836,11 @@ private async Task updateFolder()
 ---
 
 ## Latest Agent Session
-- **Last Updated**: 2025-02-12 - UIスレッドロック問題の情報更新完了
-- **Current focus**: Ready to receive instructions
+- **Last Updated**: 2025-02-12 - AGENTS.md読み込み完了、待機中
+- **Current focus**: Waiting for user instructions
 - **Project**: RtlEditor2 - Avalonia UI based RTL IDE
 - **Notable topics**: UI thread lock issues, Verilog/SystemVerilog parsing, TreeControl, NavigatePanel
-- **Updated**: 2025-02-12 - UIスレッドロック問題の情報更新完了
+- **Updated**: 2025-02-12 - AGENTS.md読み込み完了
 
 **UIスレッドロック問題 確認結果 (2025-02-12)**:
 - `TextFile.UpdateAsync`: `InvokeAsync()` → `Post()` に変更済み ✅
