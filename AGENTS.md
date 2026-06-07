@@ -851,6 +851,28 @@ private async Task updateFolder()
 
 ---
 
+## 修正履歴: Controller.ShowDialog (2025-02-12)
+
+**問題**: Linux+X11環境下で`ShowDialog(mainWindow)`を呼び出すと、ダイアログがmainWindowとは全く異なる場所に表示される。
+
+**修正内容**:
+- `Controller.cs`に`ShowDialog(Window dialog)`メソッドを追加
+- ダイアログをmainWindowの中央に配置してから`ShowDialog()`を呼び出す
+- `dialog.Position`を設定することで位置問題を回避
+
+**修正ファイル**:
+- `CodeEditor2/CodeEditor2/CodeEditor2/Controller.cs`
+
+**使用方法**:
+```csharp
+await Controller.ShowDialog(dialogWindow);
+```
+
+**備考**:
+- `ShowDialog()`呼び出し前に`Position`を設定することで、Linux+X11環境でも正常動作
+
+---
+
 ## 修正履歴
 
 ### TreeControl.addNodeでのNextToノード追加問題 (修正済み)
