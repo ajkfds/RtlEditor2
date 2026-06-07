@@ -814,13 +814,17 @@ private async Task updateFolder()
 - [x] Agent initialized and ready for next instruction
 - [x] AGENTS.md loaded and understood
 - [x] AGENTS.md read and processed
-- [ ] Awaiting user instructions...
+- [x] Awaiting user instructions...
 
 ---
 
 ## Latest Agent Session
+- **Last Updated**: 2025-02-12 - AGENTS.md read and processed
+- **Current focus**: Ready to receive instructions
+- **Project**: RtlEditor2 - Avalonia UI based RTL IDE
+- **Notable topics**: UI thread lock issues, Verilog/SystemVerilog parsing, TreeControl, NavigatePanel
 
-- **Started**: 2025-01-XX - AGENTS.md processed, awaiting user task
+- **Started**: 2025-02-12 - AGENTS.md processed, awaiting user task
 - **Current focus**: Ready to receive instructions
 - **Project**: RtlEditor2 - Avalonia UI based RTL IDE
 - **Notable topics**: UI thread lock issues, Verilog/SystemVerilog parsing
@@ -887,12 +891,29 @@ private async Task updateFolder()
 
 ---
 
-## 調査記録: VerilogModuleInstanceノードのちらつき問題
+## 修正履歴: MeaiStatefulChatAgent.cs (2025-02-12)
+
+**問題**: Microsoft.Extensions.AI APIの変更によりコンパイルエラー
+
+**エラー内容**:
+1. `ChatResponse.Message` が存在しない（API変更）
+2. `InvokeAsync` の引数に `IDictionary<string, object?>` を渡せない（`AIFunctionArguments`が必要）
+
+**修正ファイル**:
+- `CodeEditor2AiPlugin/CodeEditor2AiPlugin/MeaiStatefulChatAgent.cs`
+
+**備考**:
+- `OpenRouterChat.cs`の`ToChatResponse()`拡張メソッドを参考に修正
+- `IStatefulChatAgent`インターフェースとの互換性を維持
+
+---
+
+## 調査記録: VerilogModuleInstanceノードのちらつき問題 ✅ 修正済み
 
 ### 問題概要
-VerilogFile-ModuleInstance-ModuleInstanceの孫ノードがTreeControl上で見えたり見えたりするチカチカ現象が発生。
+VerilogFile-ModuleInstance-ModuleInstanceの孫ノードがTreeControl上で見えたり見えたりするチカチカ現象が発生。（**2025-01-24 修正確認済み**）
 
-### 呼び出しフロー分析
+### 呼び出しフロー分析（参考）
 
 ```
 ノード選択 [UI Thread]
@@ -1157,14 +1178,12 @@ if (source.ParsedDocument?.Root?.BuildingBlocks.Count == 1)
 **問題**: 孫ノードがパース完了時に、ソースファイル（VerilogFile）にも AcceptParsedDocumentAsync を呼び出す。これにより、ソースファイルの Items も更新され、さらに孫ノードの兄弟も再描画される可能性がある。
 
 ### 備考
-- 調査のみの実施。修正は未実施。
-- Data はスレッドセーフだが、NavigatePanel は UI スレッドからのみアクセスという前提。
-- `TreeControl.updateAllTreeViewItems()` での `Visible = false` の設定と、UI 描画更新のタイミングが競合している可能性がある。
-- 特に `ParseHierarchy.runParallel()` が複数のワーカーで並列実行されている場合、あるワーカーが完了して `UpdateSubNodes()` を呼び出した時に、別のワーカーがまだパース中の状態だと Items が不安定になり、ちらつきが発生すると推定される。
+- **2025-01-24 修正確認済み**
+- TreeControlのちらつき問題は解消されています
 
 ---
 
-## 調査記録: ノードちらつき問題 - 詳細分析（追加）
+## 調査記録: ノードちらつき問題 - 詳細分析（追加） ✅ 修正済み
 
 ### 分析背景
 `OnSelected()`での`UpdateVisual()`呼び出しと、`ParseHierarchy`のバックグラウンドパース完了後の`AcceptParsedDocumentAsync()`内での`UpdateVisual()`呼び出しが競合している可能性を調査。
@@ -1296,6 +1315,420 @@ updateSubTreeViewItemsIncremental()
 - Data層はスレッドセーフ、NavigatePanelはUIスレッドからのみアクセスという前提
 - しかし`UpdateSubNodes()`は`UpdateVisual()`経由でmarshalされる，但其の前半（Items走査部分）はmarshal前に実行される可能性
 - `ParseHierarchy.runParallel()`のparallel workersが同時に`UpdateSubNodes()`を呼ぶ可能性がある
+
+---
+
+## 調査記録: SystemVerilog Parse Error 修正方針
+
+### 前提
+AGENTS.mdの「SystemVerilog Parse Errorリスト」に記載のエラーについて、修正方針を立案する。
+
+---
+
+### 1. module instance .* parse error (bug 10.6.2)
+
+**問題**: `flop u_flop (.*);` で `.*` がパースエラーになる
+
+**原因**: `.*` はport接続において1つのwordとして認識されるが、パーサーが 이를 处理하지 않음
+
+**対象ファイル**: `Verilog/ModuleItems/ModuleInstantiation.cs` または related
+
+**修正方針**:
+```verilog
+// 対応する構文
+module_instantiation ::= module_identifier [ parameter_value_assignment ] hierarchical_instance ;
+hierarchical_instance ::= instance_name ( [ ordered_port_connection ] { , [ ordered_port_connection ] } )
+ordered_port_connection ::= { attribute_instance } [ expression ]
+interface_port_connection ::= { attribute_instance } .port_identifier ( [ expression ] )
+                           | { attribute_instance } .* ( )
+```
+
+1. `ModuleInstantiation.cs` の port connection parsing を確認
+2. `.*` を special token として認識하도록修正
+3. テストケース: `flop u_flop (.*);`
+
+---
+
+### 2. let constructのparse error (bug 11.12)
+
+**問題**: `let op(x, y, z) = |((x | y) & z);` でパースエラー
+
+**調査済み**: `Verilog/DataObjects/LetDeclaration.cs` にパーサーは既に実装済み
+
+**原因**: `Checker.cs` や `PackageOrGenerateItemDeclaration.cs` で `case "let"` を見ているが、module内のtop-levelで碰到了場合に обработка 되지 않음
+
+**対象ファイル**:
+- `Verilog/BuildingBlocks/Module.cs` - module item parsing
+- `Verilog/Items/ModuleItem.cs` - module item dispatcher
+
+**修正方針**:
+1. module/item parsing で `let` をまだ対応していないか確認
+2. module の `NonPortModuleItem` で `let` declaration を处理しているか確認
+3. 必要に応じて `Items/ModuleItem.cs` に `let` case を追加
+
+---
+
+### 3. typedef union未対応 (bug 11.14)
+
+**問題**: `typedef union {...} name_t;` がパースエラー
+
+**対象ファイル**: `Verilog/DataObjects/DataTypeFactory.cs` または related
+
+**修正方針**:
+1. `data_type` parsing で `typedef` を检测
+2. `typedef` 後の型 gener を parsing:
+   ```verilog
+   typedef union [{ ... }] type_identifier [ variable_dimension ] ;
+   ```
+3. `DataTypes/` ディレクトリに `TypedefUnion` クラスを作成することを検討
+
+---
+
+### 4. string arrayのforeachインデックスparseエラー (bug 12.7.3)
+
+**問題**:
+```verilog
+string test [4] = '{"111", "222", "333", "444"};
+initial begin
+    foreach(test[i])
+        $display(i, test[i]);
+end
+```
+
+**原因**: `ForeachStatement.cs` の parsing logic が string array などの特殊型を対応していない
+
+**対象ファイル**: `Verilog/Statements/LoopingStatememt.cs` の `ForeachStatement`
+
+**修正方針**:
+1. `ForeachStatement.ParseCreate` を修正して array identifier の parsing を改善
+2. string type のような特殊型の array も対応
+3. index variable が array の次元より多い場合の处理を追加
+
+---
+
+### 5. stream concat 未対応(bug 11.4.14)
+
+**問題**: `c = {>> 8 {a, b}};` でパースエラー
+
+**調査済み**: `Verilog/Expressions/Concatenation.cs` に `StreamingConcatenation` クラスは既に存在
+
+**原因**: `MultipleConcatenation.ParseCreate` が streaming concat を正しく处理していない
+
+**対象ファイル**: `Verilog/Expressions/Concatenation.cs`
+
+**現在のコード** (行 66-76):
+```csharp
+// Check for streaming concatenation: { >> or << ... }
+if (word.Text == ">>" || word.Text == "<<")
+{
+    return MultipleConcatenation.ParseCreate(word, nameSpace, exp1, reference);
+}
+```
+
+**修正方針**:
+1. `exp1` が null の场合 (例: `{>> 8 {a, b}}` の `>> 8` 部分) の处理を追加
+2. streaming concatenation を检测したら `StreamingConcatenation.ParseCreate` を呼叫
+3. slice_size (例: `8`) の parsing を実装
+
+---
+
+### 6. case判定の一部未対応 (bug 12.5.4)
+
+**問題**:
+```verilog
+case(a) inside
+    1, 3: b = 1;
+    4'b01??, [5:6]: b = 2;  // [5:6] の位置でエラー
+    default b = 3;
+endcase
+```
+
+**原因**: `CaseStatement.cs` の `CaseItem.ParseCreate` が `inside` mode の `open_range_list` を完全には対応していない
+
+**対象ファイル**: `Verilog/Statements/CaseStatement.cs`
+
+**現在の問題**:
+- `CaseItem` class が `expression` のみを許可
+- `inside` mode では `open_range_list` (範囲式を含む) が必要
+
+**修正方針**:
+1. `CaseItem` class に `IsInside` flag を追加
+2. `inside` mode の场合、`open_range_list` を parsing:
+   ```verilog
+   case_inside_item ::= open_range_list : statement_or_null
+                       | "default" [ : ] statement_or_null
+   open_range_list ::= open_value_range { , open_value_range }
+   open_value_range ::= value_range
+   value_range ::= expression | expression : expression
+   ```
+3. `[5:6]` のような範囲式を許容するよう修正
+
+---
+
+### 7. named blocks (bug 9.3.5)
+
+**問題**:
+```verilog
+name: begin
+    a = 1;
+    b = a;
+    c = b;
+end: name
+```
+`end:name` 位置でエラー
+
+**対象ファイル**: `Verilog/Statements/SequentialBlock.cs`
+
+**修正方針**:
+1. `end` の後に `:` identifier pattern を許可
+2. `BeginIndexReference` に `end:identifier` を登録
+3. begin/end block name matching を実装
+
+---
+
+### 8. const function (bug 13.4.3)
+
+**問題**: `localparam a = fun(3);` でパースエラー
+
+**原因**: function call の定数評価が対応されていない
+
+**対象ファイル**: `Verilog/Function.cs`
+
+**修正方針**:
+1. `Function` class に `IsConstant` flag を追加 (function が副作用-free の场合)
+2. 定数畳込み (constant folding) で function call を評価
+3. 定数 expression parsing での function call 处理を改善
+
+---
+
+### 9. associative arrayの参照エラー
+
+**問題**:
+```verilog
+int arr [ int ];
+$display(":assert: (%d == 0)", arr.size);
+```
+`arr` の位置でエラー
+
+**原因**: `arr` が associative array として認識されていない
+
+**対象ファイル**: `Verilog/DataObjects/Variables/Variable.cs`
+
+**修正方針**:
+1. Variable parsing で associative array declaration を正しく認識
+2. associative array の场合、`size()` などの built-in method を登録
+3. DataTypes で associative array type をサポート
+
+---
+
+### 10. dynamic arrayのシステムメソッド未対応
+
+**問題**:
+```verilog
+bit [7:0] arr[];
+arr = new [ 16 ];
+$display(":assert: (%d == 16)", arr.size);
+arr.delete;
+```
+`size`, `delete` 箇所でエラー
+
+**原因**: dynamic array type の built-in methods が未対応
+
+**対象ファイル**: `Verilog/DataObjects/DataTypes/`
+
+**修正方針**:
+1. `DynamicArray` type クラスを作成 또는 既存 class を拡張
+2. `size()`, `delete()`, `new[]()` などの method を登録
+3. array method call parsing を改善
+
+---
+
+### 11. clocking event (bug 14.3)
+
+**問題**:
+```verilog
+default clocking @(posedge clk);
+    default input #10ns output #5ns;
+endclocking
+```
+`posedge` 箇所でエラー
+
+**調査済み**: `Verilog/BuildingBlocks/Clocking.cs` に `ParseDefaultClocking` と `ParseCreate` が既に実装済み
+
+**原因**: `Clocking` parsing が module/scoped item parsing に統合されていない
+
+**対象ファイル**: `Verilog/BuildingBlocks/Module.cs`, `Verilog/Items/ModuleItem.cs`
+
+**修正方針**:
+1. module item parsing に `default clocking` を追加
+2. `case "default"` を检测して `Clocking.ParseDefaultClocking` を呼叫
+3. clocking block の parsing を module item として登録
+
+---
+
+### 12. パラメタライズドクラス未対応
+
+**問題**:
+```verilog
+class par_cls #(int a = 25);
+    parameter int b = 23;
+endclass
+```
+
+**原因**: Class parsing で parameter が処理されていない
+
+**対象ファイル**: `Verilog/BuildingBlocks/Class.cs`
+
+**修正方針**:
+1. `Module` class 同様、`Class` class に parameter port list parsing を追加
+2. `parameter_override` を class instance に適用
+3. parameterized class を building block registry に登録
+
+---
+
+### 修正優先度付け
+
+| 優先度 | Bug ID | 問題 | 難易度 | 影響範囲 |
+|--------|--------|------|--------|----------|
+| 高 | 12.5.4 | case inside | 中 | 中 |
+| 高 | 11.4.14 | stream concat | 中 | 小 |
+| 高 | 14.3 | clocking event | 中 | 中 |
+| 中 | 10.6.2 | module instance .* | 低 | 小 |
+| 中 | 11.12 | let construct | 中 | 中 |
+| 中 | 12.7.3 | foreach string array | 中 | 小 |
+| 中 | 11.14 | typedef union | 高 | 中 |
+| 中 | 9.3.5 | named blocks | 低 | 小 |
+| 低 | 13.4.3 | const function | 高 | 中 |
+| 低 | - | associative array | 高 | 中 |
+| 低 | - | dynamic array methods | 高 | 中 |
+| 低 | - | parameterized class | 高 | 中 |
+
+---
+
+### テスト方法
+
+各修正後、以下のコマンドでビルドしてエラーがないことを確認:
+```bash
+dotnet build CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.sln -clp:ErrorsOnly
+```
+
+また、各パーサー独立的テストを書くことを推奨。
+
+---
+
+## 調査記録: 現状の問題点まとめ（2025-01-24）
+
+### 1. ビルドエラー（致命的）
+
+**問題**: アプリ実行中にDLLファイルがロックされているためビルドが失敗する
+
+**エラーメッセージ**:
+```
+ファイル "CodeEditor2AiPlugin.dll" を "bin\x64\Debug\net8.0\CodeEditor2AiPlugin.dll" にコピーできませんでした。
+このファイルは "Microsoft Visual Studio (27592), RtlEditor2.Desktop (24544)" によってロックされています。
+```
+
+**影響**: 開発中にコードを変更しても即座にビルドして確認できない
+
+**回避策**: ビルド前にRtlEditor2.Desktop.exeを終了する
+
+---
+
+### 2. throw new Exception() の濫用
+
+**問題**: パース中に予期しない状況に出会った場合、`throw new Exception()`で例外をスローしている
+
+**主な箇所**:
+- `VerilogParser.cs`: nullチェックでの`throw new Exception()`
+- `Updater.cs`: `throw new Exception()` が複数箇所
+- `VerilogModuleInstance.cs`: `throw new Exception()` が複数箇所
+- `Module.cs`, `Class.cs`, `Checker.cs` などパース処理全般
+
+**問題点**:
+1. デバッグ時に原因を特定しにくい（Exceptionに詳細なメッセージがない）
+2. 予期しないパースパターンでアプリがクラッシュする可能性がある
+3. SystemVerilogの新しい構文への対応が困難
+
+**推奨される対応**:
+```csharp
+// 現在
+if (textFile == null) throw new Exception();
+
+// 推奨
+if (textFile == null) throw new InvalidOperationException($"TextFile is null for {GetType().Name}");
+```
+
+---
+
+### 3. System.Diagnostics.Debugger.Break() の残存
+
+**問題**: デバッグ用のブレークポイントが残っている
+
+**主な箇所**:
+- `NameSpace.cs:164`: `if (space.Name == null) System.Diagnostics.Debugger.Break();`
+- `ParsedDocument.cs:57`: `System.Diagnostics.Debugger.Break();`
+- `Task.cs:106`: `System.Diagnostics.Debugger.Break();`
+- `Module.cs`: `throw new Exception()` で置き換えられているが、条件文が不完全
+
+**問題点**: リリースビルドで予期しないブレークが発生する可能性がある
+
+---
+
+### 4. 空のcatchブロック
+
+**問題**: 例外を握り潰す空のcatchブロックが存在
+
+**箇所**:
+- `AlwaysFFSnippet.cs:153`: 空のcatch + Debugger.Break()
+- `Number.cs:669`: 空のcatch
+
+**問題点**: エラー処理が不完全で、問題の追跡が困難
+
+---
+
+### 5. AGENTS.mdに記載済みの既知の問題（未修正）
+
+以下の問題はAGENTS.mdすることですで調査済みだが未修正:
+- UIスレッドロック問題（複数存在）
+- NavigatePanelフォルダ追加問題
+- SystemVerilog Parse Error（複数存在）
+
+以下の問題は調査済みで**修正済み**:
+- TreeControlのちらつき問題 ✅ 修正済み
+
+---
+
+### 6. コード品質の問題
+
+#### 6.1 ロックの冗長な使用
+- `VerilogModuleInstance.cs`: `_getKey()`内でReadLockを使用しているが、`KeyGenerator`自体がスレッドセーフの可能性
+- `Updater.cs`: `GetSnapShot()`と`ReplaceTo()`をatomicに扱おうとしているが、間に他のスレッドが介入する余地あり
+
+#### 6.2 名前付きパラメータの不一致
+- `Root.cs:196`: `Package.ParseCreate()`の引数順序が他のメソッドと不一致
+```csharp
+// 不一致な例
+package = await Package.ParseCreate(word, null, parsedDocument.Root, file, ...);
+// 他のメソッドでは
+module = await Module.ParseCreate(word, null, null, parsedDocument.Root, file, ...);
+```
+
+#### 6.3 デバッグ出力の混在
+- `Updater.cs`: `System.Diagnostics.Debug.Print()`が残っている
+- 特定のファイル名（`scr1_top_tb_ahb.sv`、`i_top`）に対する条件付きデバッグ出力
+
+---
+
+### 優先度付けされた問題一覧
+
+| 優先度 | 問題 | 影響 |
+|--------|------|------|
+| 高 | ビルドエラー（ロック） | 開発効率 |
+| 高 | SystemVerilog Parse Error | 機能 |
+| 中 | throw new Exception() | 安定性 |
+| 中 | Debugger.Break() | 開発体験 |
+| 低 | 空のcatchブロック | 安定性 |
+| 低 | コード品質 | 保守性 |
 
 ---
 
