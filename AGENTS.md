@@ -823,11 +823,11 @@ private async Task updateFolder()
 - [x] Agent initialized and ready for next instruction
 - [x] AGENTS.md loaded and understood
 - [x] AGENTS.md read and processed
-- [x] **Agent session active - Ready for user instructions** (2025-02-12)
+- [x] **Agent session active - Ready for user instructions** (2025-02-13)
 
 ### Current Session Info
 - **Session Started**: 2025-02-12
-- **Last Updated**: 2025-02-12
+- **Last Updated**: 2025-02-13
 - **Project**: RtlEditor2 (Avalonia UI RTL IDE)
 - **Language**: C# (.NET 8), Verilog/SystemVerilog parser
 - **Known Issues**: UI thread locks, Parse errors, TreeControl issues
@@ -836,11 +836,15 @@ private async Task updateFolder()
 ---
 
 ## Latest Agent Session
-- **Last Updated**: 2025-02-12 - AGENTS.md読み込み完了、待機中
+- **Last Updated**: 2025-02-13 - AGENTS.md読み込み完了、待機中
 - **Current focus**: Waiting for user instructions
 - **Project**: RtlEditor2 - Avalonia UI based RTL IDE
 - **Notable topics**: UI thread lock issues, Verilog/SystemVerilog parsing, TreeControl, NavigatePanel
-- **Updated**: 2025-02-12 - AGENTS.md読み込み完了
+- **Session Summary**: 
+  - Project structure: Avalonia UI RTL IDE with modular plugin architecture
+  - Main issue categories: UI thread locks, SystemVerilog parse errors (11+ known bugs), NavigatePanel issues
+  - Fixed issues: TreeControl flickering, ChatControl font, ParseHierarchy cancel, ShowDialog position
+- **Updated**: 2025-02-13 - AGENTS.md読み込み完了、セッション開始
 
 **UIスレッドロック問題 確認結果 (2025-02-12)**:
 - `TextFile.UpdateAsync`: `InvokeAsync()` → `Post()` に変更済み ✅
@@ -848,6 +852,31 @@ private async Task updateFolder()
 - `VerilogHeaderInstance.UpdateAsync`: 親ファイルへのUpdate伝搬がまだ存在する ❌
 - `AcceptParsedDocumentAsync`: `UpdateAsync`呼び出しチェーンがまだ存在する ❌
 - `semaphore競合`: Background Task間の競合がまだ発生する ❌
+
+---
+
+## 修正履歴: ParseHierarchy - ノードクリック時のParse停止制御 (2025-02-12)
+
+**問題**: ノードクリック時にbackgroundで階層parseが走るが、別のノードをクリックしたときに前のparseを停止させたかった。ForceAllFilesでのparseだけは停止したくない。
+
+**修正内容**:
+1. `_currentParseMode`変数を追加し、実行中のパースモードを追跡
+2. `CancelCurrentParseIfNotForceAll()`メソッドを追加し、ForceAllFiles以外のパースのみをキャンセル可能に
+3. `ProcessQueueAsync()`を修正:
+   - ForceAllFiles実行中にSearchReparseRequestedTreeが来た場合 → リクエストをキューに戻して終了（ForceAllFiles完了後に処理）
+   - SearchReparseRequestedTree実行中にForceAllFilesが来た場合 → 実行中パースをキャンセル、キューをクリアしてForceAllFilesを処理
+   - SearchReparseRequestedTree実行中に別のSearchReparseRequestedTreeが来た場合 → 実行中パースをキャンセル、新しい方を処理
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Tool/ParseHierarchy.cs`
+
+**動作確認**:
+| シナリオ | 動作 |
+|----------|------|
+| SearchReparseRequestedTree実行中に別のノードクリック | 実行中をキャンセル、新しい方を処理 |
+| SearchReparseRequestedTree実行中にForceAllFiles開始 | 実行中をキャンセル、キューをクリアしてForceAllFilesを処理 |
+| ForceAllFiles実行中に別のノードクリック | ForceAllFiles完了後にキュー内のリクエストを処理 |
+| ForceAllFiles実行中にForceAllFiles開始 | 最初のForceAllFilesを続行（キューに溜まる） |
 
 ---
 
@@ -1376,10 +1405,189 @@ updateSubTreeViewItemsIncremental()
 
 ---
 
+## 調査記録: HierarchyConnection - concatenate信号のdrive判定問題
+
+### 問題概要
+信号をassignしたときにdrive状態を確認しているが、moduleの出力ピンにconcatenateした信号を直接書いたときに正しくdrive判定されていない。
+
+### 具体例
+
+```verilog
+// parent module
+module parent (
+    output [3:0] out
+);
+    child u_child (
+        .out({a, b})    // ★ Concatenationがport connection
+    );
+endmodule
+
+// child module  
+module child (
+    output [3:0] out
+);
+    assign out = {x, y};
+endmodule
+```
+
+この場合、`a`や`b`のdrive判定が正しく行われていない。
+
+### 呼び出しフロー
+
+```
+HierarchyConnection.ConnectionNode() [初期化時]
+    ↓
+searchModulePort() [port connectionを処理]
+    ↓
+if (connextionExpression is DataObjectReference)  // ★ Concatenationは除外される
+    ├→ connectionDataObject.AssignedReferences を辿る
+    └→ foreach ループの中が空 → Driverリストに追加されない
+else
+    ★ 何も処理されない
+```
+
+### 主要因 (調査済み: 2025-02-12)
+
+| # | 原因 | 場所 | 重要度 |
+|---|------|------|--------|
+| 1 | **Concatenation対応なし** | `HierarchyConnection.cs:59-72` | **高** |
+| 2 | **searchModulePort内のforeachループが空** | `HierarchyConnection.cs:66-68` | **高** |
+| 3 | **Output portの処理が空** | `HierarchyConnection.cs:73-75` | **高** |
+| 4 | **Driver/Receiverリストへの登録処理なし** | `ConnectionNode`クラス全体 | 高 |
+
+### 詳細分析
+
+#### 1. Concatenation対応なし (高)
+
+```csharp
+// HierarchyConnection.cs - searchModulePort()
+private void searchModulePort(Data.VerilogModuleInstance moduleInstance, DataObject dataObject)
+{
+    // ...
+    if (!moduleInstantiation.PortConnection.ContainsKey(port.Name)) return;
+    Expressions.Expression connextionExpression = moduleInstantiation.PortConnection[port.Name];
+
+    if (port.Direction == Port.DirectionEnum.Input)
+    {
+        if (connextionExpression is DataObjectReference)  // ★ Concatenationはここで弾かれる
+        {
+            DataObjectReference variableReference = (DataObjectReference)connextionExpression;
+            DataObject? connectionDataObject = variableReference.TargetDataObject;
+            if (connectionDataObject is null) return;
+            foreach (var assign in connectionDataObject.AssignedReferences)
+            {
+                // ★ ループの中が空！Driverに追加する処理がない
+            }
+        }
+    }
+    else if (port.Direction == Port.DirectionEnum.Output)
+    {
+        // ★ このブランチが空！
+    }
+}
+```
+
+**問題点**: `connextionExpression is DataObjectReference`のチェックで、Concatenation expressionが処理されない。
+
+#### 2. foreachループが空 (高)
+
+```csharp
+foreach (var assign in connectionDataObject.AssignedReferences)
+{
+    // ★ 何もしていない
+    // 本来は Driver.Add() でConnectionNodeを追加すべき
+}
+```
+
+#### 3. Output port処理が空 (高)
+
+```csharp
+else if (port.Direction == Port.DirectionEnum.Output)
+{
+    // ★ 何もしていない
+    // Output portのdriver/ receiver処理が必要
+}
+```
+
+### 修正方針
+
+1. **Concatenation対応**: `searchModulePort`で`connextionExpression is Concatenation`のケースも処理
+   - Concatenationの`Expressions`プロパティを辿って各要素について処理
+   - 各Expressionについて再帰的にdriver情報を取得
+
+2. **foreachループの実装**: `connectionDataObject.AssignedReferences`の各参照について
+   - 対応する`ConnectionNode`を生成して`Driver`リストに追加
+   - 参照元のsignalへのconnectionを再帰的に追跡
+
+3. **Output port対応**: Output portの場合
+   - 子のmoduleが出力している信号(source)を取得
+   - 子のsource信号がparentのどのsignalに接続されているか追跡
+
+### 関連ファイル
+
+| ファイル | 役割 |
+|----------|------|
+| `Verilog/HierarchyConnection.cs` | 階層間接続追跡のメインクラス |
+| `Verilog/Expressions/Concatenation.cs` | Concatenation式の表現 |
+| `Verilog/DataObjects/Arrays/ArraysBoolMap.cs` | assign時のdriverビットマップ管理 |
+| `Verilog/DataObjects/DataObject.cs` | `AssignedReferences`の管理 |
+
+### 備考
+- 調査のみの実施。修正は未実施。
+- assign時のdriver登録は`ContinuousAssign`→`VariableAssignment`→`NetLValue.AssertAssigned()`で既に実装済み
+- 問題は`HierarchyConnection`でのport connection処理時にconcatenationを処理していない点
+
+---
+
 ## 調査記録: SystemVerilog Parse Error 修正方針
 
 ### 前提
 AGENTS.mdの「SystemVerilog Parse Errorリスト」に記載のエラーについて、修正方針を立案する。
+
+---
+
+### 1. module instance .* parse error (bug 10.6.2)
+
+## 修正履歴: Struct packed型でのPort接続ビット幅不一致 (2025-02-13)
+
+**問題**: `typedef struct packed` した型でのoutput portを持つmoduleに対して、同型の変数を接続したときに `"bitwidth mismatch 1<-"` というワーニングが出る。
+
+**原因**: `Struct.Create` メソッドで `DataType` プロパティが設定されていなかった。
+
+```csharp
+// Struct.cs - 修正前
+public static new Struct Create(string name, IDataType dataType)
+{
+    StructType structType = (StructType)dataType;
+    Struct ret = new Struct() { StructType = structType, Name = name };
+    // DataTypeが設定されていないため、DataObject.BitWidthでnullが返る
+    return ret;
+}
+```
+
+**問題の流れ**:
+1. `Struct.BitWidth` は `StructType.BitWidth` を正しく返す
+2. しかし `DataObject.BitWidth` は `DataType.BitWidth` を使うが、`DataType` が `null` のため `null` を返す
+3. Port接続時のビット幅チェックで `port.BitWidth != expression.BitWidth` と比較され、`null` と正しい値比較导致不一致
+
+**修正**: `Struct.Create` で `DataType` プロパティを設定
+
+```csharp
+// Struct.cs - 修正後
+public static new Struct Create(string name, IDataType dataType)
+{
+    StructType structType = (StructType)dataType;
+    Struct ret = new Struct() { StructType = structType, Name = name, DataType = dataType };
+    return ret;
+}
+```
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/DataObjects/Variables/Struct.cs`
+
+**備考**:
+- UserDefinedVariable.Create では既に `DataType = dataType` が設定されている
+- Struct の場合も同様に設定することで問題が解決
 
 ---
 
