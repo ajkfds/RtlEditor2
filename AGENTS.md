@@ -49,10 +49,9 @@ dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly
 
 pulgin単位のbuild
 ```
-<execute_command >
-<command>dotnet build "CodeEditor2AiPlugin/CodeEditor2AiPlugin/CodeEditor2AiPlugin.csproj" -clp:ErrorsOnly</command>
-</execute_command >
-
+<execute_command>
+<command>dotnet build CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly</command>
+</execute_command>
 ```
 
 
@@ -86,12 +85,12 @@ let op(x, y, z) = |((x | y) & z);
 	
 foreach(test[i])の箇所でエラーがでる
 
-### stream concat 未対応(bug 11.4.14)
+### stream concat (bug 11.4.14) ✅ 既に実装済み
 
 	c = {>> 8 {a, b}};
 
-
-### case判定の一部未対応 (bug 12.5.4)
+`StreamingConcatenation`クラスと`ParseCreate`メソッドが既に実装済み
+### case判定の一部未対応 (bug 12.5.4) ✅ 修正済み
 ```
 	reg [3:0] a = 0;
 	reg [3:0] b = 0;
@@ -103,7 +102,7 @@ foreach(test[i])の箇所でエラーがでる
 		endcase
 	end
 ```
-[5:6]の位置でエラーが出る
+[5:6]の位置でエラーが出ていたが修正済み (2025-02-14)
 
 ### パラメタライズドクラス未対応
 ```
@@ -167,7 +166,7 @@ endmodule
 ```
 size,delete箇所でエラー
 
-## clockeing event (bug 14.3)
+## clocking event (bug 14.3) ✅ 修正済み
 
 ```
 default clocking @(posedge clk);
@@ -175,7 +174,7 @@ default clocking @(posedge clk);
 endclocking
 
 ```
-posedge 箇所でエラー
+posedge 箇所でエラーが出ていたが修正済み (2025-02-14)
 
 
 ---
@@ -836,16 +835,16 @@ private async Task updateFolder()
 ---
 
 ## Latest Agent Session
-- **Last Updated**: 2025-02-14 - AGENTS.md読み込み完了、待機中
+- **Last Updated**: 2025-02-14 - Agent initialized successfully
 
 - **Current focus**: Waiting for user instructions
 - **Project**: RtlEditor2 - Avalonia UI based RTL IDE
 - **Notable topics**: UI thread lock issues, Verilog/SystemVerilog parsing, TreeControl, NavigatePanel
 - **Session Summary**: 
   - Project structure: Avalonia UI RTL IDE with modular plugin architecture
-  - Main issue categories: UI thread locks, SystemVerilog parse errors (11+ known bugs), NavigatePanel issues
-  - Fixed issues: TreeControl flickering, ChatControl font, ParseHierarchy cancel, ShowDialog position
-- **Updated**: 2025-02-13 - AGENTS.md読み込み完了、セッション開始
+  - Main issue categories: UI thread locks, SystemVerilog parse errors (11+ known bugs), TreeControl issues
+  - Fixed issues: TreeControl flickering, ChatControl font, ParseHierarchy cancel, ShowDialog position, Struct undriven warning
+- **Agent initialized**: 2025-02-14 - AGENTS.md loaded, ready to process tasks
 
 **UIスレッドロック問題 確認結果 (2025-02-12)**:
 - `TextFile.UpdateAsync`: `InvokeAsync()` → `Post()` に変更済み ✅
@@ -900,6 +899,40 @@ await Controller.ShowDialog(dialogWindow);
 
 **備考**:
 - `ShowDialog()`呼び出し前に`Position`を設定することで、Linux+X11環境でも正常動作
+
+---
+
+## 修正履歴: SystemVerilog Parse Bug修正 (2025-02-14)
+
+### case判定の一部未対応 (bug 12.5.4) ✅ 修正済み
+
+**問題**: `case(a) inside [..., [5:6]: b = 2;]` で `[5:6]` の位置でエラー
+
+**原因**: `ParseOpenRangeList`メソッド内で`[5:6]`をパースする際、`word.Text == "["`を検出した後の処理が不正だった
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Statements/CaseStatement.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Expressions/RangeExpression.cs`
+
+**修正内容**:
+1. `ParseOpenRangeList`を修正して`[5:6]`のような範囲式を正しくパース
+2. `RangeExpression`クラスを`Expression`のサブクラスに変更して型互換性を解決
+
+### clocking event (bug 14.3) ✅ 修正済み
+
+**問題**: `default clocking @(posedge clk);` で`posedge`箇所でエラー
+
+**原因**: `Clocking.ParseCreate`で`@(posedge clk)`のパース時に`posedge`がキーワードとして認識されていた
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/BuildingBlocks/Clocking.cs`
+
+**修正内容**:
+- `word.Text == "posedge"`などのエッジキーワードをチェックしてから式をパースするように修正
+
+### stream concat (bug 11.4.14) ✅ 既に実装済み
+
+`StreamingConcatenation`クラスと`ParseCreate`メソッドが既に実装済み
 
 ---
 
