@@ -20,40 +20,298 @@ A lightweight, modular Integrated Development Environment (IDE) for RTL design, 
 ## Project Structure
 
 ```
-RtlEditor2/
-├── RtlEditor2.Desktop/          # Main desktop application
-├── CodeEditor2/                  # Core editor component
-│   └── CodeEditor2/             # CodeDocument, Parser, Views, etc.
-├── CodeEditor2Plugin/            # Base plugin interface (IPlugin)
-├── CodeEditor2VerilogPlugin/     # Verilog/SystemVerilog language support
-├── CodeEditor2AiPlugin/          # AI integration plugin
-├── CodeEditor2DrawIoPlugin/      # Draw.io diagram support
-├── CodeEditor2IcarusVerilogPlugin/ # Icarus Verilog simulation integration
-├── CodeEditor2MarkdownPlugin/    # Markdown support
-├── CodeEditor2VivadoPlugin/      # Xilinx Vivado integration
-├── AjkAvaloniaLibs/              # Utility library
-├── AvaloniaEdit/                 # Text editor control
-└── TemplateEngineHost/           # Template engine
+RtlEditor2/                                # Main repository (git add/commit here)
+├── RtlEditor2.Desktop/                    # Main desktop application
+├── AjkAvaloniaLibs/                        # Utility library (submodule)
+├── AjkLibs/                                # Utility library (submodule)
+├── AvaloniaEdit/                           # Text editor control (submodule)
+├── CodeEditor2/                            # Core editor component (submodule)
+│   └── CodeEditor2/CodeEditor2/           # CodeDocument, Parser, Views, etc.
+├── CodeEditor2Plugin/                      # Base plugin interface (submodule)
+├── CodeEditor2VerilogPlugin/               # Verilog/SystemVerilog language support (submodule)
+├── CodeEditor2AiPlugin/                    # AI integration plugin (submodule)
+├── CodeEditor2AiAssistant/                 # AI Assistant (submodule)
+├── CodeEditor2DrawIoPlugin/                # Draw.io diagram support (submodule)
+├── CodeEditor2IcarusVerilogPlugin/         # Icarus Verilog simulation integration (submodule)
+├── CodeEditor2LiveMarkdownPlugin/          # Live Markdown support (submodule)
+├── CodeEditor2MarkdownPlugin/              # Markdown support (submodule)
+├── CodeEditor2VivadoPlugin/                # Xilinx Vivado integration (submodule)
+├── ajkCefGlue/                             # CEF support (submodule)
+└── TemplateEngineHost/                     # Template engine
+```
+
+### サブモジュール一覧
+
+| サブモジュール | URL | 用途 |
+|---------------|-----|------|
+| `CodeEditor2` | git@github.com:ajkfds/CodeEditor2.git | コアエディタコンポーネント |
+| `CodeEditor2Plugin` | git@github.com:ajkfds/CodeEditor2Plugin.git | ベースプラグインインターフェース |
+| `CodeEditor2VerilogPlugin` | git@github.com:ajkfds/CodeEditor2VerilogPlugin.git | Verilog/SystemVerilog言語サポート |
+| `CodeEditor2AiPlugin` | git@github.com:ajkfds/CodeEditor2AiPlugin.git | AI統合プラグイン |
+| `CodeEditor2AiAssistant` | git@github.com:ajkfds/CodeEditor2AiAssistant.git | AIアシスタント |
+| `CodeEditor2MarkdownPlugin` | git@github.com:ajkfds/CodeEditor2MarkdownPlugin.git | Markdownサポート |
+| `CodeEditor2LiveMarkdownPlugin` | git@github.com:ajkfds/CodeEditor2LiveMarkdownPlugin.git | ライブMarkdownサポート |
+| `CodeEditor2DrawIoPlugin` | git@github.com:ajkfds/CodeEditor2DrawIoPlugin.git | Draw.io図形サポート |
+| `CodeEditor2IcarusVerilogPlugin` | git@github.com:ajkfds/CodeEditor2IcarusVerilogPlugin.git | Icarus Verilogシミュレーション統合 |
+| `CodeEditor2VivadoPlugin` | git@github.com:ajkfds/CodeEditor2VivadoPlugin.git | Xilinx Vivado統合 |
+| `AjkAvaloniaLibs` | git@github.com:ajkfds/AjkAvaloniaLibs.git | Avalonia UIユーティリティライブラリ |
+| `AjkLibs` | https://github.com/ajkfds/AjkLibs.git | 汎用ユーティリティライブラリ |
+| `AvaloniaEdit` | git@github.com:ajkfds/AvaloniaEdit.git | テキストエディタコントロール |
+| `ajkCefGlue` | git@github.com:ajkfds/ajkCefGlue.git | CEF (Chromium Embedded Framework) サポート |
+
+### コミット時の注意
+
+**サブモジュール内のファイルを変更した場合**:
+```bash
+git -C <サブモジュール名>/<サブモジュール名> add <変更ファイルのパス>
+git -C <サブモジュール名>/<サブモジュール名> commit -m "<メッセージ>"
+```
+
+**メインディレクトリのファイルを変更した場合**:
+```bash
+git add <パス>
+git commit -m "<メッセージ>"
 ```
 
 ## build方法
 
 ワーニングが大量にあるので、build時にはerrorのみ参照してください。
 
+```
 dotnet build -clp:ErrorsOnly
+```
 
 全体build
 ```
 dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly
 ```
 
-pulgin単位のbuild
-```
+plugin単位のbuild
+```xml
 <execute_command>
-<command>dotnet build CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly</command>
+<command>dotnet build CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin.sln -clp:ErrorsOnly</command>
 </execute_command>
 ```
 
+---
+
+## Git Commit手順 (重要)
+
+このプロジェクトは**サブモジュール構造**を使用している。コミット前にパスを確認すること。
+
+### 変更のあるファイルの場所を特定
+
+```xml
+<execute_command>
+<command>git status</command>
+</execute_command>
+```
+
+### 出力例:
+```
+modified:   CodeEditor2VerilogPlugin (new commits, modified content)
+```
+
+`(new commits, modified content)`はサブモジュール内の変更を示す。
+
+### サブモジュール内の変更をコミットする場合
+
+**正しい方法** (`git -C` を使用):
+```xml
+<execute_command>
+<command>git -C CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin add <変更ファイルのパス> && git -C CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin commit -m "コミットメッセージ"</command>
+</execute_command>
+```
+
+**例**: PortInvertSnippet.cs をコミットする場合:
+```xml
+<execute_command>
+<command>git -C CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin add CodeEditor2VerilogPlugin/Verilog/Snippets/PortInvertSnippet.cs && git -C CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin commit -m "Fix PortInvertSnippet..."</command>
+</execute_command>
+```
+
+### よくある間違い
+
+❌ `git add CodeEditor2VerilogPlugin/...` - メインディレクトリからサブモジュールのファイルへアクセスできない
+❌ `cd CodeEditor2VerilogPlugin && git add ...` - `cd` コマンドは許可されていない
+❌ `git -C CodeEditor2VerilogPlugin add CodeEditor2VerilogPlugin/...` - パスが二重になる
+
+✅ `git -C CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin add CodeEditor2VerilogPlugin/...`
+
+### サブモジュールの構造
+
+```
+RtlEditor2/                          # メインディレクトリ (git add/commitはここに)
+└── CodeEditor2VerilogPlugin/        # サブモジュール
+    └── CodeEditor2VerilogPlugin/    # 実際のコード (git -C で这里を指す)
+        └── CodeEditor2VerilogPlugin/
+            └── Verilog/
+                └── Snippets/
+                    └── PortInvertSnippet.cs
+```
+
+### ワークフロー
+
+1. **ビルド**: エラーがないか確認
+2. **git status**: 変更のあるファイルを確認
+3. **サブモジュール内のファイルを変更した場合**:
+   - `git -C CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin add <パス>`
+   - `git -C CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin commit -m "<メッセージ>"`
+4. **メインディレクトリのファイルを変更した場合**:
+   - `git add <パス>`
+   - `git commit -m "<メッセージ>"`
+
+
+---
+
+## 調査記録: triregとtranif対応状況 (2025-02-14)
+
+### 概要
+Verilogの`trireg`宣言と`tranif*`gate instantiationへの対応状況を調査。
+
+### 調査結果
+
+#### trireg宣言への対応 ✅ 対応済み
+
+| 項目 | 場所 | 対応状況 |
+|------|------|----------|
+| `trireg`キーワード登録 | `General.cs:164,266` | ✅ 対応済み |
+| `NetTypeEnum.Trireg` | `Net.cs:62` | ✅ 対応済み |
+| `parseNetType()`でのパース | `Net.cs:208-211` | ✅ 対応済み |
+| `DriveStrength`対応 | `Net.cs` + `Strength.cs` | ✅ 対応済み |
+| `ChargeStrength`対応 | `Net.cs:326` + `Strength.cs:64-126` | ✅ 対応済み |
+
+```verilog
+// trireg宣言の例 - 対応済み
+trireg (strong0) data;           // drive_strength
+trireg (small) memory;            // charge_strength
+trireg (pull1) #1 bus;           // drive_strength + delay
+```
+
+**備考**: `trireg`は`Net.ParseDeclaration()`で正しくパースされる。デフォルトネットタイプとしての`trireg`使用も`WordScanner.cs:649-651`で認識されている（ただし"Not supported"エラーは出る）。
+
+#### tranif*/tran gate instantiationへの対応 ❌ 未実装
+
+| 項目 | 場所 | 対応状況 |
+|------|------|----------|
+| `tranif0`, `tranif1` | `ModuleOrGenerateItem.cs:42-43` | ⚠️ キーワード登録済み |
+| `rtranif0`, `rtranif1` | `ModuleOrGenerateItem.cs:44-45` | ⚠️ キーワード登録済み |
+| `tran`, `rtran` | `ModuleOrGenerateItem.cs:46-47` | ⚠️ キーワード登録済み |
+| `PassEnableSwitch`クラス | `GateInstantiation.cs` | ❌ **未実装** |
+| `PassSwitch`クラス | `GateInstantiation.cs` | ❌ **未実装** |
+
+**問題点**: `GateInstantiation.cs:126-132`で`tranif*`と`tran*`が`break;`のみで処理されており、実際のインスタンス生成が行われていない。
+
+```csharp
+// GateInstantiation.cs の問題箇所
+case "tranif0":
+case "tranif1":
+case "rtranif0":
+case "rtranif1":
+    break;  // ← 何も処理されない
+case "tran":
+case "rtran":
+    break;  // ← 何も処理されない
+```
+
+**対応が必要な構文**:
+```verilog
+// pass_en_switchtype
+tranif0 inst (inout_terminal, inout_terminal, enable_terminal);
+tranif1 inst (inout_terminal, inout_terminal, enable_terminal);
+rtranif0 inst (inout_terminal, inout_terminal, enable_terminal);
+rtranif1 inst (inout_terminal, inout_terminal, enable_terminal);
+
+// pass_switchtype
+tran inst (inout_terminal, inout_terminal);
+rtran inst (inout_terminal, inout_terminal);
+```
+
+### 関連ファイル
+
+| ファイル | 役割 |
+|----------|------|
+| `Verilog/ModuleItems/GateInstantiation.cs` | gate instantiation解析 |
+| `Verilog/DataObjects/Nets/Net.cs` | net宣言解析 |
+| `Verilog/Strength.cs` | drive/charge strength解析 |
+
+### 修正優先度
+
+| 優先度 | 問題 | 難易度 | 影響範囲 |
+|--------|------|--------|----------|
+| 低 | tranif*/tran gate instantiation | 中 | 小（gate instanceのみ） |
+
+### 備考
+- triregはnet_typeとして完全にサポート済み
+- tranif*/tranはプリミティブゲートインスタンシエーションの一部で、未対応
+
+---
+
+## 修正履歴: let宣言のFunctionCall対応 (2025-02-14)
+
+**問題**: `let`宣言をパースして`NamedElements`に登録しているが、`FunctionCall`が`let`を見つけられず`undefined`エラーになっていた
+
+**原因**: `FunctionCall.ParseCreate()`が`Function`型のみを探しており、`LetDeclaration`型のチェックがなかった
+
+**修正内容**:
+1. `FunctionCall`クラスに`LetDeclaration`プロパティを追加
+2. `FunctionCall.ParseCreate()`を修正して`LetDeclaration`も検索・認識するように変更
+3. `BitWidth`設定時に`LetDeclaration.Expression.BitWidth`も考慮
+
+**対応する構文**:
+```verilog
+// let宣言
+let op(x, y) = x | y;
+
+// let呼び出し（function_callとしてパース）
+result = op(a, b);
+```
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Expressions/FunctionCall.cs`
+
+**備考**:
+- `LetDeclaration`は`INamedElement`として`NamedElements`に登録済み
+- 既存の`PackageOrGenerateItemDeclaration.cs`と`Checker.cs`での`let`登録処理は正常
+
+---
+
+## 修正履歴: tranif*/tran gate instantiation実装 (2025-02-14)
+
+**問題**: `tranif0`, `tranif1`, `rtranif0`, `rtranif1`, `tran`, `rtran`のgate instantiationがパースされていなかった
+
+**原因**: `GateInstantiation.cs`の`ParseCreate`メソッドで該当caseが`break;`のみで実装されていなかった
+
+**修正内容**:
+1. `PassSwitch`クラスを追加（`tran`/`rtran`用）
+2. `PassEnableSwitch`クラスを追加（`tranif0`/`tranif1`/`rtranif0`/`rtranif1`用）
+3. 各クラスの`ParseCreate`メソッドで正しいport parsingを実装
+
+**対応構文**:
+```verilog
+// Pass switch
+tran inst (data, bus);
+rtran inst (a, b);
+
+// Pass enable switch
+tranif0 enable_switch (data, bus, enable);
+tranif1 enable_switch (data, bus, enable);
+rtranif0 enable_switch (data, bus, enable);
+rtranif1 enable_switch (data, bus, enable);
+
+// With delay
+tranif0 #1ns enable_switch (data, bus, enable);
+```
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/ModuleItems/GateInstantiation.cs`
+
+**備考**:
+- `PassSwitch.IsReversible`プロパティで`tran`/`rtran`を区別
+- `PassEnableSwitch.IsInverting`と`IsReversible`プロパティで各タイプを区別
+- `Delay2`サポート済み
+
+---
 
 ---
 
@@ -823,6 +1081,53 @@ private async Task updateFolder()
 - [x] AGENTS.md loaded and understood
 - [x] AGENTS.md read and processed
 - [x] **Agent session active - Ready for user instructions** (2025-02-14)
+- **Last AGENTS.md check**: 2025-02-14
+- **AGENTS.md loaded**: Ready to process user instructions
+
+### 修正履歴
+
+#### PortInvertSnippet.cs修正 (2025-02-14)
+
+**問題**: port inversion snippetがuser-defined types、カンマ区切り、行内コメントに対応していなかった
+
+**修正内容**:
+1. 正規表現に`type`キャプチャグループを追加（任意の型名をサポート）
+2. bitwidth正規表現パターンを修正: `\[[^\[\]]*\]`（ネストBracket処理の修正）
+3. 行末カンマのサポートを追加（それまではセミコロンのみ対応）
+4. 行内コメント`//...`のサポートを追加
+
+**対応可能となったケース**:
+```verilog
+input [7:0] data;              // 通常
+input [7:0] data,              // カンマ区切り
+input logic [7:0] data;        // user-defined type (logic)
+input my_type_t addr,          // カスタム型 + カンマ
+input [7:0] data; // comment    // 行内コメント
+```
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Snippets/PortInvertSnippet.cs`
+
+### Agent Session Log
+- **2025-02-14**: AGENTS.md read and understood. Project structure grasped.
+- **2025-02-14**: Agent session restarted, AGENTS.md re-read and ready for next task.
+  - Main focus areas: Verilog/SystemVerilog parser, TreeControl issues, UI thread locks
+  - Known bugs: 11+ SystemVerilog parse errors, UI thread lock issues
+  - Fixed bugs: TreeControl flickering, ChatControl font, ParseHierarchy cancel, case inside, clocking event
+  - Build command: `dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly`
+
+- **Agent re-initialized**: AGENTS.md read and ready for next task (2025-02-14)
+  - Project: RtlEditor2 (Avalonia UI RTL IDE)
+  - Key components: CodeEditor2, CodeEditor2VerilogPlugin, various integration plugins
+  - Build: `dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly`
+
+### Agent Session Log
+- **2025-02-14**: AGENTS.md read and understood. Project structure grasped.
+- **2025-02-14**: Agent session restarted, AGENTS.md re-read and ready for next task.
+  - Main focus areas: Verilog/SystemVerilog parser, TreeControl issues, UI thread locks
+  - Known bugs: 11+ SystemVerilog parse errors, UI thread lock issues
+  - Fixed bugs: TreeControl flickering, ChatControl font, ParseHierarchy cancel, case inside, clocking event
+  - Build command: `dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly`
 
 ### Current Session Info
 - **Session Started**: 2025-02-12
@@ -1624,6 +1929,33 @@ else if (port.Direction == Port.DirectionEnum.Output)
 
 ---
 
+## 修正履歴: Port.BitWidth の二重計算問題 (2025-02-14)
+
+**問題**: module instanceのport接続でbitwidth warningの出力がおかしい
+- `input [7:0] DATA` に対して `wire [7:0] dat` を接続したとき
+- `.DATA(dat)` で `bitwidth 64<-8` というwarningが出る（本来は `bitwidth 8<-8`）
+
+**原因**: `Port.BitWidth` プロパティが以下のように計算されていた
+1. `DataObject.BitWidth` (Net.BitWidth) = 8 を取得
+2. `PackedDimensions` (Netのpacked dimensions) をループしてさらに乗算
+3. 結果: 8 × 8 = 64
+
+しかし `Net.BitWidth` は既に `DataType.BitWidth` (packed dimensionsを含む) を返しているため、
+`PackedDimensions` を再加算すると二重計算になっていた。
+
+**修正**: `Port.BitWidth` から PackedDimensions の計算を除外
+- DataObject.BitWidth は Net の PackedDimensions を既に 含んでいるため、二重計算不要再
+- UnPackedDimensions のみを追加で乗算（これは DataObject.BitWidth に含まれないため）
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/DataObjects/Port.cs`
+
+**備考**:
+- warning文は `ModuleInstantiation.cs` の `checkNetPortConnection()` と `checkVariablePortConnection()` で出力される
+- 修正により正しいビット幅比較が行われるようになった
+
+---
+
 ## 調査記録: SystemVerilog Parse Error 修正方針
 
 ### 前提
@@ -2039,6 +2371,140 @@ module = await Module.ParseCreate(word, null, null, parsedDocument.Root, file, .
 | 中 | Debugger.Break() | 開発体験 |
 | 低 | 空のcatchブロック | 安定性 |
 | 低 | コード品質 | 保守性 |
+
+---
+
+## 調査記録: Linux環境でのファイル変更誤検知問題 (2025-02-14)
+
+### 問題概要
+Linux環境でファイルを保存した後、`FileCheckAsync` がファイル変更を検出し、コンフリクトダイアログが表示される。
+しかし実際にはファイルは編集しておらず、セーブしただけの場合に誤検知が発生する。
+
+### 症状
+1. **保存直後にコンフリクトが検出される** (編集していないのに)
+2. **一度コンフリクト_dialogで「破棄」を選択すると、次保存まで問題は発生しない**
+3. **Windows環境では問題が発生しにくい**
+
+### 関連ファイル
+
+| ファイル | 役割 |
+|----------|------|
+| `CodeEditor2/CodeEditor2/CodeEditor2/Data/TextFile.cs` | `FileCheckAsync`, `SaveAsync` |
+| `CodeEditor2/CodeEditor2/CodeEditor2/Data/DataAccess.cs` | ファイル読み込み/書き込み |
+
+### セマフォによるファイル操作の競合防止
+
+**同一ファイル内での Race Condition は防止されている**:
+- `_fileSemaphore` (SemaphoreSlim 1,1) で SaveAsync と FileCheckAsync を排他制御
+- 各 TextFile インスタンスごとに独立しているため、同一ファイル内での不整合は発生しない
+
+```csharp
+// SaveAsync - ブロックして待つ
+await _fileSemaphore.WaitAsync();
+try {
+    // ファイル保存
+    loadFileHash = newHash;  // 保存完了時にハッシュ更新
+} finally {
+    _fileSemaphore.Release();
+}
+
+// FileCheckAsync - 待たない、即座にリターン
+if (!await _fileSemaphore.WaitAsync(0)) {
+    return;  // 取得できなければ早期リターン
+}
+```
+
+### 原因の特定 (調査中)
+
+#### 仮説: Linuxカーネルのページキャッシュ遅延
+
+**Linux のファイル I/O 動作**:
+1. 書き込み: `WriteAsync` → カーネルのページキャッシュに溜まる
+2. `FlushAsync`: ページキャッシュへの書き込みを完了させるが、**ディスクへの書き込みは保証しない**
+3. 読み込み: ページキャッシュから返される
+
+**問題シナリオ**:
+```
+時刻T1: SaveAsync が WriteAsync + FlushAsync を実行
+        → ページキャッシュにデータが溜まる
+        → loadFileHash = 新しいハッシュ に更新
+        
+時刻T2: FileCheckAsync が GetFileTextAsync を実行
+        → ページキャッシュからファイルを読み込もうとする
+        → まだ古いデータが残っている可能性
+        
+時刻T3: GetHash(text) != loadFileHash
+        → コンフリクト dialog！
+```
+
+#### コード上の問題点
+
+**保存時のファイル出力** (`DataAccess.saveFileAsync`):
+```csharp
+using (FileStream fs = new FileStream(
+    project.GetAbsolutePath(relativePath),
+    FileMode.Create, FileAccess.Write, FileShare.Read,
+    bufferSize: 4096 * 32, useAsync: true))  // ← useAsync モード
+{
+    byte[] encodedText = Encoding.UTF8.GetBytes(text);
+    await fs.WriteAsync(encodedText, 0, encodedText.Length);
+    await fs.FlushAsync();  // 同期flushではない
+}
+```
+
+**読み込み時のファイル入力** (`DataAccess.getFileTextAsync`):
+```csharp
+using (FileStream fs = new FileStream(
+    project.GetAbsolutePath(relativePath),
+    FileMode.Open,
+    FileAccess.Read,
+    FileShare.Read,
+    bufferSize: 4096 * 32,
+    useAsync: true))  // ← useAsync モード
+{
+    using var sr = new StreamReader(fs, Encoding.UTF8, true);
+    text = await sr.ReadToEndAsync();
+}
+```
+
+#### loadFileHash の二重設定問題
+
+**初期ロード時** (`TextFile.FileCheckAsync`):
+```csharp
+string newHash = GetHash(text);
+loadFileHash = newHash;  // ★ ここで設定 (UI Thread dispatch の前)
+
+await Dispatcher.UIThread.InvokeAsync(async () =>
+{
+    var doc = CodeDocument;
+    if (doc != null)
+    {
+        doc.TextDocument.Replace(0, doc.TextDocument.TextLength, text);
+        doc.Clean();
+    }
+    loadFileHash = newHash;  // ★ ここで再度設定 (UI Thread の中)
+    await FileChangedAsync();
+});
+```
+
+**問題点**:
+- `loadFileHash` が **2箇所**で設定されている
+- `Dispatcher.UIThread.InvokeAsync()` で UI Thread にポストされた後、`FileCheckAsync` がリターンする
+- この間に別の `FileCheckAsync` が発火する可能性がある
+
+### 修正方針案 (調査中)
+
+| # | 修正案 | 対象箇所 | 効果 |
+|---|--------|----------|------|
+| 1 | `useAsync: true` → `useAsync: false` | 読み込み側 | ページキャッシュの問題を回避？ |
+| 2 | `FlushAsync()` → `Flush()` (同期flush) | 保存側 | 書き込み完了を保証 |
+| 3 | `FileOptions.WriteThrough` の追加 | 保存側 | ディスクに直接書き込み |
+| 4 | `loadFileHash` の設定位置を整理 | FileCheckAsync | 二重設定問題を解決 |
+
+### 備考
+- **調査のみの実施。修正は未実施。**
+- キャッシュ使用時の問題は除外して調査中
+- Linux での `useAsync: true` オプションの動作要注意
 
 ---
 
