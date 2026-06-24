@@ -370,6 +370,16 @@ foreach(test[i])の箇所でエラーがでる
 ```
 moduleと同じくparameter　IDつきでparseしてparse結果をストックする必要がある。
 
+### typedef定義中で各要素間にセミコロンがなくてもエラーがでない (bug NEW)
+
+**問題**: `typedef struct { logic [7:0] a logic [7:0] b } my_struct_t;` で要素間にセミコロンがないのにエラーにならない
+
+**原因**: `StructType.parseMembers` がカンマなしで終了した場合、`ParseCreate` ループが 又 `parseMembers` を呼び出すが、2回目は単純に `return false` で終了し、エラーが追加されない
+
+**修正**: `parseMembers` がカンマなしで終了した場合（次のメンバーが始まる可能性がある場合）、`word.Text != ","` の代わりにエラー，至少至少一个成员分隔符（カンマまたはセミコロン）を要求
+
+**対象ファイル**: `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/DataObjects/DataTypes/StructType.cs`
+
 ### named blocks (bug 9.3.5)
 
 ```
@@ -1113,7 +1123,7 @@ input [7:0] data; // comment    // 行内コメント
 - **2025-02-14**: Agent session restarted, AGENTS.md re-read and ready for next task.
   - Main focus areas: Verilog/SystemVerilog parser, TreeControl issues, UI thread locks
   - Known bugs: 11+ SystemVerilog parse errors, UI thread lock issues
-  - Fixed bugs: TreeControl flickering, ChatControl font, ParseHierarchy cancel, case inside, clocking event
+  - Fixed bugs: TreeControl flickering, ChatControl font, ParseHierarchy cancel, case inside, clocking event, Port.BitWidth double calculation, Struct undriven warning
   - Build command: `dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly`
 
 - **Agent re-initialized**: AGENTS.md read and ready for next task (2025-02-14)
@@ -1126,7 +1136,7 @@ input [7:0] data; // comment    // 行内コメント
 - **2025-02-14**: Agent session restarted, AGENTS.md re-read and ready for next task.
   - Main focus areas: Verilog/SystemVerilog parser, TreeControl issues, UI thread locks
   - Known bugs: 11+ SystemVerilog parse errors, UI thread lock issues
-  - Fixed bugs: TreeControl flickering, ChatControl font, ParseHierarchy cancel, case inside, clocking event
+  - Fixed bugs: TreeControl flickering, ChatControl font, ParseHierarchy cancel, case inside, clocking event, Port.BitWidth double calculation, Struct undriven warning
   - Build command: `dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly`
 
 ### Current Session Info
@@ -1148,7 +1158,7 @@ input [7:0] data; // comment    // 行内コメント
 - **Session Summary**: 
   - Project structure: Avalonia UI RTL IDE with modular plugin architecture
   - Main issue categories: UI thread locks, SystemVerilog parse errors (11+ known bugs), TreeControl issues
-  - Fixed issues: TreeControl flickering, ChatControl font, ParseHierarchy cancel, ShowDialog position, Struct undriven warning
+  - Fixed issues: TreeControl flickering, ChatControl font, ParseHierarchy cancel, ShowDialog position, Struct undriven warning, Port.BitWidth double calculation
 - **Agent initialized**: 2025-02-14 - AGENTS.md loaded, ready to process tasks
 
 **UIスレッドロック問題 確認結果 (2025-02-12)**:
