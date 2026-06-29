@@ -1084,6 +1084,33 @@ private async Task updateFolder()
 
 ---
 
+## 修正履歴: ChatControlにCtrl+Space自動補完機能を追加 (2025-02-14)
+
+### 問題
+ChatControlの入力フィールドでCtrl+Spaceを押したときに、現在のコードコンテキストに基づく自動補完を展開できるようにしたかった。
+
+### 修正内容
+1. **InputItem.cs**: TextBoxをAvaloniaEditのTextEditorに置き換え
+2. **InputItem.cs**: Ctrl+SpaceでAutoCompleteRequestedイベントを発生させるkey handlerを追加
+3. **ChatControl.axaml**: PopupMenuFlyoutを追加（自動補完ポップアップ用）
+4. **ChatControl.axaml.cs**: InputItem_AutoCompleteRequested handlerを実装
+   - Global.codeViewから現在のTextFileを取得
+   - TextFile.GetAutoCompleteItems()で補完候補を取得
+   - PopupMenuFlyoutを開いて候補を表示
+   - 選択した候補をテキストエディタに挿入
+
+### 対応する操作
+- Ctrl+Space: 現在のコードファイルに基づいた自動補完候选を表示
+- Enter/Tab: 選択した候補を挿入
+- Escape: ポップアップを閉じる
+
+### 修正ファイル
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/InputItem.cs`
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/ChatControl.axaml`
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs`
+
+---
+
 ## Status
 
 - [x] Read AGENTS.md - Ready to process tasks
