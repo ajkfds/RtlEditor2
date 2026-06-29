@@ -25,7 +25,7 @@ namespace RtlEditor2.Desktop.LLM
 
             sb.Append(getAssetString("avares://CodeEditor2VerilogPlugin/Assets/LLMPrompt/RtlEditSkill.md"));
 
-            sb.Append(getAssetString("avares://CodeEditor2/Assets/LLMPrompt/CheckAgentMd.md"));
+            sb.Append(getAssetString("avares://CodeEditor2/Assets/LLMPrompt/CheckRulesMd.md"));
             sb.Append("""
 
                 ===
