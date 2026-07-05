@@ -1,4 +1,52 @@
 
+## 修正履歴: Project初期化時のファイルツリー取得改善 (2025-02-14)
+
+### 問題
+Project作成時の初期データ取得で、各フォルダレベルで逐次的に非同期呼び出しを行っていたため、
+深い階層構造を持つプロジェクトの場合、最初のデータ取得に非常に時間がかかっていた。
+
+### 修正内容
+1. `Folder.InitializeHierarchy()` メソッドを修正
+   - `subNode.Name` のみを使用していた問題を修正
+   - `FileSystemInfo.FullName` が_available場合はそれを使用し、ない場合はベースパスから構築
+2. `NavigateView.AddProject()` でコメントアウトされていた `InitializeSubItemsAsync()` を有効化
+   - `FileIO.GetFileTree()` を使用して再帰的に全ファイルを取得
+   - `InitializeHierarchy()` で一度にItemsツリーを構築
+
+### 修正ファイル
+- `CodeEditor2/CodeEditor2/CodeEditor2/Data/Folder.cs`
+- `CodeEditor2/CodeEditor2/CodeEditor2/Views/NavigateView.axaml.cs`
+
+### 効果
+- 修正前: O(n × d) 回の非同期呼び出し（n=フォルダ数、d=階層深度）
+- 修正後: O(1) 回の `GetFileTree` + O(n) のツリー構築
+
+### ビルド結果
+- ビルド成功 (880 警告, 0 エラー)
+
+---
+
+## 修正履歴: DataObjectReference.CreateString() の名前空間パス対応 (2025-02-14)
+
+### 問題
+`Expression` の Parse 時に `nameSpace.nameSpace.DataObjectName` で取得した場合、`CreateString()` で名前空間パスを含む正しい名称を取得できなかった。
+
+### 修正内容
+1. `DataObjectReference` クラスに `NameSpacePath` プロパティを追加
+   - 例: `"parent.child."` のような名前空間パスを保持
+2. `ParseCreate` メソッドを拡張してオプショナルな `nameSpacePath` パラメータを受け取れるように変更
+3. `CreateString()` を修正して `NameSpacePath` がある場合はそのパスを含めるように変更
+4. `Primary.parseDataObject()` を修正して `nameSpaceText` を `ParseCreate` に渡すように変更
+
+### 修正ファイル
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Expressions/DataObjectReference.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Expressions/Primary.cs`
+
+### 動作確認
+- ビルド成功 (654 警告, 0 エラー)
+
+---
+
 ## 調査記録: triregとtranif対応状況 (2025-02-14)
 
 ### 概要
@@ -948,6 +996,33 @@ private async Task updateFolder()
 
 ---
 
+## 修正履歴: Dynamic Arrayの組み込みメソッド対応 (2025-02-14)
+
+**問題**: dynamic array (`bit [7:0] arr[];`) に対する `.size()`、`.delete()` メソッドがパースエラーになっていた
+
+**原因**: `Variable.ParseDeclaration`で`DynamicArray`が作成された場合、変数の替换が行われ但し`NamedElements`（.size()、.delete()メソッド）が変数に設定されていなかった
+
+**修正内容**:
+1. `Variable.cs`の`ParseDeclaration`メソッドで`DynamicArray`のケースを追加
+2. `DynamicArray`が作成された場合、変数を`DynamicArray`に置換するようにした
+
+**対応する構文**:
+```verilog
+bit [7:0] arr[];
+arr = new[16];
+$display(":assert: (%d == 16)", arr.size);
+arr.delete;
+```
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/DataObjects/Variables/Variable.cs`
+
+**備考**:
+- `DynamicArray.Create()`メソッド内では既に`.size()`と`.delete()`の`BuiltInMethod`が`NamedElements`に追加されている
+- 問題は変数宣言時に`DynamicArray`に変換する處理が欠落していた
+
+---
+
 ## Status
 
 - [x] Read AGENTS.md - Ready to process tasks
@@ -1049,6 +1124,24 @@ input [7:0] data; // comment    // 行内コメント
 - **Language**: C# (.NET 8), Verilog/SystemVerilog parser
 - **Known Issues**: UI thread locks, Parse errors, TreeControl issues
 - **Build Command**: `dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly`
+
+---
+
+## 修正履歴: OpenRouterChat Save/Load JSONエラー (2025-02-14)
+
+**問題**: ChatログをSave/Loadする際に`System.Text.Json.JsonReaderException`エラーが発生
+- エラー: `'o' is invalid after a single JSON value. Expected end of data. LineNumber: 0 | BytePositionInLine: 161627`
+
+**原因**: `SaveMessagesAsync`で`File.OpenWrite`を使用していた
+- `File.OpenWrite`は既存のファイルを切り詰めない
+- 新しいJSONデータが古いデータより短い場合、ファイルの末尾に古いデータが残る
+- これがJSONパースエラーを引き起こしていた
+
+**修正**: `File.OpenWrite`を`new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.Read)`に変更
+- `FileMode.Create`でファイルを完全に新規作成（既存データは切り詰め）
+
+**修正ファイル**:
+- `CodeEditor2AiPlugin/CodeEditor2AiPlugin/OpenRouterChat.cs`
 
 ---
 
