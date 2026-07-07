@@ -2514,6 +2514,75 @@ await Dispatcher.UIThread.InvokeAsync(async () =>
 
 ---
 
+## 修正履歴: .parseRule ファイルによるParseRule指定 (2025-02-14)
+
+### 問題
+ファイルタイプ(`.fileClassify`)と同じしくみで、**ParseRule**(パース設定)をファイルパターンで指定できるようにしたかった。
+
+### 解決
+**YAMLファイル**でユーザが自由にParseRuleを定義し、`.parseRule`ファイルで適用範囲を指定できるようにした。
+
+### 構成
+
+| ファイル | 場所 | 役割 |
+|----------|------|------|
+| `parseRuleDefinitions.yaml` | プロジェクトルート (ユーザ作成) | ParseRuleの定義 |
+| `.parseRule` | プロジェクトルート | 適用範囲の指定 |
+
+### 1. parseRuleDefinitions.yaml (ユーザ作成)
+
+```yaml
+# 例: parseRuleDefinitions.yaml
+rules:
+  - name: SystemVerilog
+    description: Force SystemVerilog mode
+    options:
+      systemVerilog: true
+
+  - name: disable
+    description: Disable parsing
+    options:
+      disabled: true
+```
+
+### 2. .parseRule (適用範囲指定)
+
+```bash
+# 例: .parseRule
+# 書式: +ruleName pattern または -ruleName pattern
+
++SystemVerilog *.v
++SystemVerilog src/**/*.v
+-disable sim/**/*.v
+```
+
+### 実装ファイル
+
+| ファイル | 変更内容 |
+|----------|----------|
+| `CodeEditor2/Data/ParseRuleDefinition.cs` | 新規作成 (YAML定義ローダー) |
+| `CodeEditor2/Data/ParseRule.cs` | 新規作成 (.parseRuleローダー) |
+| `CodeEditor2/Data/ParseRuleFile.cs` | 新規作成 (.parseRule TextFile) |
+| `CodeEditor2/FileTypes/ParseRuleFile.cs` | 新規作成 (.parseRule FileType) |
+| `CodeEditor2/Parser/ParseRuleFileParser.cs` | 新規作成 (.parseRule Parser) |
+| `CodeEditor2/Data/Project.cs` | ParseRule/ParseRuleDefinitionプロパティ・GetParseRule追加 |
+| `CodeEditor2/Data/TextFile.cs` | CreateDocumentParser overload追加 |
+| `CodeEditor2VerilogPlugin/Data/VerilogFile.cs` | ParseRule適用のためのoverride追加 |
+
+### 対応するRuleオプション
+
+| オプション | 型 | 説明 |
+|------------|-----|------|
+| `systemVerilog` | bool | SystemVerilog modeでパース |
+| `disabled` | bool | パース無効化 |
+
+### ビルド結果
+- CodeEditor2: ビルド成功 (172 警告, 0 エラー)
+- CodeEditor2VerilogPlugin: ビルド成功 (652 警告, 0 エラー)
+- RtlEditor2.Desktop: ビルド成功 (61 警告, 0 エラー)
+
+---
+
 ## 調査記録: .parseRule ファイルによるParseRule指定 (2025-02-14)
 
 ### 目的
