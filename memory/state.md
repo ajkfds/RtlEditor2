@@ -2514,6 +2514,144 @@ await Dispatcher.UIThread.InvokeAsync(async () =>
 
 ---
 
+## 調査記録: .parseRule ファイルによるParseRule指定 (2025-02-14)
+
+### 目的
+**YAMLファイル**でユーザが自由にParseRuleを定義し、`.parseRule`ファイルで適用範囲を指定できるようにする。
+
+### 構成
+
+| ファイル | 場所 | 役割 |
+|----------|------|------|
+| `parseRuleDefinitions.yaml` | プロジェクトルート (ユーザ作成) | ParseRuleの定義 |
+| `.parseRule` | プロジェクトルート | 適用範囲の指定 |
+
+### 1. parseRuleDefinitions.yaml (ユーザが作成)
+
+```yaml
+# 例: parseRuleDefinitions.yaml
+# ユーザが自由にRuleを定義できる
+
+rules:
+  # SystemVerilogとしてパース
+  - name: SystemVerilog
+    description: Force SystemVerilog mode
+    options:
+      systemVerilog: true
+
+  # パース無効化
+  - name: disable
+    description: Disable parsing
+    options:
+      disabled: true
+
+  # ForceAllFiles mode
+  - name: ForceAllFiles
+    description: Force parse all files in hierarchy
+    options:
+      parseMode: ForceAllFiles
+
+  # カスタムRule例
+  - name: MyCustomRule
+    description: Custom parsing rule
+    options:
+      systemVerilog: true
+      parseMode: ForceUpdate
+      additionalOptions:
+        - option1: value1
+        - option2: value2
+```
+
+### 2. .parseRule (適用範囲指定)
+
+```bash
+# 例: .parseRule
+# 書式: +ruleName pattern または -ruleName pattern
+
+# *.v ファイルを SystemVerilog としてパース
++SystemVerilog *.v
++SystemVerilog src/**/*.v
+
+# sim/ フォルダ配下をパース無効化
+-disable sim/**/*.v
+-disable sim/**/*.sv
+
+# 特定ファイルを ForceAllFiles mode でパース
++ForceAllFiles sim/tb_*.v
+```
+
+### 既存機構の調査: `.fileClassify`
+
+| 項目 | 内容 |
+|------|------|
+| ファイル | `.fileClassify` (プロジェクトルート) |
+| 書式 | `+type` (追加) / `-type` (除外) + ワイルドカードフィルタ |
+| 例 | `+VerilogFile`, `-VerilogFile`, `*.v`, `src/**/*.sv` |
+| 処理 | `FileClassify.cs` - パターン一致でファイルタイプを判定 |
+| 適用場所 | `Project.GetFileType()` でFileType決定後に呼び出し |
+
+### 実装アーキテクチャ
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Project.GetParseRule(relativePath)                         │
+│       ↓                                                     │
+│  1. parseRuleDefinitions.yaml からRule定義を読み込み        │
+│  2. .parseRule のパターン一致で適用するRuleを決定           │
+│       ↓                                                     │
+│  TextFile.CreateDocumentParser()でParseRuleを適用           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### オプションの種類 (ParseRuleOptions)
+
+| オプション | 型 | 説明 |
+|------------|-----|------|
+| `systemVerilog` | bool | SystemVerilog modeでパース |
+| `disabled` | bool | パース無効化 |
+| `parseMode` | string | ForceAllFiles / ForceUpdate / etc. |
+| `additionalOptions` | dict | カスタムオプション |
+
+### 実装ステップ
+
+1. **ParseRuleDefinitionクラス作成** (`CodeEditor2/Data/ParseRuleDefinition.cs`)
+   - YAMLパーサーで `parseRuleDefinitions.yaml` を読み込み
+   - Rule名とオプションのマッピングを管理
+
+2. **ParseRuleクラス作成** (`CodeEditor2/Data/ParseRule.cs`)
+   - `.parseRule` ファイルの読み込み
+   - パターン一致で適用するRule名を取得
+   - `ParseRuleDefinition` からオプションを取得
+
+3. **ParseRuleFile Type追加** (`CodeEditor2/FileTypes/ParseRuleFile.cs`)
+   - `.parseRule` を special file type として登録
+
+4. **ProjectにParseRuleプロパティ追加**
+   - `Project.ParseRule` を追加
+   - `GetParseRule(relativePath)` メソッド追加
+
+5. **パース時の適用**
+   - `TextFile.CreateDocumentParser()` でParseRuleを適用
+   - `VerilogParser` なら `parsedDocument.SystemVerilog = true` 等を設定
+
+### 変更範囲
+
+| ファイル | 変更内容 |
+|----------|----------|
+| `CodeEditor2/Data/ParseRuleDefinition.cs` | 新規作成 (YAML定義ローダー) |
+| `CodeEditor2/Data/ParseRule.cs` | 新規作成 (.parseRuleローダー・一致判定) |
+| `CodeEditor2/Data/ParseRuleFile.cs` | 新規作成 |
+| `CodeEditor2/FileTypes/ParseRuleFile.cs` | 新規作成 |
+| `CodeEditor2/Data/Project.cs` | ParseRuleプロパティ・メソッド追加 |
+| `CodeEditor2/Data/TextFile.cs` | CreateDocumentParserでParseRuleを適用 |
+
+### YAMLライブラリ
+
+CodeEditor2では現在YAMLライブラリは使用されていないため、追加が必要:
+- `YamlDotNet` NuGetパッケージの追加を検討
+
+---
+
 ## License
 
 MIT License
