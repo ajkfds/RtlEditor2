@@ -263,5 +263,7 @@ EditParse モード時に参照先 file が未 parse だと null が返り、`Vi
   - ビルド成功、コミット済み (`379182c`)
 - [x] **@scope 参照先 file の EditParse 時自動 parse (2026-07-10)**
   - ビルド成功、コミット済み (`f7dd5be`)
+- [x] **AssociativeArray/DynamicArray/Queue の Defined フラグ伝搬修正 (2026-07-09)**
+  - ビルド成功、コミット済み (`f362d8e`)
 - **Next Steps**:
   - 待機中
