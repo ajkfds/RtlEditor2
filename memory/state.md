@@ -209,6 +209,46 @@ endmodule
 
 ---
 
+## 修正履歴: @scope 参照先 file の EditParse 時自動 parse (2026-07-10)
+
+**問題**:
+エディタでソースを編集中 (EditParse モード)、`@scope` 参照先の BuildingBlock が未 parse の場合、
+参照先 file の module 内で使う identifier (`u_inst.SIG` など) が parse できずエラーになる。
+`ModuleInstantiation.Parse` には EditParse 時に instance 対象を 1 階層下まで parse する処理があるが、
+`@scope` には同様の処理がなかった。
+
+**原因**:
+`CommentAnnotationItem.parseScopeAnnotation` (現 `parseScopeAnnotationAsync`) は、
+`@scope` 参照時に `word.ProjectProperty.GetBuildingBlock(...)` を呼んで参照先を解決しようとするが、
+EditParse モード時に参照先 file が未 parse だと null が返り、`VirtualScopeNameSpace` の `target` が
+バインドされないまま登録されてしまっていた。
+
+**修正内容**:
+`ModuleInstantiation.Parse` の EditParse 時処理と同様の仕組みを `@scope` にも適用:
+1. `CommentAnnotationItem.Parse` を `CommentAnnotationItem.ParseAsync` に非同期化
+2. `parseScopeAnnotation` を `parseScopeAnnotationAsync` に非同期化
+3. `parseScopeAnnotationAsync` 内で `EditParse` モードかつ参照先 BuildingBlock が null のとき、
+   `ProjectProperty.GetFileOfBuildingBlock` で参照先 file を取得し、
+   `SingleHierParse` モードで parser を作成、`ParseAsync` → `AcceptParsedDocumentAsync`
+4. その後、参照先 file が `ProjectProperty` に登録されたので `GetBuildingBlock` が解決可能になる
+5. `Module.cs` で `CommentAnnotationItem.Parse` の呼び出しを `await CommentAnnotationItem.ParseAsync` に変更
+
+**注意**:
+- `Task` 型の名前衝突を避けるため `System.Threading.Tasks.Task` を完全修飾で指定
+  (`Microsoft.VisualStudio.Threading` パッケージの `Task` が優先されるため)
+- `string.IsNullOrEmpty(scopeRef.InstanceName)` ガードは撤廃
+  -- InstanceName 指定時も参照先 file を parse すれば、その file 内の instance も parse されるため
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Items/CommentAnnotationItem.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/BuildingBlocks/Module.cs`
+
+**ビルド結果**:
+- `CodeEditor2VerilogPlugin.sln` ビルド成功 (657 警告, 0 エラー)
+- コミット: `f7dd5be CommentAnnotationItem: parse @scope target file on EditParse (like ModuleInstantiation)`
+
+---
+
 ## Status
 - [x] Read AGENTS.md - Ready to process tasks
 - [x] **@scope VirtualScopeNameSpace 動的解決 修正完了 (2025-02-14)**
@@ -221,5 +261,7 @@ endmodule
   - ビルド成功、未コミット
 - [x] **ParseHierarchy での @scope 参照先の自動 parse (2026-07-10)**
   - ビルド成功、コミット済み (`379182c`)
+- [x] **@scope 参照先 file の EditParse 時自動 parse (2026-07-10)**
+  - ビルド成功、コミット済み (`f7dd5be`)
 - **Next Steps**:
   - 待機中
