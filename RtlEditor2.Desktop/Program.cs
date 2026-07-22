@@ -100,22 +100,23 @@ class Program
             "CodeEditor2/Assets/Icons/ai.svg",
              themeColor);
         contextMenu.Items.Add(menuItem_LLM);
+        {
+            MenuItem menuItem_VerilogAgent = CodeEditor2.Global.CreateMenuItem(
+                "Verilog LLM Agent", "menuItem_VerilogAgent",
+                "CodeEditor2/Assets/Icons/ai.svg",
+                Avalonia.Media.Colors.YellowGreen
+                );
+            menuItem_LLM.Items.Add(menuItem_VerilogAgent);
+            menuItem_VerilogAgent.Click += MenuItem_VerilogAgent_Click;
 
-        MenuItem menuItem_VerilogAgent = CodeEditor2.Global.CreateMenuItem(
-            "Verilog LLM Agent", "menuItem_VerilogAgent",
-            "CodeEditor2/Assets/Icons/ai.svg",
-            Avalonia.Media.Colors.YellowGreen
-            );
-        menuItem_LLM.Items.Add(menuItem_VerilogAgent);
-        menuItem_VerilogAgent.Click += MenuItem_VerilogAgent_Click;
-
-        MenuItem menuItem_DotNetAgent = CodeEditor2.Global.CreateMenuItem(
-            "DotNet LLM Agent", "menuItem_DotNetAgent",
-            "CodeEditor2/Assets/Icons/ai.svg",
-            Avalonia.Media.Colors.YellowGreen
-            );
-        menuItem_LLM.Items.Add(menuItem_DotNetAgent);
-        menuItem_DotNetAgent.Click += MenuItem_DotNetAgent_Click;
+            MenuItem menuItem_DotNetAgent = CodeEditor2.Global.CreateMenuItem(
+                "DotNet LLM Agent", "menuItem_DotNetAgent",
+                "CodeEditor2/Assets/Icons/ai.svg",
+                Avalonia.Media.Colors.YellowGreen
+                );
+            menuItem_LLM.Items.Add(menuItem_DotNetAgent);
+            menuItem_DotNetAgent.Click += MenuItem_DotNetAgent_Click;
+        }
 
     }
     private static void MenuItem_VerilogAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
