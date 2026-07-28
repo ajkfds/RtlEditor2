@@ -265,5 +265,63 @@ EditParse モード時に参照先 file が未 parse だと null が返り、`Vi
   - ビルド成功、コミット済み (`f7dd5be`)
 - [x] **AssociativeArray/DynamicArray/Queue の Defined フラグ伝搬修正 (2026-07-09)**
   - ビルド成功、コミット済み (`f362d8e`)
+- [x] **MessageNode: Image サイズを TextBlock.FontSize に追従させる修正 (2026-07-10)**
+  - `image.Width = image.Height = textBlock.FontSize` を `Update()` に追加
+  - `textBlock.PropertyChanged` イベントを購読して `FontSize` 変更時に Image サイズも自動更新
+  - ビルド成功(本体)、コピー段階で `RtlEditor2.Desktop.exe` 起動中による file lock エラーあり(コードエラーなし)
+
+---
+
+## 修正履歴: @samesync アノテーション追加 (2026-07-11)
+
+**問題**:
+2 つの net/variable を同じ sync 対象として扱う記述がなく、複数のクロックドメインを同一視したいときに不便。
+
+**修正内容**:
+`@samesync A = B` というアノテーションを追加。
+1. `ProjectProperty.AnnotationCommands` に `SameSync = "@samesync"` を追加
+2. `CommentAnnotationItem.ParseAsync` で `@samesync` をパース。
+   - フォーマット: `@samesync A = B [, C = D, ...]`
+   - パースしたペアは `nameSpace.PendingSameSyncPairs` に保存
+3. `SyncContext` クラスに以下を追加:
+   - `SameSyncTargets` (List<string>): マージ済み sync 対象の名前リスト
+   - `MergeFrom(other, otherName)`: 別の SyncContext の Data を union し、partner の名前を SameSyncTargets に追加
+   - `EffectiveSyncTargets()`: Data と SameSyncTargets を結合した列挙
+   - `ResolveSameSyncTargets(nameSpace, selfName)`: 未解決の SameSyncTargets を lookup して解決
+   - `AddSameSyncTarget(name)`: 名前だけを登録（未解決状態として保持）
+   - `AppendLabel` で `@samesync` 表示
+   - `PropageteClockDomainFrom` で `EffectiveSyncTargets()` を使うように変更し、samesync 経由でマージされたドメインも sync チェックに反映
+4. `NameSpace` に `PendingSameSyncPairs` リストと `ApplyPendingSameSyncPairs()` メソッドを追加
+5. `VerilogFile.AcceptParsedDocumentAsync` 内で `ApplyCommentScopeReferences` と同じタイミングで `ApplyPendingSameSyncPairs` を呼び出し、未解決ペアを遅延解決
+6. `ModuleInstantiation.SyncCheck` で `targetPort.DataObject.SyncContext.Data` の代わりに `EffectiveSyncTargets()` を使い、`@samesync` でリンクされた net/variable 名経由でも同じ sync 判定になるように修正
+
+**対応する構文**:
+```verilog
+module top;
+    wire clk_a;
+    wire clk_b;
+    // @samesync clk_a = clk_b
+    reg [7:0] data_a;
+    reg [7:0] data_b;
+    // @sync clk_a (data_a)
+    // @sync clk_b (data_b)
+    // data_a と data_b は sync mismatch 警告なし
+endmodule
+```
+
+また、ModuleInstantiation の SyncCheck でも、`@samesync` でリンクされた port 接続先 expression が同じ sync グループとみなされる。
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/DataObjects/SyncContext.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/NameSpace.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Items/CommentAnnotationItem.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Items/ModuleInstantiation.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/ProjectProperty.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Data/VerilogFile.cs`
+
+**ビルド結果**:
+- `CodeEditor2VerilogPlugin.csproj` ビルド成功 (505 警告, 0 エラー)
+- 未コミット
+
 - **Next Steps**:
   - 待機中
