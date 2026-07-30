@@ -5,15 +5,9 @@ VisualStudioVersion = 18.5.11709.299
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RtlEditor2.Desktop", "RtlEditor2.Desktop\RtlEditor2.Desktop.csproj", "{F04A1E8C-F8BE-49F8-BCCA-5F091CA3BAE4}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditor2", "CodeEditor2\CodeEditor2\CodeEditor2\CodeEditor2.csproj", "{98DEA9B6-5386-49BB-AA3B-FAE886A179AA}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditor2Plugin", "CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin.csproj", "{437F4D7E-9772-4527-9548-BD2218C13C18}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AvaloniaEdit", "AvaloniaEdit\src\AvaloniaEdit\AvaloniaEdit.csproj", "{36635FF4-70CC-49E7-95C9-37E492870F91}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditor2MarkdownPlugin", "CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin.csproj", "{498B3672-F113-4781-894A-4F4035B143B0}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeEditor2VerilogPlugin", "CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.csproj", "{5A5B5C43-12B2-4080-8B6F-66E219122138}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AjkAvaloniaLibs", "AjkAvaloniaLibs\AjkAvaloniaLibs\AjkAvaloniaLibs.csproj", "{0A7D4D86-C681-4E57-B9FB-89053586F11A}"
 EndProject
@@ -33,6 +27,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AjkLibs", "AjkLibs\AjkLibs\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2LiveMarkdownPlugin", "CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin.csproj", "{F452EC54-3B18-C5F1-0005-0737B263CEFE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2VerilogPlugin", "CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.csproj", "{2D0AF5DF-8C05-CD80-C0CE-474ED784E795}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2MarkdownPlugin", "CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin.csproj", "{0C9D8270-39E4-59ED-59FB-EB8810F295C6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2", "CodeEditor2\CodeEditor2\CodeEditor2.csproj", "{8CE5530D-83D7-6DC2-014D-BA16DD085FA7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -43,10 +43,6 @@ Global
 		{F04A1E8C-F8BE-49F8-BCCA-5F091CA3BAE4}.Debug|x64.Build.0 = Debug|x64
 		{F04A1E8C-F8BE-49F8-BCCA-5F091CA3BAE4}.Release|x64.ActiveCfg = Release|x64
 		{F04A1E8C-F8BE-49F8-BCCA-5F091CA3BAE4}.Release|x64.Build.0 = Release|x64
-		{98DEA9B6-5386-49BB-AA3B-FAE886A179AA}.Debug|x64.ActiveCfg = Debug|x64
-		{98DEA9B6-5386-49BB-AA3B-FAE886A179AA}.Debug|x64.Build.0 = Debug|x64
-		{98DEA9B6-5386-49BB-AA3B-FAE886A179AA}.Release|x64.ActiveCfg = Release|x64
-		{98DEA9B6-5386-49BB-AA3B-FAE886A179AA}.Release|x64.Build.0 = Release|x64
 		{437F4D7E-9772-4527-9548-BD2218C13C18}.Debug|x64.ActiveCfg = Debug|x64
 		{437F4D7E-9772-4527-9548-BD2218C13C18}.Debug|x64.Build.0 = Debug|x64
 		{437F4D7E-9772-4527-9548-BD2218C13C18}.Release|x64.ActiveCfg = Release|x64
@@ -55,14 +51,6 @@ Global
 		{36635FF4-70CC-49E7-95C9-37E492870F91}.Debug|x64.Build.0 = Debug|x64
 		{36635FF4-70CC-49E7-95C9-37E492870F91}.Release|x64.ActiveCfg = Release|x64
 		{36635FF4-70CC-49E7-95C9-37E492870F91}.Release|x64.Build.0 = Release|x64
-		{498B3672-F113-4781-894A-4F4035B143B0}.Debug|x64.ActiveCfg = Debug|x64
-		{498B3672-F113-4781-894A-4F4035B143B0}.Debug|x64.Build.0 = Debug|x64
-		{498B3672-F113-4781-894A-4F4035B143B0}.Release|x64.ActiveCfg = Release|x64
-		{498B3672-F113-4781-894A-4F4035B143B0}.Release|x64.Build.0 = Release|x64
-		{5A5B5C43-12B2-4080-8B6F-66E219122138}.Debug|x64.ActiveCfg = Debug|x64
-		{5A5B5C43-12B2-4080-8B6F-66E219122138}.Debug|x64.Build.0 = Debug|x64
-		{5A5B5C43-12B2-4080-8B6F-66E219122138}.Release|x64.ActiveCfg = Release|x64
-		{5A5B5C43-12B2-4080-8B6F-66E219122138}.Release|x64.Build.0 = Release|x64
 		{0A7D4D86-C681-4E57-B9FB-89053586F11A}.Debug|x64.ActiveCfg = Debug|x64
 		{0A7D4D86-C681-4E57-B9FB-89053586F11A}.Debug|x64.Build.0 = Debug|x64
 		{0A7D4D86-C681-4E57-B9FB-89053586F11A}.Release|x64.ActiveCfg = Release|x64
@@ -95,6 +83,18 @@ Global
 		{F452EC54-3B18-C5F1-0005-0737B263CEFE}.Debug|x64.Build.0 = Debug|Any CPU
 		{F452EC54-3B18-C5F1-0005-0737B263CEFE}.Release|x64.ActiveCfg = Release|Any CPU
 		{F452EC54-3B18-C5F1-0005-0737B263CEFE}.Release|x64.Build.0 = Release|Any CPU
+		{2D0AF5DF-8C05-CD80-C0CE-474ED784E795}.Debug|x64.ActiveCfg = Debug|x64
+		{2D0AF5DF-8C05-CD80-C0CE-474ED784E795}.Debug|x64.Build.0 = Debug|x64
+		{2D0AF5DF-8C05-CD80-C0CE-474ED784E795}.Release|x64.ActiveCfg = Release|x64
+		{2D0AF5DF-8C05-CD80-C0CE-474ED784E795}.Release|x64.Build.0 = Release|x64
+		{0C9D8270-39E4-59ED-59FB-EB8810F295C6}.Debug|x64.ActiveCfg = Debug|x64
+		{0C9D8270-39E4-59ED-59FB-EB8810F295C6}.Debug|x64.Build.0 = Debug|x64
+		{0C9D8270-39E4-59ED-59FB-EB8810F295C6}.Release|x64.ActiveCfg = Release|x64
+		{0C9D8270-39E4-59ED-59FB-EB8810F295C6}.Release|x64.Build.0 = Release|x64
+		{8CE5530D-83D7-6DC2-014D-BA16DD085FA7}.Debug|x64.ActiveCfg = Debug|x64
+		{8CE5530D-83D7-6DC2-014D-BA16DD085FA7}.Debug|x64.Build.0 = Debug|x64
+		{8CE5530D-83D7-6DC2-014D-BA16DD085FA7}.Release|x64.ActiveCfg = Release|x64
+		{8CE5530D-83D7-6DC2-014D-BA16DD085FA7}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
