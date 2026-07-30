@@ -325,3 +325,47 @@ endmodule
 
 - **Next Steps**:
   - 待機中
+
+---
+
+## 修正履歴: ChatControl auto-complete を InputItem 側 TextFile ベースに修正 (2026-07-12)
+
+**問題**:
+`CodeEditor2\CodeEditor2\CodeEditor2\LLM\ChatControl.axaml.cs` の `InputItem_AutoCompleteRequested` が `Global.codeView` (MainWindow 側) を参照していたため、チャット入力で Ctrl+Space を押しても MainWindow 側で開いている TextFile の補完候補しか出ず、チャット入力中の内容 (caret 位置、テキスト) とは無関係に動作していた。
+
+**原因**:
+- `InputItem` には独自の `TextFile` を持っておらず、`ChatControl` 側で `Global.codeView` という唯一のグローバル codeView を参照していた
+- `codeView.TextFile.GetAutoCompleteItems(codeView.CodeDocument.CaretIndex, ...)` で `codeView` 側の caret index を使っていた
+- 結果として、チャット入力で `Ctrl+Space` を押下しても `codeView` (MainWindow) の `codeView.CodeDocument.CaretIndex` の位置で補完候補を引くため、チャット入力には無関係な候補しか出ない (もしくは MainWindow 側にフォーカスがあるとそちらの候補が出る)
+
+**修正内容**:
+1. 新規ファイル `CodeEditor2/CodeEditor2/CodeEditor2/Data/ChatInputTextFile.cs` を作成
+   - `ChatInputProject : Project` を派生クラスとして追加 (`Project.Project` の `protected` コンストラクタを派生クラスから利用)
+   - `ChatInputTextFile : TextFile` を追加
+     - 必須メンバー `Project`/`RelativePath`/`Name` を満たすため `CreateInstance()` static factory を提供 (C# 11 の `required` + `init` セマンティクスに従い、オブジェクト初期化子で `base()` 前に設定)
+     - `MirrorText(string text)` でチャット入力のテキストを内部 `CodeDocument` に反映
+     - `GetAutoCompleteItems(int index, out string? candidateWord)` をオーバーライドし、チャット入力テキスト中に出現する識別子を前方一致で候補として返す
+2. `CodeEditor2/CodeEditor2/CodeEditor2/LLM/InputItem.cs` を修正
+   - `using CodeEditor2.Data;` を追加
+   - `public Data.TextFile TextFile { get; private set; } = null!;` を追加
+   - コンストラクタ末尾で `TextFile = CreateChatInputTextFile();` を行い、`TextEditor.TextChanged` で `TextFile.MirrorText(text)` を呼んで `CodeDocument` と同期
+   - `CreateChatInputTextFile()` は `ChatInputTextFile.CreateInstance()` を呼ぶ
+3. `CodeEditor2/CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の `InputItem_AutoCompleteRequested` を修正
+   - `Global.codeView` 依存を削除し、`inputItem.TextFile` (InputItem 自身の TextFile) を使うように変更
+   - `caretOffset = inputItem.TextEditor.CaretOffset` (チャット入力側の caret) を使う
+   - `textFile.GetAutoCompleteItems(caretOffset, out string? candidateText)` で `ChatInputTextFile` 由来の候補を取得
+   - `item.Assign(textFile.CodeDocument)` で InputItem 側 CodeDocument を関連付け
+
+**対応するシナリオ**:
+- チャット入力欄に `wire` と入力中に `Ctrl+Space` を押すと、入力中の `wire` から始まる識別子候補 (過去に入力した変数名、関数名等) がチャット入力位置の付近に表示される
+- MainWindow 側で開いている Verilog ファイルに依存しない (チャットは自然言語の命令を書く場所で、MainWindow 側の補完候補は意味をなさない)
+
+**修正ファイル**:
+- `CodeEditor2/CodeEditor2/CodeEditor2/Data/ChatInputTextFile.cs` (新規)
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/InputItem.cs`
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs`
+
+**ビルド結果**:
+- コア DLL (`CodeEditor2.dll`) は `bin\x64\Debug\net8.0\CodeEditor2.dll` に正しく生成された
+- 残りの file lock エラーは `RtlEditor2.Desktop.exe` プロセス (PID 18516) が `bin\x64\Debug\net8.0\*.dll` をロックしているためで、コードロジックの問題ではない (VS / 実行中の RtlEditor2.Desktop が DLL を保持)
+- 未コミット
