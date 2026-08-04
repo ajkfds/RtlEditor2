@@ -269,6 +269,103 @@ EditParse モード時に参照先 file が未 parse だと null が返り、`Vi
   - `image.Width = image.Height = textBlock.FontSize` を `Update()` に追加
   - `textBlock.PropertyChanged` イベントを購読して `FontSize` 変更時に Image サイズも自動更新
   - ビルド成功(本体)、コピー段階で `RtlEditor2.Desktop.exe` 起動中による file lock エラーあり(コードエラーなし)
+- [x] **ChatControl: tool call id の連番付与と id ヒント送出機能 (2026-07-12)**
+  - LLM に毎回異なる `id` を付けるよう促すプロンプトを LLMAgent に追加
+  - ChatControl 側に `nextToolCallIdCounter` を追加し、ユーザコマンド末尾に `<system-hint>Next tool call id: call_NNN</system-hint>` を付与
+  - ツール結果中の `<tool_result id="...">` を scan してカウンタを進め、LLM がヒントを無視しても追跡を維持
+  - ビルド成功、未コミット
+
+## 修正履歴: ChatControl に tool call id 連番付与機能を追加 (2026-07-12)
+
+**問題**:
+`UseToolCallId = true` の LLM agent で、LLM が複数の tool call を 1 ターンで出した場合に、どの `<tool_result id="...">` がどの呼び出しに対応するのかを LLM がトラッキングしづらい。 また、ユーザの次のターンで LLM が id をどう進めたか分からず、同じ id を再利用してしまうリスクがある。
+
+**修正内容**:
+LLM に毎回異なる `id` を付けるよう促し、加えて ChatControl 側で次使うべき id をヒントとしてユーザコマンド末尾に付与する。
+
+1. `LLMAgent.AppendPersudoFunctionCallInstruction` を拡張
+   - `UseToolCallId == true` のときだけ、id ルールを詳細に出力:
+     - id は単一ターン内で一意必須、再利用禁止
+     - `call_001`, `call_002` ... のような短い連番を推奨
+     - ユーザメッセージ末尾の `Next tool call id: call_NNN` ヒントを次の id 開始点として使う
+     - 1 応答内で複数 tool call するならそれぞれ違う id (`call_004`, `call_005`, ...)
+2. `ChatControl` にカウンタ管理を追加
+   - `private int nextToolCallIdCounter = 0;` フィールド
+   - `ResetAsync()` と新規ユーザターン開始時にカウンタを 0 にリセット
+   - `AllocateNextToolCallId()` で `call_NNN` (3 桁ゼロ埋め) を発番しカウンタを進める
+3. コマンド送信時の id ヒント付与
+   - `AppendToolCallIdHintIfNeeded(command)` で `agent.UseToolCallId` が true のときだけヒントを末尾に追加
+   - `UserComplete` の `command` を `commandWithHint` に差し替えてから `completeWithFunctionCall` へ
+   - ヒントフォーマット:
+     ```
+     <system-hint>
+     Next tool call id: call_004
+     Use it for your next tool call and increment for any additional calls in the same response.
+     </system-hint>
+     ```
+4. ツール結果からのカウンタ自動進行
+   - `completeWithFunctionCall` で `agent.ParseResponceAsync` の戻り値（`<tool_result id="...">` を含む）を scan
+   - `AdvanceCounterFromToolResults(text)` で `call_NNN` を抽出してカウンタを `max(N+1, current)` に進める
+   - LLM がヒントを無視して独自 id を使っても、次ターンのヒントは LLM が使った最大値 +1 を指すので衝突しない
+   - `TryParseCallNumber(id, out int)` で `call_<数字>` 形式のみパースし、無効な id は無視
+
+**対応するシナリオ**:
+```
+ユーザ: 「foo.txt を読んで」
+  → コマンド末尾: <system-hint>Next tool call id: call_000</system-hint>
+  → LLM: <read_file id="call_000"><path>foo.txt</path></read_file>
+  → 結果: <tool_result id="call_000">...</tool_result>
+  → 内部カウンタは 1 に進む
+
+ユーザ: 「次は bar.txt を読んで」
+  → コマンド末尾: <system-hint>Next tool call id: call_001</system-hint>
+  → LLM: <read_file id="call_001"><path>bar.txt</path></read_file>
+  ...
+```
+
+**修正ファイル**:
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/LLMAgent.cs`
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs`
+
+**ビルド結果**:
+- `CodeEditor2.csproj` ビルド成功 (172 警告, 0 エラー)
+- 未コミット
+
+---
+
+## 修正履歴: LLMAgent に tool call id 対応付け機能を追加 (2026-07-12)
+
+**問題**:
+text-based tool call を使う LLM agent で、LLM が複数の tool call を 1 ターンで出したときに、どの結果がどの呼び出しに対応するのかを LLM がトラッキングしづらい。
+
+**修正内容**:
+`LLMAgent` に `UseToolCallId` フラグ (デフォルト `false`) を追加し、text-based tool call のXMLタグに optional な `id` 属性を付けられるようにした。
+
+- `ParseExecutePersudoFunctionCallAsync` の正規表現に optional な `id="..."` 属性を追加
+- `UseToolCallId` が true かつ id が指定されている場合、結果を `<tool_result id="...">...</tool_result>` でラップ (インデント付き)
+- `UseToolCallId` が false の場合、または id が無い場合は従来通り plain text で結果を返す (後方互換)
+- 例外発生時の "failed to parse or execute function call" メッセージも同じ wrapper を使い、LLM がどの呼び出しが失敗したか分かる
+- `AppendPersudoFunctionCallInstruction` / `AppendAIToolInstruction` で、フラグが true のときだけ `id` 属性の使用方法をプロンプトに含める (デフォルトプロンプトはクリーン)
+
+**対応する構文 (UseToolCallId = true)**:
+```xml
+<!-- LLM の出力 -->
+<read_file id="call_abc123">
+  <path>src/app.ts</path>
+</read_file>
+
+<!-- システムからの応答 -->
+<tool_result id="call_abc123">
+  ...ファイル内容...
+</tool_result>
+```
+
+**修正ファイル**:
+- `CodeEditor2/CodeEditor2/CodeEditor2/LLM/LLMAgent.cs`
+
+**ビルド結果**:
+- `CodeEditor2.csproj` ビルド成功 (192 警告, 0 エラー)
+- コミット: `9e820d6` (CodeEditor2 サブモジュール内)
 
 ---
 
