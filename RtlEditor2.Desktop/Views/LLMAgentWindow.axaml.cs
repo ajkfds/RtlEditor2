@@ -11,7 +11,7 @@ public partial class LLMAgentWindow : Window
         InitializeComponent();
 
 
-        CodeEditor2.LLM.LLMAgent agent = new CodeEditor2.LLM.LLMAgent();
+        CodeEditor2.LLM.LLMAgent agent = new CodeEditor2.LLM.LLMAgent() { UseToolCallId = true };
         initialize(agent);
         //        LLM.InitializeVerilogLLMAgent.Run(project, agent, useFunctionCallApi);
 
