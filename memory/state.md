@@ -251,28 +251,37 @@ EditParse モード時に参照先 file が未 parse だと null が返り、`Vi
 
 ## Status
 - [x] Read AGENTS.md - Ready to process tasks
-- [x] **@scope VirtualScopeNameSpace 動的解決 修正完了 (2025-02-14)**
-  - ビルド成功、未コミット
-- [x] **let 宣言の引数なし呼び出し parse 修正 (2025-02-14)**
-  - ビルド成功、未コミット
-- [x] **Primary 内 letDeclaration を引数なしで呼んだときの parse 修正 (2026-07-09)**
-  - ビルド成功、コミット済み (`24e533d`)
-- [x] **package import 時の dataobject Defined フラグ設定 (2026-07-09)**
-  - ビルド成功、未コミット
-- [x] **ParseHierarchy での @scope 参照先の自動 parse (2026-07-10)**
-  - ビルド成功、コミット済み (`379182c`)
-- [x] **@scope 参照先 file の EditParse 時自動 parse (2026-07-10)**
-  - ビルド成功、コミット済み (`f7dd5be`)
-- [x] **AssociativeArray/DynamicArray/Queue の Defined フラグ伝搬修正 (2026-07-09)**
-  - ビルド成功、コミット済み (`f362d8e`)
-- [x] **MessageNode: Image サイズを TextBlock.FontSize に追従させる修正 (2026-07-10)**
-  - `image.Width = image.Height = textBlock.FontSize` を `Update()` に追加
-  - `textBlock.PropertyChanged` イベントを購読して `FontSize` 変更時に Image サイズも自動更新
-  - ビルド成功(本体)、コピー段階で `RtlEditor2.Desktop.exe` 起動中による file lock エラーあり(コードエラーなし)
+- [x] **BuildingBlock を親 NameSpace の NamedElements に登録 (2026-07-12)**
+  - Module / Program / Package / Primitive の `ParseCreateAsync` で
+    `parent.NamedElements.Add(name, buildingBlock)` を呼ぶよう修正
+  - Interface / Checker / Class は既に登録済みだったため未変更
+  - `NamedElements.Add` は同名重複時に何もしないので安全
+  - トップレベル module は Root.NamedElements、nested module は親 module の
+    NamedElements に登録され、補完/参照解決から sub-namespace として辿れる
+  - `CodeEditor2VerilogPlugin.csproj` ビルド成功 (666 警告, 0 エラー)
+  - コミット: `5e9f6fb Register parsed BuildingBlocks in parent NameSpace.NamedElements`
 - [x] **ChatControl: tool call id の連番付与と id ヒント送出機能 (2026-07-12)**
   - LLM に毎回異なる `id` を付けるよう促すプロンプトを LLMAgent に追加
   - ChatControl 側に `nextToolCallIdCounter` を追加し、ユーザコマンド末尾に `<system-hint>Next tool call id: call_NNN</system-hint>` を付与
   - ツール結果中の `<tool_result id="...">` を scan してカウンタを進め、LLM がヒントを無視しても追跡を維持
+  - ビルド成功、未コミット
+- [x] **MessageNode: Image サイズを TextBlock.FontSize に追従させる修正 (2026-07-10)**
+  - `image.Width = image.Height = textBlock.FontSize` を `Update()` に追加
+  - `textBlock.PropertyChanged` イベントを購読して `FontSize` 変更時に Image サイズも自動更新
+  - ビルド成功(本体)、コピー段階で `RtlEditor2.Desktop.exe` 起動中による file lock エラーあり(コードエラーなし)
+- [x] **@scope 参照先 file の EditParse 時自動 parse (2026-07-10)**
+  - ビルド成功、コミット済み (`f7dd5be`)
+- [x] **ParseHierarchy での @scope 参照先の自動 parse (2026-07-10)**
+  - ビルド成功、コミット済み (`379182c`)
+- [x] **AssociativeArray/DynamicArray/Queue の Defined フラグ伝搬修正 (2026-07-09)**
+  - ビルド成功、コミット済み (`f362d8e`)
+- [x] **Primary 内 letDeclaration を引数なしで呼んだときの parse 修正 (2026-07-09)**
+  - ビルド成功、コミット済み (`24e533d`)
+- [x] **@scope VirtualScopeNameSpace 動的解決 修正完了 (2025-02-14)**
+  - ビルド成功、未コミット
+- [x] **let 宣言の引数なし呼び出し parse 修正 (2025-02-14)**
+  - ビルド成功、未コミット
+- [x] **package import 時の dataobject Defined フラグ設定 (2026-07-09)**
   - ビルド成功、未コミット
 
 ## 修正履歴: ChatControl に tool call id 連番付与機能を追加 (2026-07-12)
@@ -466,3 +475,50 @@ endmodule
 - コア DLL (`CodeEditor2.dll`) は `bin\x64\Debug\net8.0\CodeEditor2.dll` に正しく生成された
 - 残りの file lock エラーは `RtlEditor2.Desktop.exe` プロセス (PID 18516) が `bin\x64\Debug\net8.0\*.dll` をロックしているためで、コードロジックの問題ではない (VS / 実行中の RtlEditor2.Desktop が DLL を保持)
 - 未コミット
+
+---
+
+## 修正履歴: Module 登録処理を Root 側に統一 (2026-07-12)
+
+**問題**:
+`Module.ParseCreateAsync` 内で `parent.AddOrUpdateBuildingBlock(module.Name, module)` を呼んで Module を親 (Root を含む) の `BuildingBlocks` に登録していた。これにより、`Program`/`Interface`/`Checker` などの他の BuildingBlock と登録処理の実装パターンが異なり、Root 側から見えにくい実装になっていた。
+
+**原因**:
+`Module.ParseCreateAsync` の最後で `parent.AddOrUpdateBuildingBlock(...)` を呼んでいた。
+一方、`parseProgramAsync`/`parseInterfaceAsync`/`parseCheckerAsync` では Root 側で `parsedDocument.Root.AddOrUpdateBuildingBlock(...)` を呼ぶ実装になっていた。
+この非対称性により、Root から Module の登録処理を追跡しづらくなっていた。
+
+**修正内容**:
+Module 登録処理を `Module.ParseCreateAsync` 内部から呼び出し元 (Root 側および NonPortModuleItem) に移動し、他の BuildingBlock と同じパターンに統一。
+
+1. `Module.cs` (`ParseCreateAsync` の末尾)
+   - `parent.AddOrUpdateBuildingBlock(module.Name, module)` の呼び出しとプロトタイプ重複チェックを削除
+2. `Root.cs` (`parseModuleAsync` の末尾)
+   - `bool added = parsedDocument.Root.AddOrUpdateBuildingBlock(module.Name, module);` を追加
+   - `added == false` かつ `word.Prototype` のときに `word.AddPrototypeError("duplicated module name")` を呼ぶ
+3. `NonPortModuleItem.cs` (`ParseAsync` の `case "module"/case "macromodule"` 節)
+   - `Module.ParseCreateAsync` の戻り値 (Module インスタンス) を受け取る
+   - 戻り値が null でなく `nameSpace.BuildingBlock != null` のとき、
+     `nameSpace.BuildingBlock.AddOrUpdateBuildingBlock(nestedModule.Name, nestedModule)` を呼ぶ
+   - これは nested module (module 内に定義された module) の場合に使われる
+   - ルートレベルの module の登録は Root 側の `parseModuleAsync` で処理される
+
+**対応するシナリオ**:
+- ルート module `module Foo; ... endmodule` → Root が `parsedDocument.Root.BuildingBlocks["Foo"]` に登録 (変更前と同じ動作)
+- Nested module
+  ```verilog
+  module outer;
+      module inner; ... endmodule  // nested module
+  endmodule
+  ```
+  → NonPortModuleItem が `outer.BuildingBlocks["inner"]` に登録 (変更前と同じ動作)
+
+**修正ファイル**:
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/BuildingBlocks/Module.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/BuildingBlocks/Root.cs`
+- `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Items/NonPortModuleItem.cs`
+
+**ビルド結果**:
+- `CodeEditor2VerilogPlugin.csproj` ビルド成功 (494 警告, 0 エラー)
+- 未コミット
+```
