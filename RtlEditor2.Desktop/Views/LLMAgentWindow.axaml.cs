@@ -18,17 +18,6 @@ public partial class LLMAgentWindow : Window
         ChatControl.SetModel(openRouterChat, agent);
         Content = ChatControl;
 
-        // ウィンドウが開いた後にフォーカスを当てる
-        Opened += (s, e) =>
-        {
-            ChatControl.FocusInput();
-        };
-
-        // ウィンドウがアクティブになった際、IMEのフォーカス外れを防ぐ
-        Activated += (s, e) =>
-        {
-            ChatControl.FocusInput();
-        };
     }
 
     private ChatControl ChatControl = new ChatControl();
