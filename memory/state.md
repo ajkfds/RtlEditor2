@@ -521,4 +521,75 @@ Module 登録処理を `Module.ParseCreateAsync` 内部から呼び出し元 (Ro
 **ビルド結果**:
 - `CodeEditor2VerilogPlugin.csproj` ビルド成功 (494 警告, 0 エラー)
 - 未コミット
+
+---
+
+## 修正履歴: Add Project 時に Property 設定 window を経由してから load する (2026-07-12)
+
+**問題**:
+Menu の "Add Project" でフォルダ選択直後に project が即 parse 開始され、
+property 設定 (compile option 等) を先にいじることができなかった。
+
+**原因**:
+`MainView.MenuItem_AddProject_Click` でフォルダ選択後すぐに
+`Controller.AddProject(project)` を呼んでいた。
+`Controller.AddProject` は 1) `Global.Projects` への追加、
+2) `navigateView.AddProject` (ProjectNode 生成 + tree 追加)、
+3) `ParseProject.Run` による全 file の parse を一塊で実行していた。
+property 設定 window を開く余地がなかった。
+
+**修正内容**:
+Add Project のフローを「NavigatePanel への登録」と「parse (load)」の 2 ステップに分け、
+間に Property 設定 window を挟めるようにした。
+
+1. `CodeEditor2/CodeEditor2/CodeEditor2/Controller.cs` を修正
+   - `Controller.AddProject(project)` は
+     `AddProjectToNavigatePanel(project)` → `LoadProject(project)` の 2 ステップを
+     順次呼ぶ薄いラッパーに変更 (既存呼び出しの後方互換維持)
+   - `Controller.AddProjectToNavigatePanel(project)` を新設
+     - `Global.Projects.Add(project.Name, project)` と
+       `Global.navigateView.AddProject(project)` のみを行う
+     - Parse は走らない
+   - `Controller.LoadProject(project)` を新設
+     - `navigateView.GetProjectNode(project.Name)` で projectNode を取得し
+       `ParseProject.Run(projectNode)` を起動 (旧 `addProject` の parse 部分を移植)
+   - `Controller.RemoveProject(project)` を新設
+     - まだ parse を走らせていない状態 (property 設定キャンセル時) で
+       `Global.Projects` から削除 + `navigateView.RemoveNode(projectNode)`
+2. `CodeEditor2/CodeEditor2/CodeEditor2/Views/MainView.axaml.cs` を修正
+   - `MenuItem_AddProject_Click` を以下のように変更:
+     1. フォルダ選択 (既存処理)
+     2. `Project.CreateAsync(path)` で `Project` 生成
+     3. `Controller.AddProjectToNavigatePanel(newProject)` で
+        NavigatePanel に project node を追加 (まだ parse しない)
+     4. `Global.navigateView.GetProjectNode(...)` で projectNode 取得
+     5. `Tools.ItemPropertyForm(projectNode)` で property 設定 window を作成
+     6. `form.OkButtonControl.Click` に独自 handler を追加し、
+        クリックされたら `loadOnClose = true` フラグを立てる
+        (plugin などが設定値を反映するのは既存の OkButton ハンドラ群が
+         同じ event を別 handler で受け取るので問題なく走る)
+     7. `await Controller.ShowDialog(form)` で表示
+     8. 閉じたら flag を見て:
+        - `loadOnClose == true` なら `Controller.LoadProject(newProject)` で parse 開始
+        - `loadOnClose == false` (Cancel) なら `Controller.RemoveProject(newProject)` で
+          NavigatePanel と Global.Projects から取り除く
+   - `using CodeEditor2.NavigatePanel;` を追加 (ProjectNode 型を使うため)
+
+**対応するシナリオ**:
+```
+メニュー → Project → Add Project → フォルダ選択
+  → フォルダ直下の file/folder 構造をスキャン (Project 配下の tree 表示)
+  → Property window が開く (Cache, Verilog Compile Option 等)
+  → ユーザーが Compile Option を編集し OK
+  → この時点で初めて project 配下の全 file の parse が走る
+  → Cancel した場合は project が tree から消える(中途半端に parse 済みの状態にならない)
+```
+
+**修正ファイル**:
+- `CodeEditor2/CodeEditor2/CodeEditor2/Controller.cs`
+- `CodeEditor2/CodeEditor2/CodeEditor2/Views/MainView.axaml.cs`
+
+**ビルド結果**:
+- `RtlEditor2.Desktop.csproj` ビルド成功 (715 警告, 0 エラー)
+- 未コミット
 ```
