@@ -36,7 +36,8 @@ RtlEditor2/                                # Main repository (git add/commit her
 ├── CodeEditor2LiveMarkdownPlugin/          # Live Markdown support (submodule)
 ├── CodeEditor2MarkdownPlugin/              # Markdown support (submodule)
 ├── CodeEditor2VivadoPlugin/                # Xilinx Vivado integration (submodule)
-└── ajkCefGlue/                             # CEF support (submodule)
+├── ajkCefGlue/                             # CEF support (submodule)
+└── TemplateEngineHost/                     # Template engine
 ```
 
 ### サブモジュール一覧
@@ -57,6 +58,7 @@ RtlEditor2/                                # Main repository (git add/commit her
 | `AjkLibs` | https://github.com/ajkfds/AjkLibs.git | 汎用ユーティリティライブラリ |
 | `AvaloniaEdit` | git@github.com:ajkfds/AvaloniaEdit.git | テキストエディタコントロール |
 | `ajkCefGlue` | git@github.com:ajkfds/ajkCefGlue.git | CEF (Chromium Embedded Framework) サポート |
+| `TemplateEngineHost` | (要確認) | テンプレートエンジン |
 
 ## build方法
 
