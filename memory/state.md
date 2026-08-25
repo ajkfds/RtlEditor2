@@ -8,6 +8,12 @@
 
 - `.agents/overview.md`に`TemplateEngineHost`をProject Structureとサブモジュール一覧に追加
 - `memory/state.md`を作成 (rules.mdで参照されているが実在しなかった)
+- verilogpluginにおいて`typedef struct packed`の要素を参照、代入した時の`undriven`/`unused` noticeを修正
+  - `DataObjectReference.ParseCreate`で`owner`が`Struct`または`UserDefinedType(wrapping StructType)`の場合に`StructParentObject`と`StructMemberName`をセット
+  - `AssertAssigned()`で親Structの`AssignedMap`にmember rangeを反映して`undriven` noticeを抑制
+  - member access時に親Structの`UsedReferences`に`val.Reference`を追加して`unused` noticeを抑制
+  - `AssertAssigned()`の冗長な`AbsoluteRangeExpression`構築を削除し、シンプルな`Assert(long, long)`を使うように修正
+  - コミット: CodeEditor2VerilogPlugin のサブモジュール内 commit `499149a`
 
 ## Next Steps
 
