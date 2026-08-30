@@ -37,3 +37,9 @@ url=git@github.com:ajkfds/AvaloniaEdit.git
 [submodule "CodeEditor2LiveMarkdownPlugin"]
 	path = CodeEditor2LiveMarkdownPlugin
 	url = git@github.com:ajkfds/CodeEditor2LiveMarkdownPlugin.git
+[submodule "SystemVerilogCore"]
+	path = SystemVerilogCore
+	url = git@github.com:ajkfds/SystemVerilogCore.git
+[submodule "SystemVerilogLanguageServer"]
+	path = SystemVerilogLanguageServer
+	url = git@github.com:ajkfds/SystemVerilogLanguageServer.git
