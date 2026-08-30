@@ -14,6 +14,11 @@
   - member access時に親Structの`UsedReferences`に`val.Reference`を追加して`unused` noticeを抑制
   - `AssertAssigned()`の冗長な`AbsoluteRangeExpression`構築を削除し、シンプルな`Assert(long, long)`を使うように修正
   - コミット: CodeEditor2VerilogPlugin のサブモジュール内 commit `499149a`
+- ImportedPackage を `Data/ImportedPackage.cs` に追加し、VerilogModuleInstanceに準じるクラスとして実装
+  - `Updater.cs` の `UpdateAsync` で各item (VerilogFile/VerilogModuleInstance/InterfaceInstance) の `parsedDocument.ImportedPackages` を `addImportedPackage` で階層生成
+  - `NavigatePanel/ImportedPackageNode.cs` を新規作成 (UpdateVisual, OnSelected, GetIcon など)
+  - `Tool/ParseHierarchy.cs` の `parseDownwardAsync` / `parseUpwardAsync` で `ImportedPackage` を `IVerilogRelatedFile` として処理
+  - 同じ `parseDownwardAsync` 内の `ImportedPackages` に対する参照元ファイルもparseキューにenqueue
 
 ## Next Steps
 
