@@ -2,7 +2,7 @@
 
 ## 進行中タスク
 
-- SystemVerilogCore への抽象化移動 → Phase 7 (LspHandler documentSymbol 強化 / Verilog/* 残ファイル移動) が次のステップ
+- SystemVerilogCore への抽象化移動 → Phase 8 (Verilog/* 残ファイル移動 / parser-backed adapter テスト) が次のステップ
   - Phase 1: interface 群 + first-cut adapter 完了
   - Phase 2A: BuildingBlock / NamedElement adapter 実装完了 (TopLevelBlocks, Root, FindElementAt)
   - Phase 2B: FindDefinitionAsync / FindReferencesAsync を `Root.GetHierarchyNameSpace` + `NameSpace.GetNamedElementUpward` + `DataObject.UsedReferences/AssignedReferences` 経由で実装完了
@@ -10,7 +10,8 @@
   - Phase 4: Hover 強化を `HoverContent` + `IHoverContentProvider` + `PluginHoverInstaller` で実装完了
   - Phase 5: Diagnostic code map + 13 xUnit テスト追加
   - Phase 6: LSP エンドツーエンドテスト追加 (10 件, 合計 23/23 成功)
-  - Phase 7: LspHandler documentSymbol を `Root.BuildingBlocks` + 各 `BuildingBlock.Members` を列挙する実装に置き換える + Verilog/* 残ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動
+  - Phase 7: documentSymbol 強化 (Root.BuildingBlocks + Members ネスト) + テスト 3 件追加 (合計 26/26 成功)
+  - Phase 8: Verilog/* 残ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動 + parser-backed adapter テスト
 
 ## 完了済みタスク
 
@@ -30,16 +31,13 @@
 
 ## Next Steps
 
-- Phase 7: LspHandler documentSymbol 強化
-  - 現状は `Root.BuildingBlocks` を返していない (root のみ返している)
-  - `Root.BuildingBlocks` の各 `BuildingBlock` と `Members` を列挙する実装に置き換える
-- Phase 7: parser-backed adapter テスト
+- Phase 8: parser-backed adapter テスト
   - `CodeEditor2VerilogPlugin.CoreBridge` のテストプロジェクトを作る (Avalonia 依存の分離が必要)
   - 現状テストは in-memory core のみ (CodeEditor2VerilogPlugin の symbol 解決ロジックは未カバー)
 - VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や
   ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が
   同じ adapter を共有するシナリオを検証
-- Phase 7: Verilog/* の Statement系 / AutoComplete系を SystemVerilogCore に移動 (Avalonia 依存の分離)
+- Phase 8: Verilog/* の Statement系 / AutoComplete系を SystemVerilogCore に移動 (Avalonia 依存の分離)
 
 ## メモ
 
@@ -112,7 +110,17 @@
     - didOpen 再送で text 上書き
     - SymbolKind 数値仕様 (LSP spec) 確認
   - テスト合計: 23/23 成功
-  - コミット: (Phase 6 コミットは次)
+  - コミット:
+    - メイン: `7476c1d` "Add end-to-end LspHandler tests covering didOpen / definition / hover"
+    - メイン: `57b5258` "Update state.md after SystemVerilogCore Phase 6 (LSP e2e tests)"
+
+- SystemVerilogCore 抽象化 Phase 7: documentSymbol 強化
+  - `LspHandler.HandleDocumentSymbol` を `Root.BuildingBlocks` + 各 `BuildingBlock.Members` をネストした DocumentSymbol ツリーを返すよう更新
+  - `DocumentSymbol.Children` プロパティを LSP 互換で追加
+  - `InMemoryFile` に `AddBuildingBlock` / `AddMember` API を追加し、`RootBlock.BuildingBlocks` / `Members` が file テーブルを参照するように変更
+  - テスト 3 件追加 (Module が root の子、Package の member が子の子、空のときに Children = null)
+  - テスト合計: 26/26 成功
+  - コミット: (Phase 7 コミットは次)
 
 ## .agents/* の調査メモ (2025-XX-XX)
 
