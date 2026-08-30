@@ -33,6 +33,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2", "CodeEditor2\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogLanguageServer", "SystemVerilogLanguageServer\SystemVerilogLanguageServer.csproj", "{ED128021-5A35-4016-BF8E-327496E9A148}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogCore", "SystemVerilogCore\SystemVerilogCore.csproj", "{56816FA4-7408-479D-94E3-C8818424A8DB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -95,6 +97,10 @@ Global
 		{ED128021-5A35-4016-BF8E-327496E9A148}.Debug|x64.Build.0 = Debug|Any CPU
 		{ED128021-5A35-4016-BF8E-327496E9A148}.Release|x64.ActiveCfg = Release|Any CPU
 		{ED128021-5A35-4016-BF8E-327496E9A148}.Release|x64.Build.0 = Release|Any CPU
+		{56816FA4-7408-479D-94E3-C8818424A8DB}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{56816FA4-7408-479D-94E3-C8818424A8DB}.Debug|x64.Build.0 = Debug|Any CPU
+		{56816FA4-7408-479D-94E3-C8818424A8DB}.Release|x64.ActiveCfg = Release|Any CPU
+		{56816FA4-7408-479D-94E3-C8818424A8DB}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

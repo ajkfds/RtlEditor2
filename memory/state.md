@@ -2,7 +2,7 @@
 
 ## 進行中タスク
 
-- (なし)
+- SystemVerilogCore への抽象化移動 → 規模が大きいため方針確認が必要 (see メモ)
 
 ## 完了済みタスク
 
@@ -22,7 +22,14 @@
 
 ## Next Steps
 
-- ユーザからのタスクを待機
+- ユーザからの「SystemVerilogCore 抽象化」のタスク方針確認待ち
+  - 現状把握: CodeEditor2VerilogPlugin のVerilog名前空間以下 (BuildingBlocks, DataObjects, Expressions, Items, etc.) は
+    `CodeEditor2` (Avalonia 含む) / `Avalonia` / `AjkAvaloniaLibs` / `Plugin.StaticID` に強く依存
+  - 1セッションで完全抽象化は不可能。段階的アプローチが必要。
+  - 選択肢:
+    a) Phase 1: 解析コアのみ (BuildingBlock, NameSpace, IndexReference, WordScanner) を最小依存で移動
+    b) Phase 1: SystemVerilogCore には interface のみ置き、CodeEditor2VerilogPlugin の具象実装を参照
+    c) Phase 1: SystemVerilogCore に全ファイルを namespace 変更してそのまま移動 (Avalonia依存を持つ型もそのまま、SystemVerilogLanguageServer側で利用しない前提)
 
 ## メモ
 
@@ -46,4 +53,50 @@
 - 修正履歴 (過去の修正サマリ)
 - 調査記録 (UIスレッドロック、NavigatePanel、HierarchyConnection等)
 - 既知の問題のサマリ
-ただしこれらはAGENTS.mdに集約されている現状でも、overview.mdには技術スタックやアーキテクチャ指針を記載するというルールに照らすと概ね適切。必要に応じて新規タスクで対応する。
+
+## SystemVerilogCore 抽象化タスク 事前調査 (2025-XX-XX)
+
+### 目的
+- `SystemVerilogLanguageServer` (LSP) を新設
+- `CodeEditor2VerilogPlugin` の解析ロジックを `SystemVerilogCore` に抽象化して移動
+- 両方から `SystemVerilogCore` を呼び出せるようにする
+
+### 現状の主要依存関係 (CodeEditor2VerilogPlugin/Verilog 配下)
+- `CodeEditor2.CodeEditor.CodeComplete.AutocompleteItem` (Avalonia Media 依存)
+- `CodeEditor2.CodeEditor.Parser.DocumentParser.ParseModeEnum`
+- `CodeEditor2.CodeEditor.PopupHint.PopupItem` (Avalonia 依存)
+- `CodeEditor2.CodeEditor.ParsedDocument` (基底クラス)
+- `pluginVerilog.CodeEditor.CodeDocument` (CodeEditor2 依存)
+- `pluginVerilog.FileTypes.SystemVerilogFile` etc.
+- `Avalonia.Media.Color` / `Avalonia.Media.Colors`
+- `AjkAvaloniaLibs.Libs.Icons.GetSvgBitmap`
+- `Plugin.StaticID` (= "Verilog")
+
+### UI非依存化のために必要となる抽象化
+1. **CodeDocument**: `AvaloniaEdit.Document.TextDocument` 依存 → 文字列/行配列での ICodeDocument 再定義
+2. **AutocompleteItem**: Avalonia PopupMenu 依存 → Core 側ではデータ構造のみ
+3. **CodeDrawStyle**: Avalonia.Media.Color 依存 → 整数インデックス or System.Drawing.Color で再定義
+4. **PopupItem**: Avalonia 依存 → 文字列リスト + Icon パスで表現
+5. **Plugin.StaticID**: ハードコードされた文字列 → 抽象的なプラグイン ID (enum or interface) で参照
+6. **MarkHandler / TextColors**: Avalonia 依存 → Core 側では index/length のリストで管理
+
+### 推定される作業規模
+- 移動対象ファイル: ~200 ファイル (Verilog/, Verilog/BuildingBlocks/, Verilog/DataObjects/, Verilog/Expressions/, Verilog/Items/, Verilog/AutoComplete/, etc.)
+- 依存修正: 各ファイルの `using` 文と `namespace` 宣言
+- 新規 interface 定義: `ICodeDocument`, `IColorPalette`, `IAutocompleteItem` 等
+- ビルド/コミット: 各フェーズごとに実施
+
+### ファイル数の概算
+- BuildingBlocks: 18 ファイル
+- DataObjects: 数サブディレクトリ含めて 30+ ファイル
+- Expressions: 10+ ファイル
+- Items: 10+ ファイル
+- AutoComplete: 10 ファイル
+- Verilog 直下: 30+ ファイル (Attribute, BuiltInMethod, Comment, ...)
+
+### 推奨アプローチ
+- **フェーズ1**: 解析コアの最小単位 (BuildingBlock, NameSpace, IndexReference, WordReference, ParsedDocument 骨格) のみ移動
+- **フェーズ2**: DataObjects (Nets, Variables, DataTypes, Arrays, Constants) を移動
+- **フェーズ3**: Expressions, Items を移動
+- **フェーズ4**: 残りの Verilog/* ファイル (Statement系, AutoComplete系) を移動
+- 各フェーズでビルドエラー → 依存interface導入 → 再ビルドのループ
