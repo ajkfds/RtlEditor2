@@ -2,7 +2,12 @@
 
 ## 進行中タスク
 
-- SystemVerilogCore への抽象化移動 → 規模が大きいため方針確認が必要 (see メモ)
+- SystemVerilogCore への抽象化移動 → Phase 2B (FindDefinitionAsync / FindReferencesAsync) が次のステップ
+  - Phase 1: interface 群 + first-cut adapter 完了
+  - Phase 2A: BuildingBlock / NamedElement adapter 実装完了 (TopLevelBlocks, Root, FindElementAt)
+  - Phase 2B: シンボル参照 (Definition / References) の adapter 実装が次タスク
+  - Phase 3: 参照解決を VerilogParser / IndexReference / WordReference の解析ロジックに結びつける
+  - Phase 4: 残りの Verilog/* ファイル (Statement系, AutoComplete系) の移動
 
 ## 完了済みタスク
 
@@ -22,20 +27,32 @@
 
 ## Next Steps
 
-- ユーザからの「SystemVerilogCore 抽象化」のタスク方針確認待ち
-  - 現状把握: CodeEditor2VerilogPlugin のVerilog名前空間以下 (BuildingBlocks, DataObjects, Expressions, Items, etc.) は
-    `CodeEditor2` (Avalonia 含む) / `Avalonia` / `AjkAvaloniaLibs` / `Plugin.StaticID` に強く依存
-  - 1セッションで完全抽象化は不可能。段階的アプローチが必要。
-  - 選択肢:
-    a) Phase 1: 解析コアのみ (BuildingBlock, NameSpace, IndexReference, WordScanner) を最小依存で移動
-    b) Phase 1: SystemVerilogCore には interface のみ置き、CodeEditor2VerilogPlugin の具象実装を参照
-    c) Phase 1: SystemVerilogCore に全ファイルを namespace 変更してそのまま移動 (Avalonia依存を持つ型もそのまま、SystemVerilogLanguageServer側で利用しない前提)
+- Phase 2B: FindDefinitionAsync / FindReferencesAsync を
+  `pluginVerilog.Verilog.BuildingBlocks.Root.GetHierarchyNameSpace` +
+  `NameSpace.GetNamedElementUpward` で実装し、VerilogParser の参照解決にブリッジ
+- SystemVerilogCore の Diagnostics コード属性 (Code フィールドは現状空文字) を
+  Verilog.ParsedDocument.Message 由来で埋める
+- VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や
+  ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が
+  同じ adapter を共有するシナリオを検証
 
 ## メモ
 
 - `.agents/rules.md`と`.agents/overview.md`を参照すること
 - サブモジュール構造のため、コミット時は`git -C`を使用すること
 - ビルド確認は`dotnet build "RtlEditor2.Desktop.csproj" -clp:ErrorsOnly`
+
+## 完了済みタスク (続き)
+
+- SystemVerilogCore 抽象化 Phase 2A: BuildingBlock / NamedElement adapter 実装
+  - `CoreBridge/BuildingBlockAdapter.cs` 新規: `ISystemVerilogBuildingBlock` のラッパ。`BuildingBlock.Name`, `NamedElements`, `BuildingBlocks` を橋渡し
+  - `CoreBridge/NamedElementAdapter.cs` 新規: `INamedElement` を `ISystemVerilogNamedElement` に変換する factory + 具象 adapter (DataObject / Typedef / Function / Task / Generic)
+  - `SystemVerilogFileAdapter.TopLevelBlocks` を `ParsedDocument.Root.BuildingBlocks` から構築
+  - `SystemVerilogDocumentAdapter.Root` を `ParsedDocument.Root` から構築、`FindElementAt` を `Root.GetHierarchyNameSpace` + `NameSpace.Items` 探索で実装
+  - `SystemVerilogNamedElementKind` enum に `Checker` を追加
+  - コミット:
+    - SystemVerilogCore: `40dc9e7` "Add Checker kind to SystemVerilogNamedElementKind enum"
+    - CodeEditor2VerilogPlugin: `64cff6d` "Wire SystemVerilogCore building block / named element adapters"
 
 ## .agents/* の調査メモ (2025-XX-XX)
 
