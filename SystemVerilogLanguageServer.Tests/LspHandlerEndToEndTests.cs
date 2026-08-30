@@ -126,10 +126,130 @@ public class LspHandlerEndToEndTests
         });
 
         Assert.NotNull(result);
-        DocumentSymbol[]? symbols = result as DocumentSymbol[];
-        Assert.NotNull(symbols);
-        Assert.Single(symbols!);
-        Assert.Equal("$root", symbols![0].Name);
+        System.Collections.IList? list = result as System.Collections.IList;
+        Assert.NotNull(list);
+        Assert.Single(list!);
+    }
+
+    [Fact]
+    public void DocumentSymbol_WithBuildingBlock_ListsModuleAsChild()
+    {
+        InMemorySystemVerilogCore core = new InMemorySystemVerilogCore();
+        LspHandler handler = new LspHandler(core);
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = "file:///foo.sv", text = "module bar; endmodule" }
+        });
+        ISystemVerilogProject project = core.GetOrCreateProjectPublic("default");
+        InMemoryFile file = (InMemoryFile)project.FindFile("file:///foo.sv")!;
+        file.AddBuildingBlock(new InMemoryBuildingBlock(
+            "bar", SystemVerilogBuildingBlockKind.Module, new SystemVerilogRange(7, 3), file));
+
+        object? result = SendRequest(handler, "textDocument/documentSymbol", new
+        {
+            textDocument = new { uri = "file:///foo.sv" }
+        });
+
+        DocumentSymbol? root = SingleRoot(result);
+        Assert.Equal("$root", root.Name);
+        Assert.NotNull(root.Children);
+        Assert.Single(root.Children!);
+        Assert.Equal("bar", root.Children![0].Name);
+        Assert.Equal(SymbolKind.Module, root.Children[0].Kind);
+    }
+
+    [Fact]
+    public void DocumentSymbol_WithMember_ListsMemberAsChild()
+    {
+        InMemorySystemVerilogCore core = new InMemorySystemVerilogCore();
+        LspHandler handler = new LspHandler(core);
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = "file:///pkg.sv", text = "package pkg; endpackage" }
+        });
+        ISystemVerilogProject project = core.GetOrCreateProjectPublic("default");
+        InMemoryFile file = (InMemoryFile)project.FindFile("file:///pkg.sv")!;
+        InMemoryBuildingBlock pkgBlock = new InMemoryBuildingBlock(
+            "pkg", SystemVerilogBuildingBlockKind.Package, new SystemVerilogRange(8, 3), file);
+        file.AddBuildingBlock(pkgBlock);
+        pkgBlock.AddMember(new DefinitionTestSymbol(
+            "MY_CONST", SystemVerilogNamedElementKind.Parameter, new SystemVerilogRange(20, 8)));
+
+        object? result = SendRequest(handler, "textDocument/documentSymbol", new
+        {
+            textDocument = new { uri = "file:///pkg.sv" }
+        });
+
+        DocumentSymbol? root = SingleRoot(result);
+        Assert.NotNull(root.Children);
+        DocumentSymbol? pkg = Assert.Single(root.Children!);
+        Assert.Equal("pkg", pkg.Name);
+        Assert.Equal(SymbolKind.Package, pkg.Kind);
+        Assert.NotNull(pkg.Children);
+        DocumentSymbol? constant = Assert.Single(pkg.Children!);
+        Assert.Equal("MY_CONST", constant.Name);
+        Assert.Equal(SymbolKind.Constant, constant.Kind);
+    }
+
+    [Fact]
+    public void DocumentSymbol_WithoutBlocks_OmitsChildren()
+    {
+        InMemorySystemVerilogCore core = new InMemorySystemVerilogCore();
+        LspHandler handler = new LspHandler(core);
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = "file:///empty.sv", text = "// nothing here" }
+        });
+
+        object? result = SendRequest(handler, "textDocument/documentSymbol", new
+        {
+            textDocument = new { uri = "file:///empty.sv" }
+        });
+
+        DocumentSymbol? root = SingleRoot(result);
+        Assert.Null(root.Children);
+    }
+
+    private static DocumentSymbol SingleRoot(object? result)
+    {
+        System.Collections.IList? list = result as System.Collections.IList;
+        Assert.NotNull(list);
+        DocumentSymbol? root = list![0] as DocumentSymbol;
+        Assert.NotNull(root);
+        return root!;
+    }
+
+    /// <summary>
+    /// In-memory building block used by the documentSymbol tests. Carries
+    /// its own member list so the documentSymbol provider can flatten it
+    /// into the LSP hierarchy.
+    /// </summary>
+    private sealed class InMemoryBuildingBlock : ISystemVerilogBuildingBlock
+    {
+        private readonly List<ISystemVerilogNamedElement> _members = new();
+
+        public InMemoryBuildingBlock(
+            string name,
+            SystemVerilogBuildingBlockKind kind,
+            SystemVerilogRange range,
+            ISystemVerilogFile file)
+        {
+            Name = name;
+            Kind = kind;
+            DefinitionRange = range;
+            File = file;
+        }
+
+        public string Name { get; }
+        public SystemVerilogBuildingBlockKind Kind { get; }
+        public SystemVerilogRange? DefinitionRange { get; }
+        public ISystemVerilogFile? File { get; }
+        public ISystemVerilogBuildingBlock? Owner => null;
+        public IReadOnlyDictionary<string, ISystemVerilogBuildingBlock> BuildingBlocks =>
+            new Dictionary<string, ISystemVerilogBuildingBlock>();
+        public IReadOnlyList<ISystemVerilogNamedElement> Members => _members;
+        public void AddMember(ISystemVerilogNamedElement member) => _members.Add(member);
+        SystemVerilogNamedElementKind ISystemVerilogNamedElement.Kind => SystemVerilogNamedElementKind.Unknown;
     }
 
     [Fact]
