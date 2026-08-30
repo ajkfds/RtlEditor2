@@ -2,12 +2,12 @@
 
 ## 進行中タスク
 
-- SystemVerilogCore への抽象化移動 → Phase 3 (Build/Hover/DocumentSymbol 強化) / クロスファイル参照が次のステップ
+- SystemVerilogCore への抽象化移動 → Phase 4 (Hover 強化 / cross-file references 拡張) が次のステップ
   - Phase 1: interface 群 + first-cut adapter 完了
   - Phase 2A: BuildingBlock / NamedElement adapter 実装完了 (TopLevelBlocks, Root, FindElementAt)
   - Phase 2B: FindDefinitionAsync / FindReferencesAsync を `Root.GetHierarchyNameSpace` + `NameSpace.GetNamedElementUpward` + `DataObject.UsedReferences/AssignedReferences` 経由で実装完了
-  - Phase 3: クロスファイル参照 (package / module instance へのジャンプ) と hover (DataType/Port info) の強化
-  - Phase 4: 残りの Verilog/* ファイル (Statement系, AutoComplete系) の移動
+  - Phase 3: クロスファイル参照を `ProjectProperty.DefinitionNameSpace` / `PackageNameSpace.GetFile` 経由で実装完了 (definition は取れる、cross-file references は declaration のみ)
+  - Phase 4: Hover 実装 (DataType / port info / net width) と残りの Verilog/* ファイル (Statement系, AutoComplete系) の移動
 
 ## 完了済みタスク
 
@@ -27,10 +27,10 @@
 
 ## Next Steps
 
-- Phase 3: クロスファイル参照 (別 VerilogFile に定義された symbol へのジャンプ) の実装。
-  現状の SymbolResolver は同一 ParsedDocument 内の namespace ツリーのみを走査するため、
-  package import や instance reference を解決できない
-- SystemVerilogCore の Diagnostics コード属性 (Code フィールドは現状空文字) を
+- Phase 4: Hover 実装
+  - `LspHandler.HandleHover` が現状 `$"{def.Kind} {def.Name}"` のみ返している
+  - DataObject なら `DataType` / `BitWidth`、Port なら direction、BuildingBlock なら所属 file / port list を含む MarkupContent を返す
+- Diagnostics コード属性: `DiagnosticAdapter` の `Code` フィールドを
   Verilog.ParsedDocument.Message 由来で埋める
 - VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や
   ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が
@@ -38,6 +38,7 @@
 - 簡易テストを追加 (例: SystemVerilogLanguageServer 配下に sample test):
   - module の identifier にカーソルを置いて definition が module 自身を返す
   - module 内で使用された変数の references が Decl + 1 つの使用を含む
+  - 別ファイルに定義された module instance にカーソルを置くとその module の definition へクロスファイルジャンプできる
 
 ## メモ
 
@@ -63,7 +64,14 @@
     - `FindReferences`: 上記で element 解決後、`DataObject` なら `UsedReferences + AssignedReferences` + `DefinedReference` を全件 (重複除去) で返す。`DataObject` 以外なら definition のみ返す
     - 内部に軽量 `ReferenceAdapter` (ISystemVerilogNamedElement 実装) を持ち、use site の WordReference を LSP 互換の `DefinitionRange` として提供
   - `SystemVerilogProjectAdapter.FindDefinitionAsync` / `FindReferencesAsync` が `SymbolResolver` を呼び出すように更新
-  - コミット: CodeEditor2VerilogPlugin (Phase 2B コミットは次)
+  - コミット: CodeEditor2VerilogPlugin `8258780` "Wire SystemVerilogCore definition / references lookups"
+
+- SystemVerilogCore 抽象化 Phase 3: クロスファイル参照 実装
+  - `CoreBridge/SymbolResolver.cs` 更新:
+    - `Resolve` を 2 段階化: (1) ローカル namespace ツリー (2) `ProjectProperty.DefinitionNameSpace` / `PackageNameSpace` の file registry を `GetFile(name)` で検索
+    - クロスファイルで見つかった場合は `SystemVerilogFileAdapter(declaredFile)` を返し、`ISystemVerilogNamedElement.File` が declaration の file を指すようにする
+    - `FindReferences` は cross-file declaration に対して declaration のみを返す (parser は cross-file reference site を集積しないため)
+  - コミット: CodeEditor2VerilogPlugin (Phase 3 コミットは次)
 
 ## .agents/* の調査メモ (2025-XX-XX)
 
