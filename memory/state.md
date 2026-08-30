@@ -2,7 +2,7 @@
 
 ## 進行中タスク
 
-- SystemVerilogCore への抽象化移動 → Phase 8 (Verilog/* 残ファイル移動 / parser-backed adapter テスト) が次のステップ
+- SystemVerilogCore への抽象化移動 → Phase 9 (Verilog/* 残ファイル移動 / LSP クライアントサンプル作成) が次のステップ
   - Phase 1: interface 群 + first-cut adapter 完了
   - Phase 2A: BuildingBlock / NamedElement adapter 実装完了 (TopLevelBlocks, Root, FindElementAt)
   - Phase 2B: FindDefinitionAsync / FindReferencesAsync を `Root.GetHierarchyNameSpace` + `NameSpace.GetNamedElementUpward` + `DataObject.UsedReferences/AssignedReferences` 経由で実装完了
@@ -11,7 +11,8 @@
   - Phase 5: Diagnostic code map + 13 xUnit テスト追加
   - Phase 6: LSP エンドツーエンドテスト追加 (10 件, 合計 23/23 成功)
   - Phase 7: documentSymbol 強化 (Root.BuildingBlocks + Members ネスト) + テスト 3 件追加 (合計 26/26 成功)
-  - Phase 8: Verilog/* 残ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動 + parser-backed adapter テスト
+  - Phase 8: adapter 振る舞いテスト 7 件追加 (合計 33/33 成功)
+  - Phase 9: Verilog/* 残ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動 + LSP クライアントサンプル作成 + ドキュメント
 
 ## 完了済みタスク
 
@@ -31,13 +32,14 @@
 
 ## Next Steps
 
-- Phase 8: parser-backed adapter テスト
-  - `CodeEditor2VerilogPlugin.CoreBridge` のテストプロジェクトを作る (Avalonia 依存の分離が必要)
-  - 現状テストは in-memory core のみ (CodeEditor2VerilogPlugin の symbol 解決ロジックは未カバー)
-- VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や
-  ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が
-  同じ adapter を共有するシナリオを検証
-- Phase 8: Verilog/* の Statement系 / AutoComplete系を SystemVerilogCore に移動 (Avalonia 依存の分離)
+- Phase 9: parser-backed adapter テスト
+  - CodeEditor2VerilogPlugin の CoreBridge には Avalonia 依存があり、UI フリーなテストプロジェクトから直接参照できない
+  - 代替: Plugin テスト用に Avalonia を headless でロードする別プロジェクトを作る (工数大)
+  - または Phase 8 のように振る舞いを in-memory シナリオでテストする方針を維持
+- Phase 9: Verilog/* 残ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動 (Avalonia 依存の分離)
+- Phase 9: LSP クライアントのサンプル設定 (VSCode / Neovim / Helix) を docs に追加
+- Phase 9: SystemVerilogLanguageServer の README に capabilities / 動作例を追加
+- VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が同じ adapter を共有するシナリオを検証
 
 ## メモ
 
@@ -120,7 +122,22 @@
   - `InMemoryFile` に `AddBuildingBlock` / `AddMember` API を追加し、`RootBlock.BuildingBlocks` / `Members` が file テーブルを参照するように変更
   - テスト 3 件追加 (Module が root の子、Package の member が子の子、空のときに Children = null)
   - テスト合計: 26/26 成功
-  - コミット: (Phase 7 コミットは次)
+  - コミット:
+    - SystemVerilogLanguageServer: `76e37f7` "Walk the building-block tree in documentSymbol"
+    - メイン: `8b674e7` "Add documentSymbol tests covering nested building blocks and members"
+    - メイン: `7f2ff1b` "Update state.md after SystemVerilogCore Phase 7 (documentSymbol)"
+
+- SystemVerilogCore 抽象化 Phase 8: adapter 振る舞いテスト
+  - `SystemVerilogLanguageServer.Tests/AdapterBehaviorTests.cs` 新規 (7 テスト):
+    - Symbol range が half-open であることを検証
+    - 異なる range の複数 symbol が個別に resolve できることを検証
+    - file lookup が URI と AbsolutePath 両方で動作
+    - project.Files が登録済み file を列挙し、再追加で重複しない
+    - HoverContent が kind を保持して markdown を生成
+    - diagnostics が空のとき空 list
+    - documentSymbol が 3 階層の nested tree (top -> inner -> leaf) を生成
+  - CodeEditor2VerilogPlugin の CoreBridge は Avalonia 依存があり直接参照できないため、振る舞いを in-memory シナリオで検証
+  - テスト合計: 33/33 成功
 
 ## .agents/* の調査メモ (2025-XX-XX)
 
