@@ -22,6 +22,9 @@ A lightweight, modular Integrated Development Environment (IDE) for RTL design, 
 ```
 RtlEditor2/                                # Main repository (git add/commit here)
 ├── RtlEditor2.Desktop/                    # Main desktop application
+├── SystemVerilogCore/                      # UI-agnostic SystemVerilog interfaces (LSP seam)
+├── SystemVerilogLanguageServer/            # LSP server over stdin/stdout
+├── SystemVerilogLanguageServer.Tests/      # xUnit tests for the LSP server
 ├── AjkAvaloniaLibs/                        # Utility library (submodule)
 ├── AjkLibs/                                # Utility library (submodule)
 ├── AvaloniaEdit/                           # Text editor control (submodule)
@@ -46,7 +49,7 @@ RtlEditor2/                                # Main repository (git add/commit her
 |---------------|-----|------|
 | `CodeEditor2` | git@github.com:ajkfds/CodeEditor2.git | コアエディタコンポーネント |
 | `CodeEditor2Plugin` | git@github.com:ajkfds/CodeEditor2Plugin.git | ベースプラグインインターフェース |
-| `CodeEditor2VerilogPlugin` | git@github.com:ajkfds/CodeEditor2VerilogPlugin.git | Verilog/SystemVerilog言語サポート |
+| `CodeEditor2VerilogPlugin` | git@github.com:ajkfds/CodeEditor2VerilogPlugin.git | Verilog/SystemVerilog言語サポート (CoreBridge/ で SystemVerilogCore への adapter を提供) |
 | `CodeEditor2AiPlugin` | git@github.com:ajkfds/CodeEditor2AiPlugin.git | AI統合プラグイン |
 | `CodeEditor2AiAssistant` | git@github.com:ajkfds/CodeEditor2AiAssistant.git | AIアシスタント |
 | `CodeEditor2MarkdownPlugin` | git@github.com:ajkfds/CodeEditor2MarkdownPlugin.git | Markdownサポート |
@@ -59,6 +62,14 @@ RtlEditor2/                                # Main repository (git add/commit her
 | `AvaloniaEdit` | git@github.com:ajkfds/AvaloniaEdit.git | テキストエディタコントロール |
 | `ajkCefGlue` | git@github.com:ajkfds/ajkCefGlue.git | CEF (Chromium Embedded Framework) サポート |
 | `TemplateEngineHost` | (要確認) | テンプレートエンジン |
+
+### 関連プロジェクト (メインディレクトリ)
+
+| プロジェクト | 用途 |
+|--------------|------|
+| `SystemVerilogCore` | LSP サーバと plugin 間の seam となる UI 非依存 interface 群 |
+| `SystemVerilogLanguageServer` | stdin/stdout 上で LSP を喋るサーバ。LSP client (VSCode/Neovim/Helix) から利用可能 |
+| `SystemVerilogLanguageServer.Tests` | xUnit による in-memory core と LspHandler の単体・結合テスト |
 
 ## build方法
 
