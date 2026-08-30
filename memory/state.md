@@ -2,14 +2,14 @@
 
 ## 進行中タスク
 
-- SystemVerilogCore への抽象化移動 → Phase 5 (Diagnostic code 埋め / テスト追加) が次のステップ
+- SystemVerilogCore への抽象化移動 → Phase 6 (Verilog/* 残ファイル移動 / テスト拡張) が次のステップ
   - Phase 1: interface 群 + first-cut adapter 完了
   - Phase 2A: BuildingBlock / NamedElement adapter 実装完了 (TopLevelBlocks, Root, FindElementAt)
   - Phase 2B: FindDefinitionAsync / FindReferencesAsync を `Root.GetHierarchyNameSpace` + `NameSpace.GetNamedElementUpward` + `DataObject.UsedReferences/AssignedReferences` 経由で実装完了
   - Phase 3: クロスファイル参照を `ProjectProperty.DefinitionNameSpace` / `PackageNameSpace.GetFile` 経由で実装完了 (definition は取れる、cross-file references は declaration のみ)
   - Phase 4: Hover 強化を `HoverContent` + `IHoverContentProvider` + `PluginHoverInstaller` で実装完了
-  - Phase 5: Diagnostics コード埋め / テスト追加 / cross-file references 拡張 (project-wide reference site aggregation)
-  - Phase 6: 残りの Verilog/* ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動
+  - Phase 5: Diagnostic code map + 13 xUnit テスト追加
+  - Phase 6: 残りの Verilog/* ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動 + テスト拡張 (parser-backed adapter の結合テスト)
 
 ## 完了済みタスク
 
@@ -29,15 +29,14 @@
 
 ## Next Steps
 
-- Phase 5: Diagnostics コード属性
-  - `DiagnosticAdapter` の `Code` フィールドを `Verilog.ParsedDocument.Message` の source から埋める (例: `SYNTHESIS_ERROR` / `UNUSED` / `UNDECLARED` など)
-- Phase 5: テスト追加
-  - SystemVerilogLanguageServer 配下に sample test project を作って definition / references / hover のエンドツーエンド検証
-  - クロスファイル定義ジャンプのテスト
+- Phase 6: テスト拡張
+  - parser-backed adapter (CodeEditor2VerilogPlugin.CoreBridge) をテストプロジェクトから呼べるようにし、cross-file definition jump / hover / find-references の結合テストを追加
+  - 既存テストは in-memory core のみを覆っている (CodeEditor2VerilogPlugin の symbol 解決ロジックは未カバー)
 - VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や
   ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が
   同じ adapter を共有するシナリオを検証
 - Phase 6: Verilog/* の Statement系 / AutoComplete系を SystemVerilogCore に移動 (Avalonia 依存の分離)
+- Phase 6: LspHandler の documentSymbol を `Root.BuildingBlocks` + 各 `BuildingBlock.Members` を列挙する実装に置き換える (現在は root のみ返している)
 
 ## メモ
 
@@ -83,9 +82,19 @@
   - SystemVerilogLanguageServer 側:
     - `LspHandler.HandleHover`: `HoverContent.Build(def)` を呼ぶよう更新 (custom provider は process-wide に効く)。MarkupContent.Kind を `"markdown"` に変更
   - コミット:
-    - SystemVerilogCore: (Phase 4 コミットは次)
-    - CodeEditor2VerilogPlugin: (Phase 4 コミットは次)
-    - SystemVerilogLanguageServer: (Phase 4 コミットは次)
+    - SystemVerilogCore: `96c14b4` "Add HoverContent helper and IHoverContentProvider extension point for LSP hover"
+    - CodeEditor2VerilogPlugin: `93b6d89` "Register plugin-side hover content provider with SystemVerilogCore"
+    - SystemVerilogLanguageServer: `17fb89c` "Use HoverContent helper for markdown hover response"
+
+- SystemVerilogCore 抽象化 Phase 5: Diagnostic code + テスト追加
+  - `CoreBridge/DiagnosticCodeMap.cs` 新規: 既知のメッセージ substring (undriven / unused / not defined here / duplicate / implicit net / bitwidth / ...) を `verilog/xxx` 形式の code にマップ。フォールバックは message text の slug
+  - `SystemVerilogDocumentAdapter.DiagnosticAdapter.Code` を `DiagnosticCodeMap.FromMessage(Message)` から取得
+  - テストプロジェクト `SystemVerilogLanguageServer.Tests` 新規 (xUnit, net10.0)
+    - SystemVerilogCore / SystemVerilogLanguageServer を ProjectReference
+    - `InMemorySystemVerilogCore` / `InMemoryProject` / `InMemoryFile` を `InternalsVisibleTo` でテストから参照
+    - 13 テスト追加 (definition / references / hover / LspHandler / CodeDocument / custom provider)
+  - `SystemVerilogLanguageServer.csproj` に `InternalsVisibleTo` 追加
+  - `InMemorySystemVerilogCore.GetOrCreateProjectPublic(string)` を public テストヘルパーとして追加
 
 ## .agents/* の調査メモ (2025-XX-XX)
 
