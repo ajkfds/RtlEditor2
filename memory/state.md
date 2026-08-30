@@ -2,14 +2,15 @@
 
 ## 進行中タスク
 
-- SystemVerilogCore への抽象化移動 → Phase 6 (Verilog/* 残ファイル移動 / テスト拡張) が次のステップ
+- SystemVerilogCore への抽象化移動 → Phase 7 (LspHandler documentSymbol 強化 / Verilog/* 残ファイル移動) が次のステップ
   - Phase 1: interface 群 + first-cut adapter 完了
   - Phase 2A: BuildingBlock / NamedElement adapter 実装完了 (TopLevelBlocks, Root, FindElementAt)
   - Phase 2B: FindDefinitionAsync / FindReferencesAsync を `Root.GetHierarchyNameSpace` + `NameSpace.GetNamedElementUpward` + `DataObject.UsedReferences/AssignedReferences` 経由で実装完了
   - Phase 3: クロスファイル参照を `ProjectProperty.DefinitionNameSpace` / `PackageNameSpace.GetFile` 経由で実装完了 (definition は取れる、cross-file references は declaration のみ)
   - Phase 4: Hover 強化を `HoverContent` + `IHoverContentProvider` + `PluginHoverInstaller` で実装完了
   - Phase 5: Diagnostic code map + 13 xUnit テスト追加
-  - Phase 6: 残りの Verilog/* ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動 + テスト拡張 (parser-backed adapter の結合テスト)
+  - Phase 6: LSP エンドツーエンドテスト追加 (10 件, 合計 23/23 成功)
+  - Phase 7: LspHandler documentSymbol を `Root.BuildingBlocks` + 各 `BuildingBlock.Members` を列挙する実装に置き換える + Verilog/* 残ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動
 
 ## 完了済みタスク
 
@@ -29,14 +30,16 @@
 
 ## Next Steps
 
-- Phase 6: テスト拡張
-  - parser-backed adapter (CodeEditor2VerilogPlugin.CoreBridge) をテストプロジェクトから呼べるようにし、cross-file definition jump / hover / find-references の結合テストを追加
-  - 既存テストは in-memory core のみを覆っている (CodeEditor2VerilogPlugin の symbol 解決ロジックは未カバー)
+- Phase 7: LspHandler documentSymbol 強化
+  - 現状は `Root.BuildingBlocks` を返していない (root のみ返している)
+  - `Root.BuildingBlocks` の各 `BuildingBlock` と `Members` を列挙する実装に置き換える
+- Phase 7: parser-backed adapter テスト
+  - `CodeEditor2VerilogPlugin.CoreBridge` のテストプロジェクトを作る (Avalonia 依存の分離が必要)
+  - 現状テストは in-memory core のみ (CodeEditor2VerilogPlugin の symbol 解決ロジックは未カバー)
 - VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や
   ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が
   同じ adapter を共有するシナリオを検証
-- Phase 6: Verilog/* の Statement系 / AutoComplete系を SystemVerilogCore に移動 (Avalonia 依存の分離)
-- Phase 6: LspHandler の documentSymbol を `Root.BuildingBlocks` + 各 `BuildingBlock.Members` を列挙する実装に置き換える (現在は root のみ返している)
+- Phase 7: Verilog/* の Statement系 / AutoComplete系を SystemVerilogCore に移動 (Avalonia 依存の分離)
 
 ## メモ
 
@@ -95,6 +98,21 @@
     - 13 テスト追加 (definition / references / hover / LspHandler / CodeDocument / custom provider)
   - `SystemVerilogLanguageServer.csproj` に `InternalsVisibleTo` 追加
   - `InMemorySystemVerilogCore.GetOrCreateProjectPublic(string)` を public テストヘルパーとして追加
+  - コミット:
+    - CodeEditor2VerilogPlugin: `97d12e6` "Map Verilog parser messages to LSP diagnostic codes"
+    - SystemVerilogLanguageServer: `bc35ec6` "Expose in-memory project handle and InternalsVisibleTo for tests"
+    - メイン: `8916199` "Add SystemVerilogLanguageServer.Tests with 13 LSP-bridge tests"
+
+- SystemVerilogCore 抽象化 Phase 6: LSP エンドツーエンドテスト追加
+  - `SystemVerilogLanguageServer.Tests/LspHandlerEndToEndTests.cs` 新規 (10 テスト):
+    - didOpen / didChange / didClose の JSON ラウンドトリップ
+    - didOpen → definition / hover / documentSymbol のフロー
+    - hover off-symbol で null
+    - 複数 file 管理
+    - didOpen 再送で text 上書き
+    - SymbolKind 数値仕様 (LSP spec) 確認
+  - テスト合計: 23/23 成功
+  - コミット: (Phase 6 コミットは次)
 
 ## .agents/* の調査メモ (2025-XX-XX)
 
