@@ -2,12 +2,14 @@
 
 ## 進行中タスク
 
-- SystemVerilogCore への抽象化移動 → Phase 4 (Hover 強化 / cross-file references 拡張) が次のステップ
+- SystemVerilogCore への抽象化移動 → Phase 5 (Diagnostic code 埋め / テスト追加) が次のステップ
   - Phase 1: interface 群 + first-cut adapter 完了
   - Phase 2A: BuildingBlock / NamedElement adapter 実装完了 (TopLevelBlocks, Root, FindElementAt)
   - Phase 2B: FindDefinitionAsync / FindReferencesAsync を `Root.GetHierarchyNameSpace` + `NameSpace.GetNamedElementUpward` + `DataObject.UsedReferences/AssignedReferences` 経由で実装完了
   - Phase 3: クロスファイル参照を `ProjectProperty.DefinitionNameSpace` / `PackageNameSpace.GetFile` 経由で実装完了 (definition は取れる、cross-file references は declaration のみ)
-  - Phase 4: Hover 実装 (DataType / port info / net width) と残りの Verilog/* ファイル (Statement系, AutoComplete系) の移動
+  - Phase 4: Hover 強化を `HoverContent` + `IHoverContentProvider` + `PluginHoverInstaller` で実装完了
+  - Phase 5: Diagnostics コード埋め / テスト追加 / cross-file references 拡張 (project-wide reference site aggregation)
+  - Phase 6: 残りの Verilog/* ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動
 
 ## 完了済みタスク
 
@@ -27,18 +29,15 @@
 
 ## Next Steps
 
-- Phase 4: Hover 実装
-  - `LspHandler.HandleHover` が現状 `$"{def.Kind} {def.Name}"` のみ返している
-  - DataObject なら `DataType` / `BitWidth`、Port なら direction、BuildingBlock なら所属 file / port list を含む MarkupContent を返す
-- Diagnostics コード属性: `DiagnosticAdapter` の `Code` フィールドを
-  Verilog.ParsedDocument.Message 由来で埋める
+- Phase 5: Diagnostics コード属性
+  - `DiagnosticAdapter` の `Code` フィールドを `Verilog.ParsedDocument.Message` の source から埋める (例: `SYNTHESIS_ERROR` / `UNUSED` / `UNDECLARED` など)
+- Phase 5: テスト追加
+  - SystemVerilogLanguageServer 配下に sample test project を作って definition / references / hover のエンドツーエンド検証
+  - クロスファイル定義ジャンプのテスト
 - VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や
   ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が
   同じ adapter を共有するシナリオを検証
-- 簡易テストを追加 (例: SystemVerilogLanguageServer 配下に sample test):
-  - module の identifier にカーソルを置いて definition が module 自身を返す
-  - module 内で使用された変数の references が Decl + 1 つの使用を含む
-  - 別ファイルに定義された module instance にカーソルを置くとその module の definition へクロスファイルジャンプできる
+- Phase 6: Verilog/* の Statement系 / AutoComplete系を SystemVerilogCore に移動 (Avalonia 依存の分離)
 
 ## メモ
 
@@ -71,7 +70,22 @@
     - `Resolve` を 2 段階化: (1) ローカル namespace ツリー (2) `ProjectProperty.DefinitionNameSpace` / `PackageNameSpace` の file registry を `GetFile(name)` で検索
     - クロスファイルで見つかった場合は `SystemVerilogFileAdapter(declaredFile)` を返し、`ISystemVerilogNamedElement.File` が declaration の file を指すようにする
     - `FindReferences` は cross-file declaration に対して declaration のみを返す (parser は cross-file reference site を集積しないため)
-  - コミット: CodeEditor2VerilogPlugin (Phase 3 コミットは次)
+  - コミット: CodeEditor2VerilogPlugin `c2fada4` "Resolve cross-file symbols in SystemVerilogCore bridge"
+
+- SystemVerilogCore 抽象化 Phase 4: Hover 強化
+  - SystemVerilogCore 側:
+    - `Documents/HoverContent.cs` 新規: `ISystemVerilogNamedElement` から markdown ベースのホバー文字列を生成する static ヘルパー。kind ごとに `module {name}` / `parameter {name}` などの署名を生成し、`_Defined in: {path}_` を末尾に付与
+    - `Documents/IHoverContentProvider.cs` 新規: plugin 側が richer な情報を追加できる extension point。`HoverContent.RegisterProvider(provider)` で process-wide にインストール
+  - CodeEditor2VerilogPlugin 側:
+    - `CoreBridge/PluginHoverContentProvider.cs` 新規: `IHoverContentProvider` 実装。`DataObject` なら `DataType` / `BitWidth`、`Port` なら `Direction` / `BitWidth`、`BuildingBlock` なら port list を hover に splice
+    - `PluginHoverInstaller.Install()`: `Plugin.Register()` から呼ばれ、`HoverContent.RegisterProvider(...)` で process-wide に登録
+    - `Plugin.cs`: `Register()` の先頭で `PluginHoverInstaller.Install()` を呼ぶ
+  - SystemVerilogLanguageServer 側:
+    - `LspHandler.HandleHover`: `HoverContent.Build(def)` を呼ぶよう更新 (custom provider は process-wide に効く)。MarkupContent.Kind を `"markdown"` に変更
+  - コミット:
+    - SystemVerilogCore: (Phase 4 コミットは次)
+    - CodeEditor2VerilogPlugin: (Phase 4 コミットは次)
+    - SystemVerilogLanguageServer: (Phase 4 コミットは次)
 
 ## .agents/* の調査メモ (2025-XX-XX)
 
