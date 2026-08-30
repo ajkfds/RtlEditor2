@@ -2,11 +2,11 @@
 
 ## 進行中タスク
 
-- SystemVerilogCore への抽象化移動 → Phase 2B (FindDefinitionAsync / FindReferencesAsync) が次のステップ
+- SystemVerilogCore への抽象化移動 → Phase 3 (Build/Hover/DocumentSymbol 強化) / クロスファイル参照が次のステップ
   - Phase 1: interface 群 + first-cut adapter 完了
   - Phase 2A: BuildingBlock / NamedElement adapter 実装完了 (TopLevelBlocks, Root, FindElementAt)
-  - Phase 2B: シンボル参照 (Definition / References) の adapter 実装が次タスク
-  - Phase 3: 参照解決を VerilogParser / IndexReference / WordReference の解析ロジックに結びつける
+  - Phase 2B: FindDefinitionAsync / FindReferencesAsync を `Root.GetHierarchyNameSpace` + `NameSpace.GetNamedElementUpward` + `DataObject.UsedReferences/AssignedReferences` 経由で実装完了
+  - Phase 3: クロスファイル参照 (package / module instance へのジャンプ) と hover (DataType/Port info) の強化
   - Phase 4: 残りの Verilog/* ファイル (Statement系, AutoComplete系) の移動
 
 ## 完了済みタスク
@@ -27,14 +27,17 @@
 
 ## Next Steps
 
-- Phase 2B: FindDefinitionAsync / FindReferencesAsync を
-  `pluginVerilog.Verilog.BuildingBlocks.Root.GetHierarchyNameSpace` +
-  `NameSpace.GetNamedElementUpward` で実装し、VerilogParser の参照解決にブリッジ
+- Phase 3: クロスファイル参照 (別 VerilogFile に定義された symbol へのジャンプ) の実装。
+  現状の SymbolResolver は同一 ParsedDocument 内の namespace ツリーのみを走査するため、
+  package import や instance reference を解決できない
 - SystemVerilogCore の Diagnostics コード属性 (Code フィールドは現状空文字) を
   Verilog.ParsedDocument.Message 由来で埋める
 - VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や
   ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が
   同じ adapter を共有するシナリオを検証
+- 簡易テストを追加 (例: SystemVerilogLanguageServer 配下に sample test):
+  - module の identifier にカーソルを置いて definition が module 自身を返す
+  - module 内で使用された変数の references が Decl + 1 つの使用を含む
 
 ## メモ
 
@@ -53,6 +56,14 @@
   - コミット:
     - SystemVerilogCore: `40dc9e7` "Add Checker kind to SystemVerilogNamedElementKind enum"
     - CodeEditor2VerilogPlugin: `64cff6d` "Wire SystemVerilogCore building block / named element adapters"
+
+- SystemVerilogCore 抽象化 Phase 2B: Definition / References lookup 実装
+  - `CoreBridge/SymbolResolver.cs` 新規:
+    - `FindDefinition`: `CodeDocument.GetWord` で word 取得 → `Root.GetHierarchyNameSpace` で ns 取得 → `ns.GetNamedElementUpward(text)` で element 解決 → `NamedElementAdapter.TryCreate` で ISystemVerilogNamedElement に変換
+    - `FindReferences`: 上記で element 解決後、`DataObject` なら `UsedReferences + AssignedReferences` + `DefinedReference` を全件 (重複除去) で返す。`DataObject` 以外なら definition のみ返す
+    - 内部に軽量 `ReferenceAdapter` (ISystemVerilogNamedElement 実装) を持ち、use site の WordReference を LSP 互換の `DefinitionRange` として提供
+  - `SystemVerilogProjectAdapter.FindDefinitionAsync` / `FindReferencesAsync` が `SymbolResolver` を呼び出すように更新
+  - コミット: CodeEditor2VerilogPlugin (Phase 2B コミットは次)
 
 ## .agents/* の調査メモ (2025-XX-XX)
 
