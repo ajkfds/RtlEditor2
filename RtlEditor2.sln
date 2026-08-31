@@ -31,9 +31,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2MarkdownPlugin",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeEditor2", "CodeEditor2\CodeEditor2\CodeEditor2.csproj", "{8CE5530D-83D7-6DC2-014D-BA16DD085FA7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogLanguageServer", "SystemVerilogLanguageServer\SystemVerilogLanguageServer.csproj", "{ED128021-5A35-4016-BF8E-327496E9A148}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogCore", "SystemVerilogCore\SystemVerilogCore.csproj", "{15DAF1C2-A06E-063B-3EF2-A4E02CC0E831}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogCore", "SystemVerilogCore\SystemVerilogCore.csproj", "{56816FA4-7408-479D-94E3-C8818424A8DB}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogLanguageServer", "SystemVerilogLanguageServer\SystemVerilogLanguageServer.csproj", "{B103BC35-F9FD-B1CD-3F60-F9332FE6F96C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -93,14 +93,14 @@ Global
 		{8CE5530D-83D7-6DC2-014D-BA16DD085FA7}.Debug|x64.Build.0 = Debug|x64
 		{8CE5530D-83D7-6DC2-014D-BA16DD085FA7}.Release|x64.ActiveCfg = Release|x64
 		{8CE5530D-83D7-6DC2-014D-BA16DD085FA7}.Release|x64.Build.0 = Release|x64
-		{ED128021-5A35-4016-BF8E-327496E9A148}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{ED128021-5A35-4016-BF8E-327496E9A148}.Debug|x64.Build.0 = Debug|Any CPU
-		{ED128021-5A35-4016-BF8E-327496E9A148}.Release|x64.ActiveCfg = Release|Any CPU
-		{ED128021-5A35-4016-BF8E-327496E9A148}.Release|x64.Build.0 = Release|Any CPU
-		{56816FA4-7408-479D-94E3-C8818424A8DB}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{56816FA4-7408-479D-94E3-C8818424A8DB}.Debug|x64.Build.0 = Debug|Any CPU
-		{56816FA4-7408-479D-94E3-C8818424A8DB}.Release|x64.ActiveCfg = Release|Any CPU
-		{56816FA4-7408-479D-94E3-C8818424A8DB}.Release|x64.Build.0 = Release|Any CPU
+		{15DAF1C2-A06E-063B-3EF2-A4E02CC0E831}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{15DAF1C2-A06E-063B-3EF2-A4E02CC0E831}.Debug|x64.Build.0 = Debug|Any CPU
+		{15DAF1C2-A06E-063B-3EF2-A4E02CC0E831}.Release|x64.ActiveCfg = Release|Any CPU
+		{15DAF1C2-A06E-063B-3EF2-A4E02CC0E831}.Release|x64.Build.0 = Release|Any CPU
+		{B103BC35-F9FD-B1CD-3F60-F9332FE6F96C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B103BC35-F9FD-B1CD-3F60-F9332FE6F96C}.Debug|x64.Build.0 = Debug|Any CPU
+		{B103BC35-F9FD-B1CD-3F60-F9332FE6F96C}.Release|x64.ActiveCfg = Release|Any CPU
+		{B103BC35-F9FD-B1CD-3F60-F9332FE6F96C}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

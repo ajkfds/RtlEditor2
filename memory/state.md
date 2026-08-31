@@ -30,6 +30,10 @@
   - `NavigatePanel/ImportedPackageNode.cs` を新規作成 (UpdateVisual, OnSelected, GetIcon など)
   - `Tool/ParseHierarchy.cs` の `parseDownwardAsync` / `parseUpwardAsync` で `ImportedPackage` を `IVerilogRelatedFile` として処理
   - 同じ `parseDownwardAsync` 内の `ImportedPackages` に対する参照元ファイルもparseキューにenqueue
+- ImportedPackage 階層parse で source file (pkg.sv) が再parseされない問題を修正
+  - `Tool/ParseHierarchy.cs` の `parseDownwardAsync` で `verilogFile is ImportedPackage` のとき、その `SourceVerilogFile` をparseキューにenqueueするよう追加
+  - これにより、 同じhierarchy parse cycle 内で package を定義するfileも再parseされ、 ImportedPackage 側のparse結果と整合する
+  - コミット: CodeEditor2VerilogPlugin `02bd78a` "Enqueue ImportedPackage source file in hierarchy parse"
 
 ## Next Steps
 
