@@ -34,6 +34,18 @@
   - `Tool/ParseHierarchy.cs` の `parseDownwardAsync` で `verilogFile is ImportedPackage` のとき、その `SourceVerilogFile` をparseキューにenqueueするよう追加
   - これにより、 同じhierarchy parse cycle 内で package を定義するfileも再parseされ、 ImportedPackage 側のparse結果と整合する
   - コミット: CodeEditor2VerilogPlugin `02bd78a` "Enqueue ImportedPackage source file in hierarchy parse"
+- Module / UDP instantiation parser を実装
+  - `Verilog/Items/UdpInstantiation.cs` を新規作成
+    - `NamedItem + IBuildingBlockInstantiation + INamedElement + IItem` を実装
+    - BNF `udp_instantiation ::= udp_identifier [ drive_strength ] [ delay2 ] udp_instance { , udp_instance } ;` に従い、`udp_identifier` 解決 → `[ drive_strength ]` 任意 → `[ delay2 ]` 任意 → インスタンス並び を parse
+    - `udp_instance ::= [ name_of_instance ] ( output_terminal , input_terminal { , input_terminal } )` を順序付き port connection として実装
+    - `GetInstancedBuildingBlock()` で Primitive の parsedDocument を参照して input 候補 port 解決
+    - `DriveStrength.CreateString()` の旧・新 `DriveStrength` 名前空間衝突を避け、`(strength)` プレースホルダで出力
+  - `Verilog/Items/ModuleOrGenerateItem.cs` の `ParseAsync` を更新
+    - `gate_instantiation` keywordで消費されない識別子が `Primitive` を指していた場合に `UdpInstantiation.ParseAsync` へ分岐
+    - それ以外は従来どおり `ModuleInstantiation.ParseAsync`
+  - ビルド成功 (CodeEditor2VerilogPlugin / RtlEditor2.Desktop どちらも 0 error)
+  - コミット: CodeEditor2VerilogPlugin (このターンで作成予定)
 
 ## Next Steps
 
