@@ -46,6 +46,11 @@
     - それ以外は従来どおり `ModuleInstantiation.ParseAsync`
   - ビルド成功 (CodeEditor2VerilogPlugin / RtlEditor2.Desktop どちらも 0 error)
   - コミット: CodeEditor2VerilogPlugin (このターンで作成予定)
+- `.fileClassify` が Linux 環境で Navigate window で見えない問題を修正
+  - 原因: `CodeEditor2/Data/DataAccess.cs` の `DirectoryInfo.EnumerateFileSystemInfos` で `EnumerationOptions` のデフォルト `AttributesToSkip` が `Hidden | System` になっており、Linux では `.` 始まりファイルが隠しファイル扱いされて列挙から除外される。Windows では `.` 始まりファイルに `Hidden` 属性が付かないため問題は顕在化しない
+  - 内容: `DataAccess.GetFolderContents` (2 か所) と `DataAccess.UpdateFieSystemInfoAndSubItemAsync` の `EnumerationOptions` に `AttributesToSkip = FileAttributes.System` を明示的に指定し、`Hidden` のスキップを無効化
+  - ビルド成功 (`RtlEditor2.Desktop.csproj`, 0 errors)
+  - コミット: CodeEditor2 `87dbe51`
 
 ## Next Steps
 
