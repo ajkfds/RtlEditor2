@@ -52,6 +52,18 @@
   - ビルド成功 (`RtlEditor2.Desktop.csproj`, 0 errors)
   - コミット: CodeEditor2 `87dbe51`
 
+- Verilog コード表示時の Folding が fold マークを表示しない問題を修正
+  - 原因:
+    1. `CodeView.attachToCodeDocument()` で `_foldingManager = FoldingManager.Install(...)` した後、`UpdateFoldings()` が呼ばれていなかった。`SetTextFileAsync` 後のファイル表示時に fold データが空の folding manager が install されたままになっていた
+    2. `Controller_CodeEditor.PostRefresh()` は `Redraw()` + `UpdateMarks()` のみで `UpdateFoldings()` を呼んでいなかった。parse 後に CodeDocument の Foldings が更新されても folding margin に反映されない
+    3. `CodeDocument.CopyColorMarkFrom` の `UpdateFoldings()` 呼び出しが UI スレッドから呼ばれた場合のみ実行されるため、background parse thread からの呼び出し時に fold 反映が遅れていた
+  - 内容:
+    - `CodeEditor2/CodeEditor2/Views/CodeView.axaml.cs` の `attachToCodeDocument()` の末尾に `UpdateFoldings()` を追加
+    - `CodeEditor2/CodeEditor2/Controller_CodeEditor.cs` の `PostRefresh()` に `Global.codeView.UpdateFoldings();` を追加
+    - `CodeEditor2/CodeEditor2/CodeEditor/CodeDocument.cs` の `CopyColorMarkFrom` 内の `UpdateFoldings()` 呼び出しを、UI スレッドでない場合は `Dispatcher.UIThread.Post` で UI thread に post するよう更新
+  - ビルド成功 (`RtlEditor2.Desktop.csproj`, 0 errors)
+  - コミット: コードエディタ (このターンで作成予定)
+
 ## Next Steps
 
 - Phase 10: parser-backed adapter テスト
