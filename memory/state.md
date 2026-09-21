@@ -73,6 +73,13 @@
 - Phase 10: Verilog/* 残ファイル (Statement系, AutoComplete系) の SystemVerilogCore 移動 (Avalonia 依存の分離)
 - VerilogSystemVerilogCore.Wrap の呼び出し点を Plugin 側 (例: Plugin.cs や ParseHierarchy) から呼び、editor 上で CodeEditor2VerilogPlugin + LSP が同じ adapter を共有するシナリオを検証
 - セッション全体のまとめ: 7 フェーズで SystemVerilogCore seam が完成し、LSP サーバは VSCode / Neovim / Helix から起動可能
+- PopupHandler.OpenPopup を caret 位置 popup として実装
+  - CodeEditor2/CodeEditor/PopupHint/PopupHandler.cs の OpenPopup(List<PopupItem>) を実装
+  - 受け取った PopupItem 群を 1 つの PopupItem にまとめ (各 item 間は labelNewLine で区切り)、PopupTextBlock に描画
+  - ToolTip.SetPlacement(Editor, BottomEdgeAlignedLeft) + VerticalOffset = caretRect.Height で caret 直下を anchor に ToolTip を表示
+  - 一度 close してから reopen することで caret 移動に伴う再配置を確実にする
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 7ecd163 "Implement PopupHandler.OpenPopup at caret position"
 
 ## メモ
 
