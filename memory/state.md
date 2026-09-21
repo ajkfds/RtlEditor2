@@ -64,6 +64,15 @@
   - ビルド成功 (`RtlEditor2.Desktop.csproj`, 0 errors)
   - コミット: コードエディタ (このターンで作成予定)
 
+- CompletionContext を活かした mouse-over / input-time hint popup を実装
+  - `CodeEditor2/CodeEditor/CodeComplete/CompletionContext.cs` の `CarletPopupItems` / `MouseOverPopupItems` のコメントを修正 (input-time hint と mouse-over hint の役割を明記)
+  - `CodeEditor2/Data/ITextFile.cs` に `PopupItem? GetPopupItem(ulong Version, int index)` を interface に戻し、mouse-over hint 用の軽量 lookup API としてコメントを追加 (UI thread から呼ばれるので heavy parsing は避けること)
+  - `CodeEditor2/CodeEditor/CodeComplete/CodeCompleteHandler.TextEntered` で `CarletPopupItems` を popup 表示する際に `hintWorking = true` を立てる。また `CarletPopupItems` が空で auto-complete 動作中 (working == true) でない場合のみ `CloseHint()` を呼ぶよう修正
+  - `CodeEditor2/CodeEditor/PopupHint/PopupHandler.cs` の `TextArea_PointerMoved` を軽量 API `TextFile.GetPopupItem(...)` 経由に戻し、`CombinePopupItems` helper を抽出して `OpenPopup` の重複ロジックも共通化
+  - ビルド成功 (`RtlEditor2.Desktop.csproj`, 0 errors)
+  - コミット: CodeEditor2 (このターンで作成予定)
+  - メモ: 各プラグイン側 (例: Verilog) の `GetPopupItem` / `CarletPopupItems` / `MouseOverPopupItems` への出力は今後も必要だが、本ターンは CodeEditor2 (メインディレクトリ) 側の infrastructure のみ整えた
+
 ## Next Steps
 
 - Phase 10: parser-backed adapter テスト
