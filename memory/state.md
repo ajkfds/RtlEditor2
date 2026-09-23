@@ -2,6 +2,25 @@
 
 ## 進行中タスク
 
+- 入力時 hint popup を ToolTip から独立した Popup 制御に分離 → 実装完了 (ビルド成功、コミットはこのターンで作成予定)
+  - 背景: CodeCompleteHandler (入力時 hint) と PopupHandler (mouse-over) が同一 ToolTip (PopupTextBlock) を共有しており同時表示できなかった
+  - `CodeEditor2/CodeEditor2/CodeEditor/PopupHint/HintPopupHandler.cs` を新規作成
+    - caret 直下にアンカーした Avalonia `Popup` で hint popup を表示
+    - `PlacementMode.AnchorAndGravity` + `PopupAnchor.TopLeft` / `PopupGravity.BottomRight` (AvaloniaEdit CompletionWindowBase と同じ方式)
+    - offset 計算は `CalculateCaretRectangle() - TextView.ScrollOffset` → `TranslatePoint(Editor)` (CompletionWindowBase と同じ document→viewport 変換)
+    - `CombinePopupItems` (複数 PopupItem を改行で結合) を PopupHandler から移管
+    - `OpenPopup` / `ClosePopup` は UI thread 以外からの呼び出しに `Dispatcher.UIThread.Post` で対応
+  - `CodeView.axaml.cs`:
+    - TextEditor は XAML で子要素を持てない (TemplatedControl) ため、コンストラクタで `Popup` + `Border` + `TextBlock` (hintPopupTextBlock) をコード生成
+    - `hintPopup` / `hintPopupTextBlock` フィールドと `HintPopup` / `HintPopupTextBlock` プロパティを追加
+    - using に `Avalonia.Controls.Primitives` を追加
+    - ホイールズーム時に `hintPopupTextBlock.FontSize` を追従
+  - `Controller_CodeEditor.OpenPopup/ClosePopup` の routing 先を `codeViewPopup` (PopupHandler) から `codeViewHintPopup` (HintPopupHandler) に変更
+  - `PopupHandler` を mouse-over 専用化: `OpenPopup` / `ClosePopup` / `CombinePopupItems` を削除、ToolTip pointer placement 復元コメントを整理
+  - `CodeCompleteHandler.OnCaretPositionChanged()` を追加: caret 移動時に stale になった hint popup を閉じる (`CodeView.Caret_PositionChangedAsync` から呼ぶ)
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 (このターンで作成予定)
+
 - SystemVerilogCore への抽象化移動 → Phase 10 (parser-backed adapter テスト / Verilog/* 残ファイル移動) が次のステップ
   - Phase 1: interface 群 + first-cut adapter 完了
   - Phase 2A: BuildingBlock / NamedElement adapter 実装完了 (TopLevelBlocks, Root, FindElementAt)
@@ -75,6 +94,7 @@
 
 ## Next Steps
 
+- 動作確認: 入力時 hint popup と mouse-over popup の同時表示、caret 移動で hint popup が閉じること、auto-complete dropdown と衝突しないこと
 - Phase 10: parser-backed adapter テスト
   - CodeEditor2VerilogPlugin の CoreBridge には Avalonia 依存があり、UI フリーなテストプロジェクトから直接参照できない
   - 代替: Plugin テスト用に Avalonia を headless でロードする別プロジェクトを作る (工数大)
