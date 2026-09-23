@@ -2,6 +2,28 @@
 
 ## 進行中タスク
 
+- README修正案 (CodeEditor2VerilogPlugin/README.md 機能1〜4) の実装 → 実装完了 (ビルド成功、コミット済み)
+  - 機能1 (引数位置 hint): `Verilog/Expressions/ListOfArguments.cs` の `ParseListOfArguments` に `word.Eof` 分岐を3箇所追加
+    - 括弧 `(` 直後 EOF: 最初の引数 (`PortsList[0]`) の `Port.GetLabel()` を `CarletPopupItems` へ
+    - 引数 expression parse 後 EOF (`func(arg1` 直後): 現在の引数 (`PortsList[i]`) の label を hint 表示して早期 return
+    - カンマ直後 EOF (`func(arg1, ` 直後): 次の引数 (`PortsList[i]`) の label
+  - 機能2 (named argument): `.` 直後 EOF で未接続引数名を `AutoCompleteItems` に列挙 (`appendNamedArgumentCandidates`, positional 接続済み除外)、`.name(` 直後 EOF でその引数の label hint、named 引数 expression へ `Expression.ParseCreate(word, (NameSpace)portNameSpace, completionContext)` で伝播
+  - `AppendArgumentPopupItems(completionContext, portNameSpace, index)` を `internal static` helper として新設 (index >= PortsList.Count なら何も追加しない)
+  - 機能3 (function 名入力位置): `Expressions/FunctionCall.cs` の `ParseCreate(word, nameSpace, functionDefinedNameSpace, completionContext)` 冒頭で `completionContext.AppendExpression()` 呼び出し (ModuleInstantiation.ParseAsync と同じパターン)
+  - statement 経路の completionContext 伝播 (README 機能3の注記対応: `assign x = func(|` 等):
+    - `Items/ContinuousAssign.cs` → `DataObjects/VariableAssignment.cs` → `Expression.ParseCreate(word, nameSpace, completionContext)`
+    - `Items/ModuleCommonItem.cs` / `Items/NonPortModuleItem.cs` / `Items/ModuleOrGenerateItem.cs` / `Items/ModuleItem.cs` に `completionContext` optional 引数を追加し always/initial/assign/module_instantiation へ伝播
+    - `Items/AlwaysConstruct.cs` / `Items/InitialConstruct.cs`: `ParseCreate` に `completionContext` 追加 → `Statements.ParseCreateStatement(word, nameSpace, null, null, completionContext)`
+    - `Statements/Statements.cs`: `ParseCreateFunctionStatement` に `completionContext` 追加、attribute 継続・block label 継続・TaskEnable 呼び出しに伝播
+    - `Verilog/Function.cs` / `Verilog/Task_.cs`: `Parse` に `completionContext` optional 引数追加、本体内 statement parse へ伝播
+    - `Statements/TaskEnable.cs`: `ParseCreate` / `parseCreate` に `completionContext` 追加、引数位置ごとの EOF 分岐 (括弧直後 / expression 後 / カンマ直後) で `AppendArgumentPopupItems` により task 引数 hint 表示
+    - `Verilog/Items/ModuleInstantiation.cs`: `parseOrderedPortConnections` に `completionContext` 引数追加、ordered port 接続入力中 (`inst0(clk, ` 等) の EOF 分岐で port label hint、expression へ伝播
+    - `Verilog/BuildingBlocks/Class.cs`: extends constructor の `ParseListOfArguments` 呼び出しに `null` 明示 (既存動作を変えない範囲での整合)
+    - `Verilog/CompletionContext.cs`: 部分parse分岐に `Verilog.Items.AlwaysConstruct` を追加 (always 文内 caret でも statement 系 hint が動作)
+  - 対応外と判断したもの: `BuiltinMethodCall.ParseCreate` (アクティブな呼び出し元が存在しないことを確認、コメントアウトのみ)、`UdpInstantiation` / GenerateBlock 内 statement 経路 (横展開候補として残す)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 既存672 warningsは無関係)
+  - コミット: CodeEditor2VerilogPlugin サブモジュール内 (本ターンで作成)
+
 - ChatControl.axaml.cs `completeWork` の System.ObjectDisposedException ("The CancellationTokenSource has been disposed") の原因解析 → 解析完了・未修正
   - 発生箇所: timer ループ内 `await Task.Delay(100, timerCancellationTokenSource.Token)` (行881)。ループ条件の `.Token` アクセス (行873) でも同様に発生し得る
   - 原因: `using var timerCancellationTokenSource` (行870) のスコープが try ブロック内。正常系は 行930-938 の `Cancel()` → `await displayTimerTask` → ブロック抜けて Dispose の順で安全だが、例外系の脱出path (catch (OperationCanceledException) 行952 の return null / catch (Exception) 行957 の retry continue) では timer を Cancel も await もせず try を抜けるため、using が実行中の timer タスクを置き去りにして CTS を Dispose する
@@ -125,8 +147,8 @@
 
 ## Next Steps
 
-- README 修正案の実装: function call 引数位置 hint (`ListOfArguments.ParseListOfArguments` への `word.Eof` 分岐追加) を README の機能1〜4 に従って実装する
-- 実装時は statement 系 parse (`assign x = func(` 等) の `Expression.ParseCreate` への completionContext 伝播経路を先に確認すること (README 機能3 の注記参照)
+- 動作確認: `func(` / `func(a, ` / `func(.p|` / `func(.p(` / `inst0(clk, ` / `task_call(` の各入力位置で hint popup・autocomplete dropdown が出ること (EditParse モードでのみ実効的に動作)
+- 横展開候補: `UdpInstantiation` (ordered port connection) / GenerateBlock 内 statement 経路 / `BuiltinMethodCall` (呼び出し元が今後復活した場合) への completionContext 伝播
 - 動作確認: 入力時 hint popup が caret 直下に表示されること (論理親接続修正の検証)、mouse-over popup との同時表示、caret 移動で hint popup が閉じること、auto-complete dropdown と衝突しないこと
 - Phase 10: parser-backed adapter テスト
   - CodeEditor2VerilogPlugin の CoreBridge には Avalonia 依存があり、UI フリーなテストプロジェクトから直接参照できない
