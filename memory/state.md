@@ -2,7 +2,9 @@
 
 ## 進行中タスク
 
-- 入力時 hint popup を ToolTip から独立した Popup 制御に分離 → 実装完了 (ビルド成功、コミットはこのターンで作成予定)
+- 入力時 hint popup を ToolTip から独立した Popup 制御に分離 → 実装完了、popup 非表示問題も修正済み (ビルド成功、コミット済み)
+  - **popup 非表示の原因と修正**: `CodeView` コンストラクタで生成した孤立 `Popup` はビジュアル/論理ツリーに属さないため、Avalonia がホスト先 TopLevel を解決できず `IsOpen = true` しても何も表示されない。`HintPopupHandler.OpenPopup()` 内で `((ISetLogicalParent)hintPopup).SetParent(TopLevel.GetTopLevel(codeView.Editor) as ILogical)` により論理親を接続するよう修正 (AvaloniaEdit `CompletionWindowBase.AttachEvents` と同じ方式)
+  - コミット: CodeEditor2 `f09882f` "Fix hint popup not showing: attach logical parent to TopLevel"、メイン `9dac646` (submodule pointer 更新)
   - 背景: CodeCompleteHandler (入力時 hint) と PopupHandler (mouse-over) が同一 ToolTip (PopupTextBlock) を共有しており同時表示できなかった
   - `CodeEditor2/CodeEditor2/CodeEditor/PopupHint/HintPopupHandler.cs` を新規作成
     - caret 直下にアンカーした Avalonia `Popup` で hint popup を表示
@@ -18,8 +20,7 @@
   - `Controller_CodeEditor.OpenPopup/ClosePopup` の routing 先を `codeViewPopup` (PopupHandler) から `codeViewHintPopup` (HintPopupHandler) に変更
   - `PopupHandler` を mouse-over 専用化: `OpenPopup` / `ClosePopup` / `CombinePopupItems` を削除、ToolTip pointer placement 復元コメントを整理
   - `CodeCompleteHandler.OnCaretPositionChanged()` を追加: caret 移動時に stale になった hint popup を閉じる (`CodeView.Caret_PositionChangedAsync` から呼ぶ)
-  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
-  - コミット: CodeEditor2 (このターンで作成予定)
+  - ビルド成功 (CodeEditor2.csproj, 0 errors / VerilogPlugin 側の既存エラーは別修正の影響のため無視)
 
 - SystemVerilogCore への抽象化移動 → Phase 10 (parser-backed adapter テスト / Verilog/* 残ファイル移動) が次のステップ
   - Phase 1: interface 群 + first-cut adapter 完了
@@ -94,7 +95,7 @@
 
 ## Next Steps
 
-- 動作確認: 入力時 hint popup と mouse-over popup の同時表示、caret 移動で hint popup が閉じること、auto-complete dropdown と衝突しないこと
+- 動作確認: 入力時 hint popup が caret 直下に表示されること (論理親接続修正の検証)、mouse-over popup との同時表示、caret 移動で hint popup が閉じること、auto-complete dropdown と衝突しないこと
 - Phase 10: parser-backed adapter テスト
   - CodeEditor2VerilogPlugin の CoreBridge には Avalonia 依存があり、UI フリーなテストプロジェクトから直接参照できない
   - 代替: Plugin テスト用に Avalonia を headless でロードする別プロジェクトを作る (工数大)
