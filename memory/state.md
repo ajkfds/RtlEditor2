@@ -2,6 +2,15 @@
 
 ## 進行中タスク
 
+- ChatControl + OpenRouterChat: 「waiting 表示が出たまま何も返さずに LLM 側の chatCompletion が終了する」問題の原因解析 → 解析完了・未修正
+  - 主因1 (OpenRouterChat.GetAsyncCollectionChatResult の完全バッファリング): 内部で `client.GetStreamingResponseAsync` を全件読み切ってから `resultTexts` を yield する構造 (行156-250)。ChatControl.completeWork は最初の ret 到着まで `timerActivate==true` で waiting 表示を継続するため、LLM 応答が完全終了するまで UI に何も流れない (ストリーミングの逐次性喪失)
+  - 主因2 (MEAI FunctionInvokingChatClient の内部 tool ループ): EnableFunctionCalling==true で UseFunctionInvocation() 済み client に tools を渡すと、LLM が tool_calls のみで応答を終了 (テキスト空) した場合、MEAI が内部でツール実行 → 再リクエストを繰り返す。中間の chatCompletion が OpenRouter 側で完了しても yield は来ず waiting 継続。ChatControl.ToolCallStarted/Ended は pseudo function call (LLMAgent.ParseResponceAsync) 経由のみで、native 実行中は呼ばれないため spinner も出ない
+  - 主因3 (reasoning モデルの thinking 非表示): include_reasoning=true でも ChatResponseUpdate.Text は TextReasoningContent を含まないため thinking 中は yield 対象外。thinking のみで終了/長時間化すると waiting が長く続く
+  - 主因4 (cancellation 不伝播): OpenRouterChat 行187 `client.GetStreamingResponseAsync(ChatMessageWrappers, options)` に cancellationToken を渡していない。ChatControl.completeWork も await foreach 内で cancellationToken をチェックしていない (ThrowIfCancellationRequested は行898, foreach 前のみ)。Abort しても LLM ストリームは中断されず、タイマーは停止するが waiting 表示は resultItem に消去されず凍結したまま残る (catch OperationCanceledException は foreach 内では発火しない)
+  - 副次問題 (履歴乖離 → 悪循環): updates には Text 付きチャンクのみ追加 (行219-223) のため、finish_reason=tool_calls の FunctionCallContent は updates 未収集 → addMessages されず ChatMessageWrappers に assistant tool-call メッセージが記録されない。native function calling の tool call / tool result が履歴・SaveMessages 出力から消失し、次ターン文脈欠落 → 再び tool_calls のみ / 空応答を返しやすい悪循環
+  - yield 0 件パス: finish_reason=Stop でテキスト無しの場合 resultTexts 空 → foreach 完了 → SetText("blank") 表示 (このパスは waiting ではなく blank)。finish_reason=ToolCalls 等なら "blank (...)" 文字列が yield され会話がそこで停止 (pseudo モード非対応なら ParseResponceAsync が null)
+  - 修正方向案: (1) OpenRouterChat を逐次 yield 化 (update.Text 受信時に即 yield) (2) GetStreamingResponseAsync に cancellationToken 伝播 (3) ChatControl await foreach 内の cancellationToken チェック + abort 時 waiting クリア (4) native tool call の履歴反映 + ChatControl へツール進捗通知 (ToolCallStarted 相当)
+
 - README修正案 (CodeEditor2VerilogPlugin/README.md 機能1〜4) の実装 → 実装完了 (ビルド成功、コミット済み)
   - 機能1 (引数位置 hint): `Verilog/Expressions/ListOfArguments.cs` の `ParseListOfArguments` に `word.Eof` 分岐を3箇所追加
     - 括弧 `(` 直後 EOF: 最初の引数 (`PortsList[0]`) の `Port.GetLabel()` を `CarletPopupItems` へ
