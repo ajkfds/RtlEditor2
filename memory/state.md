@@ -22,7 +22,7 @@
     - `Verilog/CompletionContext.cs`: 部分parse分岐に `Verilog.Items.AlwaysConstruct` を追加 (always 文内 caret でも statement 系 hint が動作)
   - 対応外と判断したもの: `BuiltinMethodCall.ParseCreate` (アクティブな呼び出し元が存在しないことを確認、コメントアウトのみ)、`UdpInstantiation` / GenerateBlock 内 statement 経路 (横展開候補として残す)
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 既存672 warningsは無関係)
-  - コミット: CodeEditor2VerilogPlugin サブモジュール内 (本ターンで作成)
+  - コミット: CodeEditor2VerilogPlugin `a4dcea7` "Add autocomplete / hint support for function call argument input (README features 1-4)"、メイン `bd1ae09` (submodule pointer 更新 + state.md 更新)
 
 - ChatControl.axaml.cs `completeWork` の System.ObjectDisposedException ("The CancellationTokenSource has been disposed") の原因解析 → 解析完了・未修正
   - 発生箇所: timer ループ内 `await Task.Delay(100, timerCancellationTokenSource.Token)` (行881)。ループ条件の `.Token` アクセス (行873) でも同様に発生し得る
