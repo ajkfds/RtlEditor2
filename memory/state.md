@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- ChatControl.axaml.cs `completeWork` の System.ObjectDisposedException ("The CancellationTokenSource has been disposed") の原因解析 → 解析完了・未修正
+  - 発生箇所: timer ループ内 `await Task.Delay(100, timerCancellationTokenSource.Token)` (行881)。ループ条件の `.Token` アクセス (行873) でも同様に発生し得る
+  - 原因: `using var timerCancellationTokenSource` (行870) のスコープが try ブロック内。正常系は 行930-938 の `Cancel()` → `await displayTimerTask` → ブロック抜けて Dispose の順で安全だが、例外系の脱出path (catch (OperationCanceledException) 行952 の return null / catch (Exception) 行957 の retry continue) では timer を Cancel も await もせず try を抜けるため、using が実行中の timer タスクを置き去りにして CTS を Dispose する
+  - メカニズム: timer ループが行879 `await resultItem.SetText(...)` (Dispatcher.UIThread.InvokeAsync 完了待ち) で中断中に例外pathで CTS が Dispose → SetText 完了継続が AwaitTaskContinuation でインライン再開し行881に到達 → Dispose済み CTS への Token 取得 / Task.Delay 内部の Register で ObjectDisposedException。内側 catch は TaskCanceledException のみで未捕捉 → displayTimerTask が faulted (例外pathでは await されない未観測例外、デバッガは初回例外で表示)
+  - リトライpathでは旧 CTS が Cancel されないまま Dispose されるため、旧 timer タスクが次イテレーションの新 timer と同一 resultItem への二重書き込み競合も起こし得る
+  - 対応案: (A) using をやめ finally で `Cancel()` → `await displayTimerTask` → `Dispose()` の順を保証 (推奨・競合を原理的に排除) / (B) token をループ外で1回取得し、timer ラムダ全体を try/catch (OperationCanceledException / ObjectDisposedException) で囲む防御的修正
+
 - 入力時 hint popup を ToolTip から独立した Popup 制御に分離 → 実装完了、popup 非表示問題も修正済み (ビルド成功、コミット済み)
   - **popup 非表示の原因と修正**: `CodeView` コンストラクタで生成した孤立 `Popup` はビジュアル/論理ツリーに属さないため、Avalonia がホスト先 TopLevel を解決できず `IsOpen = true` しても何も表示されない。`HintPopupHandler.OpenPopup()` 内で `((ISetLogicalParent)hintPopup).SetParent(TopLevel.GetTopLevel(codeView.Editor) as ILogical)` により論理親を接続するよう修正 (AvaloniaEdit `CompletionWindowBase.AttachEvents` と同じ方式)
   - コミット: CodeEditor2 `f09882f` "Fix hint popup not showing: attach logical parent to TopLevel"、メイン `9dac646` (submodule pointer 更新)
@@ -37,6 +44,20 @@
 
 ## 完了済みタスク
 
+- function call / let call 引数入力中の hint 表示の機能追加案を解析し `CodeEditor2VerilogPlugin/README.md` に修正案を追記
+  - `ModuleInstantiation.cs` を参考に、function call 引数位置での hint 表示の不足を解析
+  - コード確認で判明した現状の問題:
+    - `ListOfArguments.ParseListOfArguments` は `completionContext` を引数で受けるが関数内で未使用 (`word.Eof` 分岐なし) → 引数入力中に hint が出ない
+    - positional / named argument の `Expression.ParseCreate` に `completionContext` が未伝播
+    - `FunctionCall.ParseCreate` 冒頭の `AppendExpression()` 相当がない (`ModuleInstantiation.ParseAsync` との非対称)
+    - `ModuleInstantiation.parseOrderedPortConnections` (ordered接続) と `BuiltinMethodCall.ParseCreate` も `completionContext` 未対応
+  - README に追記した修正案の構成:
+    - 機能1: positional 引数位置で次の引数 `Port.GetLabel()` を `CarletPopupItems` に追加 (`word.Eof` パターン、括弧直後 + カンマ直後)
+    - 機能2: named argument `.` 直後の未接続引数名補完 + `.name(` 直後の port hint
+    - 機能3: function 名入力位置での `AppendExpression()` (statement parse 経路の伝播確認が必要と注記)
+    - 機能4: 横展開表 (ordered port connection / BuiltinMethodCall / task call / Class constructor)
+    - 設計上の注意 (EOF 早期 return の規律、constantConnected の扱い、検証方法)
+  - コミット: CodeEditor2VerilogPlugin `d3b2c97` "Add enhancement proposal for function call argument hints in README"
 - Verilog autocomplete / hint の部分parse + CompletionContext 仕組みを解析し `CodeEditor2VerilogPlugin/README.md` に追記
   - README.md に「Verilog autocomplete / hint 情報の生成仕組み (部分parse + CompletionContext)」セクションを新設
   - 全体フロー (TextEntered → ITextFile.GetAutoCompleteItems → Verilog.CompletionContext → 部分parse)
@@ -104,6 +125,8 @@
 
 ## Next Steps
 
+- README 修正案の実装: function call 引数位置 hint (`ListOfArguments.ParseListOfArguments` への `word.Eof` 分岐追加) を README の機能1〜4 に従って実装する
+- 実装時は statement 系 parse (`assign x = func(` 等) の `Expression.ParseCreate` への completionContext 伝播経路を先に確認すること (README 機能3 の注記参照)
 - 動作確認: 入力時 hint popup が caret 直下に表示されること (論理親接続修正の検証)、mouse-over popup との同時表示、caret 移動で hint popup が閉じること、auto-complete dropdown と衝突しないこと
 - Phase 10: parser-backed adapter テスト
   - CodeEditor2VerilogPlugin の CoreBridge には Avalonia 依存があり、UI フリーなテストプロジェクトから直接参照できない
