@@ -37,6 +37,15 @@
 
 ## 完了済みタスク
 
+- Verilog autocomplete / hint の部分parse + CompletionContext 仕組みを解析し `CodeEditor2VerilogPlugin/README.md` に追記
+  - README.md に「Verilog autocomplete / hint 情報の生成仕組み (部分parse + CompletionContext)」セクションを新設
+  - 全体フロー (TextEntered → ITextFile.GetAutoCompleteItems → Verilog.CompletionContext → 部分parse)
+  - CompletionContext コンストラクタの3段階処理 (GetAutoCompleteTarget / GetDocumentRegionAt / 部分parse実行)
+  - `completionContext != null && word.Eof` パターン (ModuleInstantiation の port label popup、Module.cs の keyword 絞り込み + instance snippet)
+  - append 系メソッド一覧、CodeEditor2 側表示振り分け、mouse-over hint (GetPopupItem) との対比、注意点
+  - 注意点の NameSpace 実登録挙動は GetNameSpace/GetHierarchyNameSpace の実装確認後に記述 (推定を排除)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `8bb102d` (作業ツリーに残っていた Expression parse 系への completionContext 伝播 + CodeDrawStyle 波線調整も同時コミット)
 - `.agents/overview.md`に`TemplateEngineHost`をProject Structureとサブモジュール一覧に追加
 - `memory/state.md`を作成 (rules.mdで参照されているが実在しなかった)
 - verilogpluginにおいて`typedef struct packed`の要素を参照、代入した時の`undriven`/`unused` noticeを修正
