@@ -2,6 +2,11 @@
 
 ## 進行中タスク
 
+- ColorHandler.OnTextEdit の更新アルゴリズム精査と修正 → 実装完了 (ビルド成功、コミット済み)
+  - 問題点: (1) 複数行削除+改行なし挿入 (removeLines!=0, insertLines==0, InsertionLength>0) で e.InsertionLength が無視されマージ行の色位置が挿入長分ずれる (2) remove+複数行insert 複合時、マージ行が元 startLine 長を超える色を持ち得るため、insert startline ブロックの updateColor(lineLength) で不正な部分重複処理/負の duplicate が発生しゴミ色が残る (3) RemoveColors が無 lock
+  - 修正: startline/endline ブロックで insertionLength を (insertLines==0) ? e.InsertionLength : 0 として反映 (startLineLength 加算含む)、insert startline ブロックを明示ロジックに置換 (insertOffset 前の色は保持 / 以降の色は removeTarget / straddling 色は insertOffset で truncate。int.MaxValue removalLength は offset+removalLength のオーバーフローで truncate 分岐に入れないため不採用)、RemoveColors を lock(LineInformation) で保護
+  - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `ba0155d`
 - ChatControl abort 後に Send できなくなる問題を修正 → 実装完了 (ビルド成功、コミット済み)
   - 原因: (1) OpenRouterChat.GetAsyncCollectionChatResult が GetStreamingResponseAsync に cancellationToken を渡しておらず abort してもストリームが生存 (2) 同メソッドが完全バッファリングのため ChatControl の await foreach が LLM 完了まで待ち続ける (3) ChatControl.completeWork の await foreach 内にキャンセルチェックがなく completeWork が await 中のまま finally で inputAcceptable=true にならず、UserComplete 行534 `if (!inputAcceptable) return;` で Send が黙って捨てられる
   - 修正: 
