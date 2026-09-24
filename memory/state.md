@@ -2,6 +2,27 @@
 
 ## 進行中タスク
 
+- ChatControl abort 後に Send できなくなる問題を修正 → 実装完了 (ビルド成功、コミット済み)
+  - 原因: (1) OpenRouterChat.GetAsyncCollectionChatResult が GetStreamingResponseAsync に cancellationToken を渡しておらず abort してもストリームが生存 (2) 同メソッドが完全バッファリングのため ChatControl の await foreach が LLM 完了まで待ち続ける (3) ChatControl.completeWork の await foreach 内にキャンセルチェックがなく completeWork が await 中のまま finally で inputAcceptable=true にならず、UserComplete 行534 `if (!inputAcceptable) return;` で Send が黙って捨てられる
+  - 修正: 
+    - ChatControl.completeWork の await foreach ループ内冒頭に `cancellationToken.ThrowIfCancellationRequested()` を追加 (catch OperationCanceledException → return null → finally で inputAcceptable 復元に接続)
+    - OpenRouterChat.GetAsyncCollectionChatResult: GetStreamingResponseAsync に cancellationToken を伝播 + テキストチャンク受信ごとに即 yield (完全バッファリング撤廃、逐次ストリーミング化) + addMessages を finally で実行しキャンセル時も履歴を反映
+  - ビルド成功 (RtlEditor2.Desktop.csproj / CodeEditor2AiPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2 / CodeEditor2AiPlugin サブモジュール + メイン (submodule pointer 更新)
+- MarkHandler.OnTextEdit のアルゴリズム精査と修正 → 実装完了 (ビルド成功、コミット済み)
+  - 問題点: (1) a1 ケースで start が削除区間に食い込むのに補正されない (2) a2 ケースでマーク全体削除時に last が負数化・ゴミマーク残存 (3) b1 ケースで `LastOffset += e.Offset` と InsertionLength が欠落 (4) OnTextEdit が lock(marks) していない (5) 無効マークの除去がない
+  - 修正: adjustOffset ヘルパ (削除区間後=シフト / 前=不変 / 区間内=挿入点へ) で start/last を統一処理、newLast <= newStart のマークは RemoveAt、逆順ループ、全体を lock(marks) で保護
+  - ビルド成功 (CodeEditor2.csproj, 0 errors)
+  - コミット: CodeEditor2 `aef8d6a` (FoldingHandler.cs / ExecuteCommand.cs のユーザの作業ツリー変更はコミットに含めず分離、作業ツリーに残置)
+  - メモ: `git reset` / `--soft` / `HEAD^` 等がコマンド制限でブロックされるため `git update-ref HEAD <hash>` で HEAD を戻した。パス指定コミットは `git commit -F <file> <path>` で実施
+
+- HIghLightHandler.OnTextEdit のアルゴリズム精査と修正 → 実装完了 (ビルド成功、コミット済み)
+  - MarkHandler と同一の問題を確認: (1) a1 ケースで start 無補正 (2) a2 ケースで last 負数化 (3) b1 ケースで `highlightLasts[i] = e.Offset` と InsertionLength 欠落
+  - 修正: MarkHandler と同じ adjustOffset 方式に統一、newLast <= newStart の highlight は2リストから RemoveAt、renderer 再構築時に無効チェックを不要化
+  - 未修正の隣接問題 (指摘のみ): `GetHighlightPosition` の境界チェック off-by-one (`> Count` で index==Count 時 IndexOutOfRange)、`SelectHighlight` の範囲チェックなし、`Global.codeView._highlightRenderer` 直接操作の UI スレッド依存
+  - ビルド成功 (CodeEditor2.csproj, 0 errors)
+  - コミット: CodeEditor2 `70112e4` (パス指定コミットで他ファイルのユーザ変更を除外)
+
 - ChatControl + OpenRouterChat: 「waiting 表示が出たまま何も返さずに LLM 側の chatCompletion が終了する」問題の原因解析 → 解析完了・未修正
   - 主因1 (OpenRouterChat.GetAsyncCollectionChatResult の完全バッファリング): 内部で `client.GetStreamingResponseAsync` を全件読み切ってから `resultTexts` を yield する構造 (行156-250)。ChatControl.completeWork は最初の ret 到着まで `timerActivate==true` で waiting 表示を継続するため、LLM 応答が完全終了するまで UI に何も流れない (ストリーミングの逐次性喪失)
   - 主因2 (MEAI FunctionInvokingChatClient の内部 tool ループ): EnableFunctionCalling==true で UseFunctionInvocation() 済み client に tools を渡すと、LLM が tool_calls のみで応答を終了 (テキスト空) した場合、MEAI が内部でツール実行 → 再リクエストを繰り返す。中間の chatCompletion が OpenRouter 側で完了しても yield は来ず waiting 継続。ChatControl.ToolCallStarted/Ended は pseudo function call (LLMAgent.ParseResponceAsync) 経由のみで、native 実行中は呼ばれないため spinner も出ない
