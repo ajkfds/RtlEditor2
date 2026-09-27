@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- Primary.cs line312 object の builtin method call 対応 → 実装完了 (ビルド成功、コミット済み)
+  - `Primary.parseCreate` の `element is BuiltInMethod && targetElement is Variables.Object` ケース (TODO だった箇所) を `BuiltinMethodCall.ParseCreate(word, nameSpace, (DataObject)targetElement)` 呼び出しに置換。未対応だと fall-through して "undefined function" の誤エラーになっていた
+  - `BuiltinMethodCall.ParseCreate` 成功直後に `methodCall.BitWidth = method.ReturnVariable?.BitWidth` を設定 (FunctionCall と対称)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 691 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `52e22eb` "Wire BuiltinMethodCall for object built-in method calls in Primary parse"
+  - 対象外 (横展開候補): `obj.randomize(|` 等の引数位置 hint (BuiltinMethodCall は ListOfArguments を使わない独自ループのため EOF 対応が別途必要)
+
 - ColorHandler.OnTextEdit の更新アルゴリズム精査と修正 → 実装完了 (ビルド成功、コミット済み)
   - 問題点: (1) 複数行削除+改行なし挿入 (removeLines!=0, insertLines==0, InsertionLength>0) で e.InsertionLength が無視されマージ行の色位置が挿入長分ずれる (2) remove+複数行insert 複合時、マージ行が元 startLine 長を超える色を持ち得るため、insert startline ブロックの updateColor(lineLength) で不正な部分重複処理/負の duplicate が発生しゴミ色が残る (3) RemoveColors が無 lock
   - 修正: startline/endline ブロックで insertionLength を (insertLines==0) ? e.InsertionLength : 0 として反映 (startLineLength 加算含む)、insert startline ブロックを明示ロジックに置換 (insertOffset 前の色は保持 / 以降の色は removeTarget / straddling 色は insertOffset で truncate。int.MaxValue removalLength は offset+removalLength のオーバーフローで truncate 分岐に入れないため不採用)、RemoveColors を lock(LineInformation) で保護
