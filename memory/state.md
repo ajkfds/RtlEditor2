@@ -2,6 +2,22 @@
 
 ## 進行中タスク
 
+- Primary.cs: statement 位置の object task/function call (obj.myTask(); / obj.myFunc();) が "undefined function" エラーになる問題を修正 → 実装完了 (ビルド成功)
+  - 原因: statement として `obj.myTask(...)` / `obj.myFunc(...)` を書くと `Statements.ParseCreateStatement` default 経路 → `Expression.ParseCreateVariableLValue` → `Primary.ParseCreateLValue` (lValue=true) で parse されるため、class object 上の function call 分岐の `!lValue` 条件にマッチせず fall-through、`parseUndefinedFunction` ("undefined function") に到達していた
+  - 修正: `Primary.parseCreate` の class object function call 分岐の `!lValue &&` を削除 (関数呼び出しは lValue になれないため、lValue==true でも受理して安全)。task call 分岐は元々 lValue 条件なしで到達可能
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 496 warnings は既存)
+
+- Primary.cs: object 内 function の function call (obj.myFunc(...)) 対応 → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `Primary.parseCreate` 行305の function call 分岐は `targetNameSpace != null` を要求するが、`Variables.Object` は `Variable : DataObject` で `NameSpace` を継承しないため `targetNameSpace == null` になり、`parseUndefinedFunction` に落ちて "undefined function" の誤エラー
+  - 修正: 行305分岐の後ろに新分岐を追加。`!lValue && element is Function && targetElement is DataObjects.Variables.Object` の場合、`GetSourceClass()` で取得した `BuildingBlocks.Class` (NameSpace) を `FunctionCall.ParseCreate(word, nameSpace, sourceClass)` の `functionDefinedNameSpace` に渡す
+  - `Class` は `BuildingBlock : NameSpace` なので `FunctionCall.Function` getter (`DefinedNameSpace.BuildingBlock.NamedElements[FunctionName]`) が正しく解決、`Function` は `IPortNameSpace` 実装のため引数チェックも機能
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 496 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `4aa1c74` "Support function calls on class objects (obj.myFunc(...)) in Primary parse"
+  - task も対応: `element is Task_ && targetElement is DataObjects.Variables.Object` の場合、`GetSourceClass()` で取得した Class を `TaskReference.ParseCreate(word, nameSpace, sourceClass)` に渡す分岐を追加 (lValue/lValue以外両方。既存 task 分岐と対称)
+  - task コミット: CodeEditor2VerilogPlugin `55b97b0` "Support task calls on class objects (obj.myTask(...)) in Primary parse"
+  - チェーン呼び出し対応: `FunctionCall.GetReturnClass()` を新設 (ReturnVariable.DataType が BuildingBlocks.Class の場合に返す)、`Primary.parseChainedMethodCalls` を新設し function call 分岐の戻り値に対して `.` + identifier 継続を解析 (`obj.getObj().method()`, `obj.getObj().method().method2()`)。チェーン中の task は TaskReference として解決。チェーンの戻り値型が class でない/次の identifier が解決できない場合はチェーンを中断してそれまでの Primary を返す
+  - チェーン コミット: CodeEditor2VerilogPlugin `fb98130` "Support chained method calls on function call return values (obj.getObj().method())"
+
 - BuiltinMethodCall 引数位置 hint (EOF 対応) → 実装完了 (ビルド成功、コミット済み)
   - `BuiltinMethodCall.ParseCreate` に EOF 分岐を2箇所追加: 括弧 `(` 直後 EOF (`obj.randomize(|`) で最初の引数 hint、引数 expression parse 後 EOF (`obj.srandom(seed|` の次引数) で `i + 1` 番目の hint
   - `appendArgumentPopupItems` helper を新設 (BuiltInMethod は IPortNameSpace 未実装のため ListOfArguments.AppendArgumentPopupItems は使わず、PortsList[index].GetLabel() を CarletPopupItems に追加する独自実装)
