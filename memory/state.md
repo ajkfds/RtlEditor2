@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- BuiltinMethodCall 引数位置 hint (EOF 対応) → 実装完了 (ビルド成功、コミット済み)
+  - `BuiltinMethodCall.ParseCreate` に EOF 分岐を2箇所追加: 括弧 `(` 直後 EOF (`obj.randomize(|`) で最初の引数 hint、引数 expression parse 後 EOF (`obj.srandom(seed|` の次引数) で `i + 1` 番目の hint
+  - `appendArgumentPopupItems` helper を新設 (BuiltInMethod は IPortNameSpace 未実装のため ListOfArguments.AppendArgumentPopupItems は使わず、PortsList[index].GetLabel() を CarletPopupItems に追加する独自実装)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `3a9fd38` "Add input-time argument hint for built-in method calls at EOF positions"
+  - 残り横展開候補: UdpInstantiation (ordered port connection) / GenerateBlock 内 statement 経路
+
 - Primary.cs line312 object の builtin method call 対応 → 実装完了 (ビルド成功、コミット済み)
   - `Primary.parseCreate` の `element is BuiltInMethod && targetElement is Variables.Object` ケース (TODO だった箇所) を `BuiltinMethodCall.ParseCreate(word, nameSpace, (DataObject)targetElement)` 呼び出しに置換。未対応だと fall-through して "undefined function" の誤エラーになっていた
   - `BuiltinMethodCall.ParseCreate` 成功直後に `methodCall.BitWidth = method.ReturnVariable?.BitWidth` を設定 (FunctionCall と対称)
