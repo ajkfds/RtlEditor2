@@ -6,6 +6,7 @@ using Avalonia.Svg.Skia;
 using CodeEditor2;
 using pluginAi;
 using System;
+using System.Runtime.CompilerServices;
 
 namespace RtlEditor2.Desktop;
 
@@ -90,6 +91,8 @@ class Program
 
         BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
+
+       
     }
     public static void CustomizeNavigateNodeContextMenuHandler(Avalonia.Controls.ContextMenu contextMenu)
     {
@@ -122,7 +125,8 @@ class Program
     private static void MenuItem_VerilogAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         // chat agent tab
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m3.Name, false);
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_3_flash.Name, false);
+//        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m3.Name, false);
 //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_7.Name, false);
 //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
@@ -137,12 +141,13 @@ class Program
     private static void MenuItem_DotNetAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         // chat agent tab
-        //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
-        //       pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_2, false);
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_3_flash.Name, false);
+        //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
+        //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_2, false);
         //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_7, false);
-        //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_5.Name, false);
+        //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_5.Name, false);
         //pluginAi.OpenRouterChat chat = new OpenRouterChat(@"@preset/minimax-m2-5", false);
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m3.Name, false);
+        //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m3.Name, false);
 
         //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.openai_gpt_oss_120b , false);
         CodeEditor2.NavigatePanel.NavigatePanelNode? node = CodeEditor2.Controller.NavigatePanel.GetSelectedNode();
@@ -156,40 +161,32 @@ class Program
     }
 
 
-    //public static void Main(string[] args) => BuildAvaloniaApp()
-    //    .StartWithClassicDesktopLifetime(args);
-
-    // Avalonia configuration, don't remove; also used by visual designer.
-    //public static AppBuilder BuildAvaloniaApp()
-    //    => AppBuilder.Configure<App>()
-    //        .UsePlatformDetect()
-    //        .WithInterFont()
-    //        .LogToTrace()
-    //        .UseReactiveUI();
     public static AppBuilder BuildAvaloniaApp()
     {
         GC.KeepAlive(typeof(SvgImageExtension).Assembly);
         GC.KeepAlive(typeof(Avalonia.Svg.Skia.Svg).Assembly);
+
         return AppBuilder.Configure<CodeEditor2.App>()
-                .UsePlatformDetect()
-                .With(new Win32PlatformOptions
-                {
-                    // IME の動作不良対策
-                    OverlayPopups = true,
-                    ShouldRenderOnUIThread = true,
-                })
-                .With(new X11PlatformOptions
-                {
-                    // Tooltipがメインウィンドウの上に表示するworkaround
-                    OverlayPopups = true,
-                    RenderingMode = new[] { X11RenderingMode.Egl, X11RenderingMode.Glx, X11RenderingMode.Software }
-                })
-                .With(new SkiaOptions
-                {
-                    MaxGpuResourceSizeBytes = 1024 * 1024 * 1024
-                })
-                .WithInterFont()
-                .LogToTrace()
-                .UseReactiveUI();
+            .UsePlatformDetect()
+            .With(new Win32PlatformOptions
+            {
+                // IME の動作不良対策
+                OverlayPopups = true,
+                ShouldRenderOnUIThread = true,
+            })
+            .With(new X11PlatformOptions
+            {
+                // Tooltipがメインウィンドウの上に表示するworkaround
+                OverlayPopups = true,
+                RenderingMode = new[] { X11RenderingMode.Egl, X11RenderingMode.Glx, X11RenderingMode.Software }
+            })
+            .With(new SkiaOptions
+            {
+                MaxGpuResourceSizeBytes = 1024 * 1024 * 1024
+            })
+            .WithInterFont()
+            .LogToTrace()
+            .UseReactiveUI()
+            ;
     }
 }
