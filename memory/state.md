@@ -9,7 +9,10 @@
   - 修正8 (変化なし skip): `ChangedRegionState` に `Unknown` (copy 未実行) を追加し `hasChangedRegionInfo` フラグで区別。`CodeView.Redraw()` が None (copy 実行済みかつ colors/marks/foldings 全変化なし) の場合 redraw を完全 skip
   - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
   - コミット: CodeEditor2 `66f8e2c`、メイン `d323071` (submodule pointer 更新、ユーザの Controller.cs 変更は除外)
-  - 残改善候補: CopyColorMarkFrom を行単位差分コピー化 (mark 件数変化時の Full 発火低減)
+  - 残改善候補: CopyColorMarkFrom を行単位差分コピー化 (mark 件数変化時の Full 発火低減) → 完了 (下記修正9)
+  - 修正9 (sorted mark diff): `ComputeChangedRegion` の mark 比較を Offset ソート後の要素比較に変更。mark 件数が異なる場合も追加/削除 mark の範囲を Partial 領域として記録でき、mark 件数変化時の Full 発火を低減 (共通件数分の要素比較 + 余剰分の old/new それぞれの範囲集計)
+  - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `ab944ff`、メイン `6e11192` (submodule pointer 更新)
   - 解析結果: ボトルネックは (1) `Controller.CodeEditor.PostRefresh()` の `TextView.Redraw()` が全域再構築 (ClearVisualLines)、(2) `CodeDocumentColorTransformer.ColorizeLine` で色セグメントごとに `new SolidColorBrush` を毎回生成、(3) EditParse 完了が連続すると PostRefresh も連続発火
   - 修正1 (brush キャッシュ): `CodeDocumentColorTransformer` に static `Dictionary<Color, SolidColorBrush>` キャッシュ (`GetBrush`) を追加し、パレット色ごとに brush を再利用。VisualLine 再構築時のアロケーションを削減
   - 修正2 (変化領域記録): `CodeDocument` に `ChangedRegionState` (None/Partial/Full) + `GetChangedRegion` / `ClearChangedRegion` を追加。`CopyColorMarkFrom` が旧 LineInformation / marks / foldings を保存して差分比較する `ComputeChangedRegion` を新設 (marks/foldings 変化=Full、色変化は行番号 min〜max をテキストオフセット範囲として Partial、変化なし=None)
