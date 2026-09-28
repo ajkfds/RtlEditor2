@@ -247,9 +247,9 @@
 
 ## Next Steps
 
-- 動作確認: `func(` / `func(a, ` / `func(.p|` / `func(.p(` / `inst0(clk, ` / `task_call(` の各入力位置で hint popup・autocomplete dropdown が出ること (EditParse モードでのみ実効的に動作)
+- 動作確認完了: `func(` / `func(a, ` / `func(.p|` / `func(.p(` / `inst0(clk, ` / `task_call(` の各入力位置で hint popup・autocomplete dropdown の出現を確認済み
 - 横展開候補: `UdpInstantiation` (ordered port connection) / GenerateBlock 内 statement 経路 / `BuiltinMethodCall` (呼び出し元が今後復活した場合) への completionContext 伝播
-- 動作確認: 入力時 hint popup が caret 直下に表示されること (論理親接続修正の検証)、mouse-over popup との同時表示、caret 移動で hint popup が閉じること、auto-complete dropdown と衝突しないこと
+- 動作確認完了: 入力時 hint popup の caret 直下表示、mouse-over popup との同時表示、caret 移動で hint popup が閉じること、auto-complete dropdown と非衝突を確認済み
 - Phase 10: parser-backed adapter テスト
   - CodeEditor2VerilogPlugin の CoreBridge には Avalonia 依存があり、UI フリーなテストプロジェクトから直接参照できない
   - 代替: Plugin テスト用に Avalonia を headless でロードする別プロジェクトを作る (工数大)
