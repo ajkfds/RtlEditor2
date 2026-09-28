@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- ChatControl / OpenRouterChat 残課題の整理と native tool call 履歴反映 → 実装完了 (ビルド成功、コミット済み)
+  - 確認結果: ObjectDisposedException 対応 (finally で Cancel → await displayTimerTask → Dispose の順、using 不使用) と OpenRouterChat の逐次 yield 化 + cancellationToken 伝播は既に実装済みだった (state.md 記録が古いのみ)
+  - 修正: OpenRouterChat.GetAsyncCollectionChatResult で FunctionCallContent を含む update を `updates` に収集するよう変更。従来は Text 付きチャンクのみ収集のため finish_reason=tool_calls の assistant tool-call メッセージが履歴 (ChatMessageWrappers / SaveMessages) から消失し、次ターン文脈欠落 → tool_calls のみの空応答を返す悪循環の原因だった (Debugger.Break のデッドコードも削除)
+  - 対応外 (残課題): ChatControl への native tool 実行進捗通知 (ToolCallStarted 相当)。pseudo function call 経由のみで発火する現状のまま
+  - ビルド成功 (CodeEditor2AiPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2AiPlugin `b9201e4`、メイン `c601df9` (submodule pointer 更新)
+
 - HIghLightHandler の隣接問題修正 → 実装完了 (ビルド成功、コミット済み)
   - `GetHighlightPosition`: 境界チェックを `> Count` から `< 0 || >= Count` に修正 (index==Count 時の IndexOutOfRange 解消、負 index も防御)
   - `SelectHighlight`: 範囲チェック追加 (範囲外 index は無視)
