@@ -2,6 +2,16 @@
 
 ## 進行中タスク
 
+- Verilog 編集時の再描画領域縮小 (描画速度向上) → 実装完了 (ビルド成功)
+  - 解析結果: ボトルネックは (1) `Controller.CodeEditor.PostRefresh()` の `TextView.Redraw()` が全域再構築 (ClearVisualLines)、(2) `CodeDocumentColorTransformer.ColorizeLine` で色セグメントごとに `new SolidColorBrush` を毎回生成、(3) EditParse 完了が連続すると PostRefresh も連続発火
+  - 修正1 (brush キャッシュ): `CodeDocumentColorTransformer` に static `Dictionary<Color, SolidColorBrush>` キャッシュ (`GetBrush`) を追加し、パレット色ごとに brush を再利用。VisualLine 再構築時のアロケーションを削減
+  - 修正2 (変化領域記録): `CodeDocument` に `ChangedRegionState` (None/Partial/Full) + `GetChangedRegion` / `ClearChangedRegion` を追加。`CopyColorMarkFrom` が旧 LineInformation / marks / foldings を保存して差分比較する `ComputeChangedRegion` を新設 (marks/foldings 変化=Full、色変化は行番号 min〜max をテキストオフセット範囲として Partial、変化なし=None)
+  - 修正3 (部分再描画): `CodeView.Redraw()` が ChangedRegion を読み、Partial の場合は `TextView.Redraw(offset, length)` で該当範囲の VisualLine のみ再構築 (既存 VisualLine を再利用)。Full/None は従来通り全域再描画 (None で skip すると mark renderer へのデータ反映が漏れる可能性があるため fallback)
+  - 修正4 (PostRefresh coalescing): `Controller.CodeEditor.PostRefresh()` を 15ms の DispatcherTimer で coalesce。連続入力中の EditParse 完了が高頻度でも実効的な refresh は時間窓ごとに 1 回
+  - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `8d81d80` "Reduce redraw area on Verilog editing" (無関係な ExecuteCommand.cs / Global.cs の作業ツリー変更は除外、パス指定でコミット)、メイン `d5595b3` (submodule pointer 更新)
+  - 今後の改善候補: MarkerRenderer の mark 差分更新 + Pen キャッシュ、CopyColorMarkFrom を行単位差分コピー化 (Full 発火率の低減)、色変化なし時の redraw skip (mark 反映経路の整理後)
+
 - Primary.cs: statement 位置の object task/function call (obj.myTask(); / obj.myFunc();) が "undefined function" エラーになる問題を修正 → 実装完了 (ビルド成功)
   - 原因: statement として `obj.myTask(...)` / `obj.myFunc(...)` を書くと `Statements.ParseCreateStatement` default 経路 → `Expression.ParseCreateVariableLValue` → `Primary.ParseCreateLValue` (lValue=true) で parse されるため、class object 上の function call 分岐の `!lValue` 条件にマッチせず fall-through、`parseUndefinedFunction` ("undefined function") に到達していた
   - 修正: `Primary.parseCreate` の class object function call 分岐の `!lValue &&` を削除 (関数呼び出しは lValue になれないため、lValue==true でも受理して安全)。task call 分岐は元々 lValue 条件なしで到達可能
