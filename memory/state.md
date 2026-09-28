@@ -2,6 +2,14 @@
 
 ## 進行中タスク
 
+- HIghLightHandler の隣接問題修正 → 実装完了 (ビルド成功、コミット済み)
+  - `GetHighlightPosition`: 境界チェックを `> Count` から `< 0 || >= Count` に修正 (index==Count 時の IndexOutOfRange 解消、負 index も防御)
+  - `SelectHighlight`: 範囲チェック追加 (範囲外 index は無視)
+  - `_highlightRenderer.CurrentResults` 直接操作 (OnTextEdit / ClearHighlight / AppendHighlight) を `RebuildRendererResults` helper に集約し、UI スレッド以外からの呼び出しは `Dispatcher.UIThread.Post` で UI スレッドにマーシャリング。OnTextEdit がバックグラウンド document thread から走るケースに対応
+  - ClearHighlight はリストクリア後に renderer 再構築する順序に修正
+  - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `42d055e`、メイン `dc78d94` (submodule pointer 更新)
+
 - Verilog 編集時の再描画領域縮小 (描画速度向上) 追加最適化 → 実装完了 (ビルド成功)
   - 修正5 (Pen/Brush キャッシュ): `MarkerRenderer` に static `brushCache` (Color→SolidColorBrush) / `penCache` ((Color, Thickness, Style)→Pen) を追加し、Draw 毎フレームの mark ごとアロケーションを削減
   - 修正6 (mark 差分 skip): `MarkerRenderer.SetMarks` に `EqualsCurrentMarks` 差分チェックを追加し、mark リストが前回と同一 (count/order/content) の場合は TextSegmentCollection の再構築を skip
