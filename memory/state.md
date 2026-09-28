@@ -2,7 +2,14 @@
 
 ## 進行中タスク
 
-- Verilog 編集時の再描画領域縮小 (描画速度向上) → 実装完了 (ビルド成功)
+- Verilog 編集時の再描画領域縮小 (描画速度向上) 追加最適化 → 実装完了 (ビルド成功)
+  - 修正5 (Pen/Brush キャッシュ): `MarkerRenderer` に static `brushCache` (Color→SolidColorBrush) / `penCache` ((Color, Thickness, Style)→Pen) を追加し、Draw 毎フレームの mark ごとアロケーションを削減
+  - 修正6 (mark 差分 skip): `MarkerRenderer.SetMarks` に `EqualsCurrentMarks` 差分チェックを追加し、mark リストが前回と同一 (count/order/content) の場合は TextSegmentCollection の再構築を skip
+  - 修正7 (localized mark 部分再描画): `CodeDocument.ComputeChangedRegion` を改良。mark 件数が同じで内容のみ変化した場合、変化した mark の旧/新範囲の union を行単位に拡張した部分領域として Partial を記録 (色変化領域とマージ)。foldings 変化・mark 件数変化は従来どおり Full
+  - 修正8 (変化なし skip): `ChangedRegionState` に `Unknown` (copy 未実行) を追加し `hasChangedRegionInfo` フラグで区別。`CodeView.Redraw()` が None (copy 実行済みかつ colors/marks/foldings 全変化なし) の場合 redraw を完全 skip
+  - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `66f8e2c`、メイン `d323071` (submodule pointer 更新、ユーザの Controller.cs 変更は除外)
+  - 残改善候補: CopyColorMarkFrom を行単位差分コピー化 (mark 件数変化時の Full 発火低減)
   - 解析結果: ボトルネックは (1) `Controller.CodeEditor.PostRefresh()` の `TextView.Redraw()` が全域再構築 (ClearVisualLines)、(2) `CodeDocumentColorTransformer.ColorizeLine` で色セグメントごとに `new SolidColorBrush` を毎回生成、(3) EditParse 完了が連続すると PostRefresh も連続発火
   - 修正1 (brush キャッシュ): `CodeDocumentColorTransformer` に static `Dictionary<Color, SolidColorBrush>` キャッシュ (`GetBrush`) を追加し、パレット色ごとに brush を再利用。VisualLine 再構築時のアロケーションを削減
   - 修正2 (変化領域記録): `CodeDocument` に `ChangedRegionState` (None/Partial/Full) + `GetChangedRegion` / `ClearChangedRegion` を追加。`CopyColorMarkFrom` が旧 LineInformation / marks / foldings を保存して差分比較する `ComputeChangedRegion` を新設 (marks/foldings 変化=Full、色変化は行番号 min〜max をテキストオフセット範囲として Partial、変化なし=None)
