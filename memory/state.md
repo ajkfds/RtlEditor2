@@ -68,6 +68,15 @@
   - コミット: CodeEditor2VerilogPlugin `468e2cc`、メイン `90a76ba` (submodule pointer 更新)
   - メモ: `Data/VerilogCommon/AutoCompleteHandler.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
   - Next: A3以降の実装はユーザ指示待ち
+  - A9 ContinuousAssign → 実装完了 (ビルド成功)
+    - `Verilog/CompletionContext.cs` に `AppendDataObjects()` を新設 (DataObject 型の autocomplete item のみ列挙、LHS 候補用)
+    - `Verilog/Items/ContinuousAssign.cs` に EOF 分岐を2箇所追加: `assign` 直後 EOF (`assign |`) で `AppendDataObjects()` して早期 return、複数assignmentの `,` 直後 EOF (`assign a = b, |`) で同様
+    - `Verilog/CompletionContext.cs` 部分parse分岐に `Verilog.Items.ContinuousAssign` ケースを追加し completionContext を伝播
+  - A10 Module port 宣言中の keyword hint → 実装完了 (ビルド成功)
+    - `Verilog/DataObjects/Port.cs` `ParsePortDeclaration` に EOF 分岐を2箇所追加: port list 先頭 (`(` 直後 / 前ポートの `,` 直後) EOF で `input/output/inout/ref/wire/reg/logic/bit/signed` キーワード hint、direction keyword 直後 (`input |`) EOF で `wire/reg/logic/bit/signed` キーワード hint
+    - `Verilog/DataObjects/Port.cs` `ParsePortDeclarations` に `,` 直後 EOF 分岐を追加 (同 keyword hint)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 502 warnings は既存)
+  - Next: A11以降の実装はユーザ指示待ち
 
 - B1-B8 building block tree 更新抑止の状態確認 → 確認完了 (B4残は対応不要と判明)
   - B1 Module.cs (L200, L338) / B2 Function.cs (L227, L454, L465), Task_.cs (L154, L169, L331) / B3 GenerateBlock.cs (L49, L80) / B4 InterfaceInstance.cs (L310), ProgramInstantiation.cs (L221), UdpInstantiation.cs (L254): いずれも `word.CompletionContext != null` で tree 登録を skip する抑止パターン実装済み
