@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- BuiltinMethodCall 引数 hint の横展開 (UdpInstantiation / GenerateBlock) → 実装完了 (ビルド成功、コミット済み)
+  - `UdpInstantiation.parseListOfPortConnections` に EOF 分岐を3箇所追加: 括弧 `(` 直後 EOF (`udp0(`) で output terminal (PortsList[0]) hint、カンマ直後 EOF (`udp0(out, `) で次 input terminal (PortsList[1+inputIndex]) hint、input expression parse 後 EOF (`udp0(out, in1`) で現 input terminal hint
+  - `CompletionContext` コンストラクタに `GenerateBlock` 部分parse分岐を追加。generate block 内で caret がある場合も `GenerateBlock.ParseAsync` を実行し、block 内の udp / module instantiation 入力中の EOF hint が動作 (WordScanner 経由で completionContext が伝播されるため明示引数伝播は不要)
+  - 動作確認完了 (前ターン): `func(` / `inst0(clk, ` / `task_call(` 等の入力位置で hint popup・dropdown 出現確認済み
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `f88c51a`、メイン `580c8c7` (submodule pointer 更新)
+
 - ChatControl / OpenRouterChat 残課題の整理と native tool call 履歴反映 → 実装完了 (ビルド成功、コミット済み)
   - 確認結果: ObjectDisposedException 対応 (finally で Cancel → await displayTimerTask → Dispose の順、using 不使用) と OpenRouterChat の逐次 yield 化 + cancellationToken 伝播は既に実装済みだった (state.md 記録が古いのみ)
   - 修正: OpenRouterChat.GetAsyncCollectionChatResult で FunctionCallContent を含む update を `updates` に収集するよう変更。従来は Text 付きチャンクのみ収集のため finish_reason=tool_calls の assistant tool-call メッセージが履歴 (ChatMessageWrappers / SaveMessages) から消失し、次ターン文脈欠落 → tool_calls のみの空応答を返す悪循環の原因だった (Debugger.Break のデッドコードも削除)
