@@ -2,6 +2,103 @@
 
 ## 進行中タスク
 
+- Verilog hint/autocomplete 追加可能箇所のリストアップ → 解析完了・未実装
+  - 要件: (1) `completionContext != null && EOF` のときに hint / AutoCompleteItems を update する (2) `completionContext != null` のときに parse 結果の building block tree に対する update をしないようにする
+  - 既存パターン: hint/autocomplete は `ModuleInstantiation.ParseAsync` (L190-193, L513-523), `BuiltinMethodCall` (L74, L103), `ListOfArguments.AppendArgumentPopupItems` の `word.CompletionContext != null && word.Eof` で popup/autocomplete item 追加して早期 return。tree 更新抑止は `ModuleInstantiation.ParseAsync` (L343-346) の `word.CompletionContext != null` で `nameSpace.NamedElements.Add` / `DocumentRegions.Add` を skip
+  - A. hint / autocompleteItems 追加が可能な箇所 (`completionContext != null && EOF`):
+    - A1 `Verilog/Statements/CaseStatement.cs`: `case (` 直後 EOF / case item 先頭 EOF → `if/else/case` キーワード、expression 候補
+    - A2 `Verilog/Statements/ConditionalStatement.cs`: `if (` 直後 EOF → expression 候補
+    - A3 `Verilog/Statements/LoopingStatememt.cs`: `for (` 直後 / `;` 直後 EOF → 変数宣言 / expression 候補
+    - A4 `Verilog/Statements/BlockingAssignment.cs` / `NonBlockingAssignment.cs`: LHS 直後 `=` / `<=` 直後 EOF → RHS は expression parse 経由で `AppendExpression()` が効くが LHS 位置の DataObject 候補列挙は未対応
+    - A5 `Verilog/Statements/HierarchialIdentifier.cs`: `.` 直後 EOF / `obj.mem[` 直後 EOF → instance/object の member 名 autocomplete (NameReference と同様の横展開)
+    - A6 `Verilog/Items/GateInstantiation.cs`: gate 種別 keyword 直後 EOF → `and/or/not/buf/...` キーワード、terminal hint
+    - A7 `Verilog/Items/ProgramInstantiation.cs` / `InterfaceInstance.cs`: ModuleInstantiation と同様の port connection 位置 → program/interface の port label hint
+    - A8 `Verilog/ParameterValueAssignment.cs`: `#(` 直後 / `.` 直後 / `.`param(` 直後 EOF → instanced module の parameter 名 autocomplete + parameter 既定値 hint
+    - A9 `Verilog/Items/ContinuousAssign.cs`: `assign` 直後 EOF → LHS DataObject 候補 (AppendExpression は伝播済みだが LHS 位置の絞り込みなし)
+    - A10 `Verilog/BuildingBlocks/Module.cs` `parseListOfPorts_ListOfPortsDeclarations`: port 宣言中 (`input [` 直後等) EOF → `input/output/inout`, `wire/reg/logic` キーワード hint
+    - A11 `Verilog/Function.cs` / `Task_.cs`: `function [` 直後 / tf_port_list 中 EOF → 戻り値型 / port 宣言キーワード hint
+    - A12 `Verilog/Items/AlwaysConstruct.cs`: `always @(` 直後 EOF → sensitivity list 中の信号候補
+    - A13 `Verilog/Expressions/Primary.cs`: statement 経路で completionContext 未伝播の呼び出し (`parseCreateLValue` 等) の横展開 → 伝播漏れ箇所の確認が必要
+    - A14 `Verilog/Expressions/Concatenation.cs` / `Bracket.cs` / `ConditionalExpression.cs`: `{` `(` `?:` 直後 EOF → expression 候補 (伝播漏れ箇所の精査が必要)
+  - B. building block tree 更新抑止が必要な箇所 (`completionContext != null` で skip):
+    - B1 `Verilog/BuildingBlocks/Module.cs` (ParseCreateAsync): port/parameter/variable の `module.NamedElements` 登録、`module.BuildingBlocks` 登録。partial parse (Module 分岐) 時に同一 module を再parseするため二重登録・競合の恐れ
+    - B2 `Verilog/Function.cs` / `Task_.cs`: function/task の nameSpace 登録、内部変数の function 名前空間登録
+    - B3 `Verilog/Items/Generate/GenerateBlock.cs`: genvar 宣言、generate block の NamedElements 登録 (partial parse 経路で実行される)
+    - B4 `Verilog/Items/InterfaceInstance.cs` / `ProgramInstantiation.cs` / `GateInstantiation.cs` / `UdpInstantiation.cs` / `BindDirective.cs`: instantiation の namespace 登録 (ModuleInstantiation と同一パターン)
+    - B5 `Verilog/Items/BlockItemDeclaration.cs` / `DataDeclaration.cs`: block 内変数宣言の namespace 登録
+    - B6 `Verilog/CommentScopeReference.cs` / VirtualScopeNameSpace 生成経路: `@scope` annotation による仮想名前空間生成・登録
+    - B7 `Verilog/BuildingBlocks/Class.cs` / `Package.cs`: class/package member 登録
+    - B8 `Verilog/Expressions/DataObjectReference.cs`: `UsedReferences` / `AssignedReferences` への追加 (partial parse 時に reference リストが汚染。hint 表示に参照が必要な場合があるため抑止ではなく参照先 parsedDocument のローカルコピー方向も検討)
+  - 補記: WordScanner 経由で CompletionContext は伝播するため A の多くは各 Parse メソッドに `word.Eof` 分岐追加のみでよい (明示引数伝播不要)。B の抑止は「部分parse内で宣言された変数の登録が hint 表示に必要になる」トレードオフがあり、「namespace 登録は skip、ローカル NamedElements への追加は許可」の切り分けが現実的
+  - Next: 実装する場合、どの項目から着手するかユーザ指示待ち
+  - A3 LoopingStatememt → 実装完了 (ビルド成功)
+    - `Verilog/Statements/LoopingStatememt.cs` に EOF 分岐を3箇所追加: `repeat(` 直後 EOF / `while(` 直後 EOF で `AppendExpression()`、for の2つ目の `;` 直後 (for_step 位置) EOF で `AppendExpression()` (for( 直後 / 初期化 ; 直後は既存実装済み)
+    - `Verilog/CompletionContext.cs` 部分parse分岐に `Verilog.Statements.WhileStatememt` / `Verilog.Statements.RepeatStatement` ケースを追加し completionContext を伝播 (ForStatememt は既存)
+    - ビルド成功 (0 errors)
+  - A4 BlockingAssignment / NonBlockingAssignment → 実装完了 (ビルド成功)
+    - `Verilog/Statements/BlockingAssignment.cs` に EOF 分岐を2箇所追加: LHS 位置 (`x|`) EOF で `AppendExpression()`、`=` 直後 (`x = |`) EOF で `AppendExpression()` して早期 return
+    - `Verilog/Statements/NonBlockingAssignment.cs` に同様の EOF 分岐を2箇所追加: LHS 位置 / `<=` 直後 (`x <= |`) EOF
+    - CompletionContext 部分parse分岐は既存 (BlockingAssignment / NonBlockingAssignment 分岐あり) のため変更なし
+    - ビルド成功 (0 errors)
+  - A5 HierarchialIdentifier / member autocomplete → 実装完了 (ビルド成功)
+    - `Verilog/CompletionContext.cs` に `AppendSubElements(INamedElement)` を新設: 対象 element (Variables.Object は GetSourceClass() で Class に解決) の member 名を AutoCompleteItems に列挙 (CandidateWord フィルタ・重複排除・unnamed 除去)
+    - `Verilog/Expressions/NameReference.cs` ParseCreate 末尾に EOF 分岐を追加: `obj.` 直後 EOF (Separators 末尾が ".") のとき GetElement で対象を解決し AppendSubElements で member autocomplete
+    - `Verilog/Expressions/Primary.cs` parseChainedMethodCalls に EOF 分岐を追加: `obj.getObj().` 直後 EOF で戻り値 Class の member autocomplete
+    - ビルド成功 (0 errors)
+  - A6 GateInstantiation → 実装完了 (ビルド成功)
+    - `Verilog/Items/GateInstantiation.cs` に EOF 分岐を追加: gate keyword 直後 (`and |` / `buf |` 等) EOF で `AppendExpression()` して早期 return、`(` 直後 (`and g0(|`) EOF で terminal 候補を表示
+    - `Verilog/CompletionContext.cs` 部分parse分岐に GateInstantiation ケースを追加し、gate instantiation 内 caret でも completionContext を伝播
+    - ビルド成功 (0 errors / 502 warnings は既存)
+    - メモ: `Data/VerilogCommon/AutoCompleteHandler.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
+  - A7 ProgramInstantiation / InterfaceInstance / A8 ParameterValueAssignment → 実装完了 (ビルド成功、コミット済み)
+    - A7 `Verilog/Items/ProgramInstantiation.cs`: ParseAsync 冒頭に `AppendExpression()`、parseOrderedPortConnections に EOF 分岐3箇所 (`(` 直後 / expression parse 後 / `,` 直後で port label hint)、parseNamedPortConnection に EOF 分岐2箇所 (`.name(` 直後 / expression parse 後で port label hint) を追加
+    - A7 `Verilog/Items/InterfaceInstance.cs`: Parse 内の instance `(` 直後 / `.` 直後 / `.pin(` 直後 / expression parse 後 / ordered port connection (`(` 直後 / `,` 直後) に EOF 分岐を追加し port label hint 表示
+    - A8 `Verilog/ParameterValueAssignment.cs`: named parameter assignment (`#(` 直後 / `.` 直後で未指定 parameter 名 autocomplete、`.param` 直後 / `.param(` 直後 / expression parse 後で parameter label hint)、ordered parameter assignment (`#(` 直後 / `,` 直後 / expression parse 後で parameter label hint) に EOF 分岐追加。ModuleInstantiation / ProgramInstantiation / InterfaceInstance の3呼び出し元すべてに効く
+    - parameter label は `Constants.AppendLabel` (parameter型 + name = expression) を ColorLabel に構築して PopupItem 化。parameter 名 autocomplete は `PortParameterNameList` から未指定分を CandidateWord フィルタで列挙
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 502 warnings は既存)
+    - コミット: CodeEditor2VerilogPlugin `916040f`
+    - メモ: `Data/VerilogCommon/AutoCompleteHandler.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
+  - A1 CaseStatement → 実装完了 (ビルド成功、コミット済み)
+    - `Verilog/Statements/CaseStatement.cs` に EOF 分岐を4箇所追加: case キーワード直後 / `case(` 直後 EOF で `AppendExpression()`、`)` 直後 (case item 先頭) EOF で `AppendKeywords({default,if,else,case,casez,casex,begin})` + `AppendExpression()`、case item の `:` 直後 EOF で statement キーワード候補を表示して早期 return
+    - `Verilog/CompletionContext.cs` 部分parse分岐に `documentRegion is Verilog.Statements.CaseStatement` ケースを追加し completionContext を伝播
+  - A2 ConditionalStatement → 実装完了 (ビルド成功、コミット済み)
+    - `Verilog/Statements/ConditionalStatement.cs` に EOF 分岐を3箇所追加: `if` キーワード直後 / `if(` 直後 / `else if(` 直後 EOF で `AppendExpression()` を表示して早期 return
+    - `Verilog/CompletionContext.cs` 部分parse分岐に `documentRegion is Verilog.Statements.ConditionalStatement` ケースを追加
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 500 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `468e2cc`、メイン `90a76ba` (submodule pointer 更新)
+  - メモ: `Data/VerilogCommon/AutoCompleteHandler.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
+  - Next: A3以降の実装はユーザ指示待ち
+
+- B1-B8 building block tree 更新抑止の状態確認 → 確認完了 (B4残は対応不要と判明)
+  - B1 Module.cs (L200, L338) / B2 Function.cs (L227, L454, L465), Task_.cs (L154, L169, L331) / B3 GenerateBlock.cs (L49, L80) / B4 InterfaceInstance.cs (L310), ProgramInstantiation.cs (L221), UdpInstantiation.cs (L254): いずれも `word.CompletionContext != null` で tree 登録を skip する抑止パターン実装済み
+  - B4残 GateInstantiation.cs / BindDirective.cs: コード確認の結果、どちらも nameSpace.NamedElements / BuildingBlocks への登録処理自体が存在しないため、partial parse 時の tree 汚染が発生し得ず抑止対応は不要と判断 (BindDirective の `RootParsedDocument.ReferencedUnitNameSpace.Add` は対象 building block 名の参照記録で冪等・無害)
+  - B5 BlockItemDeclaration / DataDeclaration → 実装完了 (ビルド成功、コミット済み)
+    - 登録実体は下層の ParseDeclaration にあるため、Variable.cs (Prototype 分岐 L437 / non-Prototype 分岐 L480)、Typedef.cs (Prototype 分岐 L74 / non-Prototype 分岐 L85)、Net.cs (net 宣言 Prototype 分岐 L490 / interconnect 登録 L736)、Constants.cs (parameter/localparam の Prototype 分岐 L426 / non-Prototype 分岐 L437) の各 `NamedElements.Add` 前に `word.CompletionContext != null` 抑止分岐を追加 (B1-B4 と同一パターン、`// do not update building block tree @ code completion partial parse` コメント)
+    - BlockItemDeclaration.cs / DataDeclaration.cs 自体は委譲のみのため変更なし
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+    - コミット: CodeEditor2VerilogPlugin `5085605`、メイン `2084ec3` (submodule pointer 更新)
+  - B6 CommentScopeReference / VirtualScopeNameSpace → 実装完了 (ビルド成功、コミット済み)
+    - parse 時の登録経路は `Verilog/Items/CommentAnnotationItem.cs` (L309付近) の `!word.Prototype && !string.IsNullOrEmpty(newEntryName)` 分岐。ここに `word.CompletionContext == null` 条件を追加し、部分parse時の (1) `CommentScopeReferences` 登録後の即時適用 (target building block 解決 + eager target-file parse + VirtualScopeNameSpace 生成・NamedElements 登録 + ReparseRequested) を抑止
+    - `CommentScopeReferences` リストへの参照記録自体は維持 (hint 表示に必要。ApplyCommentScopeReferences は parse 後に実行されるため影響なし)
+    - `NameSpace.ApplyCommentScopeReferences` (L462) は parse 後経路のため completionContext は発生し得ず変更不要
+    - ビルド成功 (0 errors)
+    - コミット: CodeEditor2VerilogPlugin `f511fa9`、メイン `cdc3e61` (submodule pointer 更新)
+    - メモ: 作業ツリーに `Data/VerilogCommon/AutoCompleteHandler.cs` の無関係な変更が残っていたためコミットから除外
+  - B7 Class / Package → 実装完了 (ビルド成功、コミット済み)
+    - `Verilog/BuildingBlocks/Class.cs` `ParseDeclaration` (L152-169): `word.Prototype` / non-Prototype 両分岐の `nameSpace.NamedElements.Add` 前に `word.CompletionContext != null` 抑止分岐を追加。`ParseCreate` 内の `class_.NamedElements` への member 登録はローカルオブジェクトへの追加のため無害で変更なし
+    - `Verilog/BuildingBlocks/Package.cs` (L159-172): `parent.AddOrUpdateBuildingBlock` + `parent.NamedElements.Add` を `word.CompletionContext != null` で skip
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+    - コミット: CodeEditor2VerilogPlugin `76e5f84`、メイン `aa818aa` (submodule pointer 更新)
+    - メモ: `Data/VerilogCommon/AutoCompleteHandler.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
+  - B8 DataObjectReference → 実装完了 (ビルド成功、コミット済み)
+    - 問題: 部分parse時、`val.Reference` は部分parse用切り出しドキュメント基準のオフセットを持つため、`UsedReferences` / `AssignedReferences` への追加が本 parse の共有 DataObject の reference リストを汚染 (LSP references / 右クリック assigned 参照ジャンプが不正位置を指す)。逆に skip すると parse 末尾の `CheckVariablesUseAndDriven` が偽の "unused"/"undriven" notice を共有オブジェクトに追加する
+    - 修正1: `Verilog/Expressions/DataObjectReference.cs` (L523-530, L537-540): reference 追加 (`AssignedReferences.Add` / `UsedReferences.Add` / `StructParentObject.UsedReferences.Add`) を `word.CompletionContext != null` / `== null` で skip
+    - 修正2: `CheckVariablesUseAndDriven` の4呼び出し箇所 (`BuildingBlocks/Module.cs` L404, `Interface.cs` L404, `Package.cs` L233, `Program.cs` L358) に `word.CompletionContext == null` 条件を追加 (notice 汚染防止と skip した reference での誤判定防止の両方)
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+    - コミット: CodeEditor2VerilogPlugin `db658ea`、メイン `cb642a4` (submodule pointer 更新)
+    - メモ: `Data/VerilogCommon/AutoCompleteHandler.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
+  - Next: B1-B8 すべて対応完了。残作業なし
+
 - BuiltinMethodCall 引数 hint の横展開 (UdpInstantiation / GenerateBlock) → 実装完了 (ビルド成功、コミット済み)
   - `UdpInstantiation.parseListOfPortConnections` に EOF 分岐を3箇所追加: 括弧 `(` 直後 EOF (`udp0(`) で output terminal (PortsList[0]) hint、カンマ直後 EOF (`udp0(out, `) で次 input terminal (PortsList[1+inputIndex]) hint、input expression parse 後 EOF (`udp0(out, in1`) で現 input terminal hint
   - `CompletionContext` コンストラクタに `GenerateBlock` 部分parse分岐を追加。generate block 内で caret がある場合も `GenerateBlock.ParseAsync` を実行し、block 内の udp / module instantiation 入力中の EOF hint が動作 (WordScanner 経由で completionContext が伝播されるため明示引数伝播は不要)
