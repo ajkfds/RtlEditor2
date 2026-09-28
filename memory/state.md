@@ -77,6 +77,14 @@
     - `Verilog/DataObjects/Port.cs` `ParsePortDeclarations` に `,` 直後 EOF 分岐を追加 (同 keyword hint)
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 502 warnings は既存)
   - Next: A11以降の実装はユーザ指示待ち
+  - A11-A14 → 実装完了 (ビルド成功、コミット済み)
+    - A11: `Verilog/Function.cs` Parse (function | 直後 EOF → lifetime/return type keyword hint)、`Verilog/Task_.cs` Parse (task | 直後 EOF → lifetime keyword hint)、`Verilog/DataObjects/Port.cs` `ParseTfPortItems` (function f( / task t( 直後 EOF → tf port keyword hint)、`ParseTfPortItem` / `ParseTfPortDeclaration` (input | 直後 EOF → data type keyword hint) に EOF 分岐を追加
+    - A12: `Verilog/Statements/TimingControlStatements.cs` `EventControl.ParseCreate` (@ 直後 EOF → AppendExpression)、`EventExpression.ParseCreateSingle` 冒頭 (clk or | 直後 EOF → AppendExpression) に EOF 分岐を追加
+    - A13: `Verilog/Expressions/Primary.cs` `parseCreate` 冒頭に EOF 分岐を追加 (expression primary 解析中の EOF → AppendExpression + null return、statement 経路を含む全経路に効く横展開)
+    - A14: `Verilog/Expressions/Concatenation.cs` ({ 直後 / {a, | 直後 EOF)、`Verilog/Expressions/Bracket.cs` (( 直後 EOF)、`Verilog/Expressions/ConditionalExpression.cs` (cond ? | / cond ? a : | 直後 EOF) に AppendExpression 分岐を追加
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
+    - コミット: CodeEditor2VerilogPlugin `a5d54b8`、メイン `784d13f` (submodule pointer 更新)
+  - Next: A1-A14 / B1-B8 すべて対応完了。残作業なし
 
 - B1-B8 building block tree 更新抑止の状態確認 → 確認完了 (B4残は対応不要と判明)
   - B1 Module.cs (L200, L338) / B2 Function.cs (L227, L454, L465), Task_.cs (L154, L169, L331) / B3 GenerateBlock.cs (L49, L80) / B4 InterfaceInstance.cs (L310), ProgramInstantiation.cs (L221), UdpInstantiation.cs (L254): いずれも `word.CompletionContext != null` で tree 登録を skip する抑止パターン実装済み
