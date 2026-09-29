@@ -287,6 +287,11 @@
 
 ## 完了済みタスク
 
+- GetDocumentRegionAt が正しい DocumentRegion を返さない問題 (always 後の module 領域で always 判定) を修正 → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `ParsedDocument.GetDocumentRegionAt` の `searchNameSpace` / `searchItem` で、階層深度 (indexes.Count) が異なる IndexReference 同士を比較していた。IndexReference の `IsSmallerThan` / `IsGreaterThan` は短い方の index リスト長までしか比較しないため、depth 1 の caret target と depth 2+ の region (generate block / function 内の always 等) を比較するとスコープ開始位置 (root index) のみで判定され、以前の generate block 内 always の begin/last root index が target より前でも「contain」と誤判定 → その後ろの module instantiation 領域で AlwaysConstruct が採用され、646-650 行の「より小さい region を優先」フィルタも誤比較で正しい region を skip
+  - 修正: `searchNameSpace` / `searchItem` 両方で `BeginIndexReference.Indexes.Count != targetIndexRef.Indexes.Count` (および Last も) の要素を skip する深度一致チェックを追加。階層の深さが違う region は root-level caret 位置の対象にならないため正しい
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 676 warnings は既存)
+
 - function call / let call 引数入力中の hint 表示の機能追加案を解析し `CodeEditor2VerilogPlugin/README.md` に修正案を追記
   - `ModuleInstantiation.cs` を参考に、function call 引数位置での hint 表示の不足を解析
   - コード確認で判明した現状の問題:
