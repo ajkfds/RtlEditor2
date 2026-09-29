@@ -287,6 +287,12 @@
 
 ## 完了済みタスク
 
+- always 後の空行で always block 判定が残る問題を追加修正 → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `AlwaysConstruct.ParseCreate` の `always.LastIndexReference = word.CreateIndexReferenceBefore()` は statement (begin..end) parse 完了後の word 位置 (次 token、例: "endmodule") の1つ前を指すため、`end` と `endmodule` の間の空行が always 領域に含まれ、その位置で GetDocumentRegionAt が AlwaysConstruct を返していた
+  - 修正: statement が `Items.IDocumentRegeion` を実装し `LastIndexReference != null` の場合 (SequentialBlock 等、"end" 位置を持つ) は statement 自身の `LastIndexReference` を使うよう `AlwaysConstruct.cs` に分岐を追加
+  - ビルド成功 (0 errors)
+  - コミット: CodeEditor2VerilogPlugin `e922f55`、メイン `defb016` (submodule pointer 更新)
+
 - GetDocumentRegionAt が正しい DocumentRegion を返さない問題 (always 後の module 領域で always 判定) を修正 → 実装完了 (ビルド成功、コミット済み)
   - 原因: `ParsedDocument.GetDocumentRegionAt` の `searchNameSpace` / `searchItem` で、階層深度 (indexes.Count) が異なる IndexReference 同士を比較していた。IndexReference の `IsSmallerThan` / `IsGreaterThan` は短い方の index リスト長までしか比較しないため、depth 1 の caret target と depth 2+ の region (generate block / function 内の always 等) を比較するとスコープ開始位置 (root index) のみで判定され、以前の generate block 内 always の begin/last root index が target より前でも「contain」と誤判定 → その後ろの module instantiation 領域で AlwaysConstruct が採用され、646-650 行の「より小さい region を優先」フィルタも誤比較で正しい region を skip
   - 修正: `searchNameSpace` / `searchItem` 両方で `BeginIndexReference.Indexes.Count != targetIndexRef.Indexes.Count` (および Last も) の要素を skip する深度一致チェックを追加。階層の深さが違う region は root-level caret 位置の対象にならないため正しい
