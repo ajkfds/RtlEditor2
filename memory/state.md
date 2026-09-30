@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- TreeControl の選択切替時に前の選択 node の selection highlight が残留する問題を修正 → 実装完了 (ビルド成功、コミット済み)
+  - 原因: 選択状態が2系統で管理されていた。`nodeSlected` (SelectNode / キーボード Up/Down 経由) は `selectedNode` フィールドのみ解除し `selectedNodes` (HashSet) を更新しない一方、`AddSingleSelection` (クリック経由 HandleSelection) は `selectedNodes` のみ解除。片方の経路で選択したノードがもう片方の経路での選択切替時に解除されずハイライト残留
+  - 修正: `TreeControl.axaml.cs` の `nodeSlected` を `AddSingleSelection` 呼び出しに統一 (同一 node が単一選択済みの場合は early return で冗長イベント発火を防止)。`selectedNodes` / `selectedNode` / `OnSelected` / `OnDeSelected` が全経路で整合
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors / 752 warnings は既存)
+  - コミット: AjkAvaloniaLibs `7e132ea` "Fix stale selection highlight when switching nodes: unify nodeSlected with AddSingleSelection..."
+  - Next: メインリポジトリへの submodule pointer 更新コミット
+
 - event control 内の `iff` parse 対応 (`always @(posedge clk iff en == 1)`) → 実装完了 (ビルド成功、コミット済み)
   - 問題: `EventExpression.ParseCreateSingle` が `[ edge_identifier ] expression [ "iff" expression ]` の `iff expression` 部分に未対応で、`posedge clk` parse 後に `iff` トークンが残り `)` チェックで "illegal event contol" エラー
   - 修正: `Verilog/Statements/TimingControlStatements.cs`
