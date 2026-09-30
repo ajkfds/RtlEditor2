@@ -2,7 +2,17 @@
 
 ## 進行中タスク
 
-- Root level module → ProjectProperty.DefinitionNameSpace / class → UnitNameSpace 登録規則の適合性確認 (class parse / object instance / bind / simulation setup) → 確認完了・未修正
+- Root level module → ProjectProperty.DefinitionNameSpace / class → UnitNameSpace 登録規則の適合性確認 (class parse / object instance / bind / simulation setup) → 確認完了・不整合 1-2 修正済み
+  - 不整合1 修正 → 実装完了 (ビルド成功、コミット済み)
+    - `VerilogFile.AcceptParsedDocumentAsync` に `InterfaceClass` → `UnitNameSpace.Register` 分岐を `Class` 分岐の後ろに追加 (compilation-unit scope として UnitNameSpace に登録、DefinitionNameSpace 誤登録を解消)
+    - `DataTypeFactory` (L272付近) に `UnitNameSpace.Get` での InterfaceClass 解決 fallback を追加 (cross-file 参照を UnitNameSpace から解決)。同一ファイル内は `nameSpace.GetNamedElementUpward` の既存分岐で解決される
+    - 注意: DataTypeFactory の既存 `DefinitionNameSpace.Get` 分岐は残置 (DefinitionNameSpace に古い登録が残る期間があるため暫定互換)。誤登録が他経路から発生しなくなった後は削除候補
+  - 不整合2 修正 → 実装完了 (同コミット)
+    - `Primary.parseDataObject` L494: `obj.Name` (変数名) → `obj.SourceName` (class 名) に修正
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `fa2818a`
+  - メモ: `Verilog/ParsedDocument.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
+  - 残りの不整合 (修正候補、ユーザ指示待ち):
   - 基準実装: `VerilogFile.AcceptParsedDocumentAsync` (L185-208) — Root.NamedElements を走査し Package→PackageNameSpace / Class→UnitNameSpace / BuildingBlock→DefinitionNameSpace / その他→UnitNameSpace に Register。この規則自体は正しい
   - class parse ✓: `Class.ParseDeclaration` → Root.NamedElements 登録 + `Class.ParseCreate` (L379) → Root.AddOrUpdateBuildingBlock 登録 → parse 後に UnitNameSpace.Register (L197) で反映
   - object instance ✓: `Variable.ParseDeclaration` → `DataTypeFactory.ParseCreate` (同一ファイル: GetNamedElementUpward / クロスファイル: `UnitNameSpace.Get` L254) → `Variable.Create` (DataTypeEnum.Class → `Object.Create`、Variable.cs L94-95)。`ReferencedUnitNameSpace` に class 名登録 (Variable.cs L258-262)、`Object.GetSourceClass()` は `UnitNameSpace.GetFile` → Root.BuildingBlocks から Class 取得で正しい
@@ -17,7 +27,33 @@
     - コミット: CodeEditor2VerilogPlugin `bb82a8c` "Remove recursive defineElements from Object.Create to avoid infinite loop on circular class references"
     - メモ: `Verilog/ParsedDocument.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
     - 残確認候補: `typedef class` 前方宣言経由で UserDefinedType が循環する場合の `UserDefinedVariable` 側挙動
-  - bind 経路の詳細検証 (ユーザ指摘「bind で ReferencedDefinitionNameSpace に登録されるべきものが ReferencedUnitNameSpace に登録されている」) → 指摘は正しい・修正未実施
+  - bind 経路の詳細検証 (ユーザ指摘「bind で ReferencedDefinitionNameSpace に登録されるべきものが ReferencedUnitNameSpace に登録されている」) → 修正完了 (ビルド成功、コミット済み)
+    - `BindDirective.Parse` を BNF に従い書き直し: bind_target_scope / bind_target_instance を hierarchical identifier として直接 parse (`parseHierarchicalIdentifier` 新設)。`Expression.ParseCreate` をやめたことで root level (nameSpace=null) の NRE リスクも解消
+    - 参照登録先を `ReferencedUnitNameSpace` → `ReferencedDefinitionNameSpace` に修正 (bind target の第1引数 + bind_instantiation の第2引数の両方)。UnitNameSpace class 優先分岐と L111/L125 の二重解決を削除
+    - `TargetScope` / `TargetInstances` / `BindItems` を parse 結果から設定。`:` bind_target_instance_list / 複数 instance list / `#(...)` parameter override (括弧consumeのみ・内容解析なし) に対応
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+    - コミット: CodeEditor2VerilogPlugin `e9ad567` "Register bind directive references to ReferencedDefinitionNameSpace"
+    - メモ: `Verilog/ParsedDocument.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
+    - 残課題の追加対処 → 実装完了 (ビルド成功、コミット済み)
+      - `#(...)` parameter override を `ParameterValueAssignment.ParseCreate` (ModuleInstantiation と同一経路) で本格解析し `BindItem.ParameterOverrides` に記録 (root level の nameSpace=null 時は consume のみの fallback)
+      - port connection を `parsePortConnections` 新設で解析: named `.port(expr)` / ordered `expr, expr` 両形式、`.*` wildcard 対応、expression を `BindItem.PortConnections` に記録 (ordered は `IPortNameSpace.PortsList` から port 名解決)
+      - instance 名後の instance array range `[ ... ]` に対応 (bracket consume)
+      - instanced building block の型検証追加: module / interface / program / checker 以外は error
+      - ビルド成功 (0 errors)
+      - コミット: CodeEditor2VerilogPlugin `bc8e554`
+      - 残課題の追加対処 → 実装完了 (ビルド成功、コミット済み)
+        - `ParsedDocument.BindTargetInstancePaths` (List<string>) を新設: bind directive の bind_target_instance / bind_target_instance_list の複数セグメント hierarchical path ("a.b.c") を記録。SimulationSetup / ParseHierarchy がこの file の instance 階層内の bind target を追跡可能に
+        - `BindDirective.Parse` で TargetInstances のうち "." を含む path を `BindTargetInstancePaths` に登録 (重複排除)
+        - ParsedDocument.cs のユーザ変更 (GetDocumentRegionAt) と混在するため stash → partial patch 適用 → commit → stash pop で分離 (ユーザ変更は作業ツリーに残置)
+        - ビルド成功 (0 errors)
+        - コミット: CodeEditor2VerilogPlugin `96ae0e5`
+        - 残課題: なし (bind 関連は全対応完了)。今後の拡張候補: BindTargetInstancePaths を SimulationSetup / ParseHierarchy からの参照解決に接続
+      - ParseHierarchy 追加対応 → 必要と判明・実装完了 (ビルド成功、コミット済み)
+        - 分析: ParseHierarchy の追跡経路は (1) verilogFile.Items (instance tree) (2) ImportedPackages (3) ReferencedUnitNameSpace (4) @scope 対象。bind directive は instance item を tree に作らないため、bind 対象の定義ファイルが hierarchy parse に到達しない
+        - 修正: `ParseHierarchy.parseDownwardAsync` に `ReferencedDefinitionNameSpace` 走査を追加し、bind が参照する module/interface/program/checker の定義ファイルを enqueue (`DefinitionNameSpace.GetFile`)。これにより bind 対象定義の変更が hierarchy parse に反映される
+        - BindTargetInstancePaths 自体は enqueue に直結不要 (path 先頭は target scope module の instance 階層で、既存 verilogFile.Items 経由で追跡可能)。instance path 内部の追跡は将来の SimulationSetup 拡張候補
+        - ビルド成功 (0 errors)
+        - コミット: CodeEditor2VerilogPlugin `647441f`
     - `BindDirective.Parse` L134: 解決できた building block を無条件に `ReferencedUnitNameSpace` に追加している。bind_directive の BNF 上、bind で参照されるのは bind_instantiation (module/interface/program/checker instantiation) と bind_target_scope (module/interface identifier) = すべて DefinitionNameSpace 登録対象で class は関与しない → 登録先は `ReferencedDefinitionNameSpace` が正 (ModuleInstantiation L210 と同一パターン)
     - L118: 第2引数を `UnitNameSpace.Get` で class 優先解決する分岐が規則に反する (bind_instantiation に class instantiation は存在しない)。DefinitionNameSpace.Get のみで解決すべき
     - L109/L110: 第1引数 (bind_target_scope / bind_target_instance) の `Expression.ParseCreate` の戻り値が未使用で、解決・参照登録ともに行われない。L110 の `word.Text` は expression 消費後の位置 = 第2引数を指すため、L111 と L125 が同一対象への冗長な2重解決になっている
