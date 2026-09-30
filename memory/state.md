@@ -2,6 +2,12 @@
 
 ## 進行中タスク
 
+- function/task call 引数の型チェック追加 (port 接続型チェックの横展開) → 実装完了 (ビルド成功、コミット済み)
+  - `ListOfArguments.ParseListOfArguments` に positional 引数 (bitwidth チェック直後) と named 引数 (`func(.p(expr))` の expression parse 後) の両位置で `checkDataTypeCompatibility` を呼び出す分岐を追加
+  - `checkDataTypeCompatibility` helper を `ListOfArguments` 側に新設 (ModuleInstantiation 側と同一規則: `DataObjectReference.OrigainalDataObject.DataType` 使用 / UserDefinedType 展開 / スカラー整数型同士・real 系同士は相互互換 / カテゴリ不一致は warning)。メッセージは "type mismatch on argument <name> : <portType> <- <exprType>"
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 507 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `6665f7b` "Add data type compatibility check to function/task call argument connections"
+
 - module instance port 接続の型チェック追加 (object/struct に効いていなかった) → 実装完了 (ビルド成功、コミット済み)
   - 問題: `checkVariablePortConnection` / `checkNetPortConnection` は BitWidth チェックのみで、型 (Struct / UserDefined / Class object / Enum / Real 等) の互換チェックが一切なかった。struct 型 port に int を接続、class object port に int を接続等が警告ゼロで通過
   - 修正: `ModuleInstantiation.checkDataTypeCompatibility` helper を新設し、両 check メソッド末尾から呼び出し
