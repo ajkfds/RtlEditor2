@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- verilog 階層補完 (module_instance1.module_instance2.value0) で "module_instance1." のドット直後の候補が不正 (メンバではなく兄弟要素が出る、"m" 入力後に正しくなる) → 修正完了 (ビルド成功、コミット済み)
+  - 原因: `NameReference.ParseCreate` の EOF member autocomplete 分岐で `memberTarget ?? memberElement` と target 優先だった。`GetElement` の `(element, target)` は target が "要素を含む NameSpace" のため、ドット直後で target 優先すると兄弟要素が候補になった。"m" 入力時は CandidateWord フィルタで AutoCompleteItems が空になり、`GetAutoCompleteItems` の fallback `AppendAll()` (`GetAutoCompleteTarget` 側は `IBuildingBlockInstantiation` → `GetInstancedBuildingBlock()` 変換済み) で正しいメンバが出ていた
+  - 修正1: `NameReference.cs` EOF 分岐を `memberElement ?? memberTarget` (要素自身優先) に変更
+  - 修正2: `CompletionContext.AppendSubElements` に `IBuildingBlockInstantiation` → `GetInstancedBuildingBlock()` 変換と `VirtualInterface` → `GetSourceInterface()` 変換を追加 (`Variables.Object` → source class 変換は既存)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 507 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `b726f58` "Fix hierarchical member autocomplete showing siblings at dot position (module_instance1.)"
+
 - Root level module → ProjectProperty.DefinitionNameSpace / class → UnitNameSpace 登録規則の適合性確認 (class parse / object instance / bind / simulation setup) → 確認完了・不整合 1-2 修正済み
   - 不整合1 修正 → 実装完了 (ビルド成功、コミット済み)
     - `VerilogFile.AcceptParsedDocumentAsync` に `InterfaceClass` → `UnitNameSpace.Register` 分岐を `Class` 分岐の後ろに追加 (compilation-unit scope として UnitNameSpace に登録、DefinitionNameSpace 誤登録を解消)
