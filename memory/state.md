@@ -2,6 +2,17 @@
 
 ## 進行中タスク
 
+- module instance port 接続の型チェック追加 (object/struct に効いていなかった) → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `checkVariablePortConnection` / `checkNetPortConnection` は BitWidth チェックのみで、型 (Struct / UserDefined / Class object / Enum / Real 等) の互換チェックが一切なかった。struct 型 port に int を接続、class object port に int を接続等が警告ゼロで通過
+  - 修正: `ModuleInstantiation.checkDataTypeCompatibility` helper を新設し、両 check メソッド末尾から呼び出し
+    - 接続式の型取得: `DataObjectReference.OrigainalDataObject.DataType` を使用 (`TargetDataObject` は deep clone され DataType も複製されるため型インスタンスの同一性比較には使えない)。`DataObjectReference` 以外 (number literal 等) は skip
+    - port 側の型は `variable.DataType` / `net.DataType`
+    - `UserDefinedType` は `OriginalDataType` まで展開してから `Type` (DataTypeEnum) を比較
+    - 同一 Type は OK。スカラー整数型同士 (bit/logic/reg/byte/shortint/int/longint/integer/time) と real 系同士 (shortreal/real/realtime) は相互互換 (bitwidth チェックは既存の別ロジックで実施)。それ以外のカテゴリ不一致 (例: Logic port ← Struct 接続、Struct port ← Int 接続、Class port ← Logic 接続) は "type mismatch on port xxx : <portType> <- <exprType>" warning
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 507 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `28bee71` "Add data type compatibility check to module instance port connections (struct/enum/class vs scalar)"
+  - メモ: 作業ツリーの `Number.cs` / `Updater.cs` のユーザ変更はコミットから除外
+
 - stream concatenation parse 失敗修正 (`c = {>> 8 {a, b}};` でエラー) → 実装完了 (ビルド成功、コミット済み)
   - 原因: `StreamingConcatenation.ParseCreate` / `ParseCreateWithFirstExpression` が閉じ括弧 `}` を1回しか消費していなかった。streaming_concatenation は外側 `}` + 内側 stream_concatenation の `}` の2重括弧だが、外側の `}` が残ったまま戻るため呼び出し元 (BlockingAssignment 等) の `;` チェック位置で `}` が残り parse エラーになっていた。`Reference` も内側 `}` 位置で作られるため範囲も1文字短かった
   - 修正: 両メソッドの末尾に `word.MoveNext(); // } of stream_concatenation` を追加し、内側/外側の2つの `}` を消費してから `Reference` を作るように変更
