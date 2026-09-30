@@ -8,6 +8,13 @@
   - object instance ✓: `Variable.ParseDeclaration` → `DataTypeFactory.ParseCreate` (同一ファイル: GetNamedElementUpward / クロスファイル: `UnitNameSpace.Get` L254) → `Variable.Create` (DataTypeEnum.Class → `Object.Create`、Variable.cs L94-95)。`ReferencedUnitNameSpace` に class 名登録 (Variable.cs L258-262)、`Object.GetSourceClass()` は `UnitNameSpace.GetFile` → Root.BuildingBlocks から Class 取得で正しい
   - bind ✓/△: bind identifier が class なら `UnitNameSpace.Get` で解決 (BindDirective.cs L118-122)、それ以外は DefinitionNameSpace.Get (L125) → ReferencedUnitNameSpace に記録 (L134)。規則には合致。ただし TargetScope / TargetInstances / BindItems プロパティが parse 中に未設定 (データモデル未使用)、parameter override `#(...)` / 複数 instance / `:` instance list 未対応の簡易実装
   - simulation setup ✓: `searchHier` で ReferencedUnitNameSpace → `UnitNameSpace.GetFile` → appendClass → ClassFiles 再帰展開 (L79-106, L193-208)。`ClassFileOrderResolver` も UnitNameSpace ベースで依存順整列 + 循環時 typedef class 前方宣言生成
+  - class から object 生成時の循環参照 → 無限ループ確認 (ユーザ指摘) → 指摘は正しい・修正未実施
+    - `Variables/Object.cs` `defineElements` (L88-97): member を再帰走査して `Variable.Defined = true` を立てる処理だが、訪問済みチェックなしの無条件再帰
+    - 循環例: `class A { B b; }` + `class B { A a; }` (相互参照) / `class Node { Node next; }` (自己参照)
+    - 発火経路: class 定義ファイル parse 後、class 型変数宣言 (`A a0;`) を含むファイルの parse で `Variable.ParseDeclaration` → `DataTypeFactory` (class 解決) → `Variable.Create` (DataTypeEnum.Class → `Object.Create`、Variable.cs L94-95) → `Object.Create` 内 `defineElements(val)` → `val.NamedElements` getter → `GetSourceClass()` → class member の `Variables.Object` を再帰辿り → StackOverflowException でクラッシュ
+    - `Variables.Object.NamedElements` は getter が毎回 `GetSourceClass()` で遅延解決するため、`Object.Create` 時点で再帰的に Defined を立てる必要がなく、この再帰自体が冗長 (Purpose は class member の `Defined = true` 付与のみ)
+    - 影響なしと確認した経路: `AppendSubElements` (1階層のみ非再帰) / `NameReference.searchElement` (user 入力階層で停止) / `Class.ParseCreate` extends 継承コピー (ContainsKey チェックで無限再帰にはならない)
+    - 修正方針案: (1) `defineElements` を削除または訪問済み Set (`HashSet<INamedElement>`) で循環ガード (2) 前方宣言 `typedef class` 経由で UserDefinedType が循環する場合も `Object.Create` が呼ばれ得るため `UserDefinedVariable` 側の確認も推奨
   - bind 経路の詳細検証 (ユーザ指摘「bind で ReferencedDefinitionNameSpace に登録されるべきものが ReferencedUnitNameSpace に登録されている」) → 指摘は正しい・修正未実施
     - `BindDirective.Parse` L134: 解決できた building block を無条件に `ReferencedUnitNameSpace` に追加している。bind_directive の BNF 上、bind で参照されるのは bind_instantiation (module/interface/program/checker instantiation) と bind_target_scope (module/interface identifier) = すべて DefinitionNameSpace 登録対象で class は関与しない → 登録先は `ReferencedDefinitionNameSpace` が正 (ModuleInstantiation L210 と同一パターン)
     - L118: 第2引数を `UnitNameSpace.Get` で class 優先解決する分岐が規則に反する (bind_instantiation に class instantiation は存在しない)。DefinitionNameSpace.Get のみで解決すべき
