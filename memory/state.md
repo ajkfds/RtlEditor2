@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- PortInvertSnippet の動作修正 → 実装完了 (ビルド成功、コミット済み)
+  - 問題1 (port の最後のコンマ欠落): 区切り再検出を `trimmedContent.TrimEnd().EndsWith(",")` で行っていたため、行末に `// comment` があるとコンマ/セミコロンが検出されず欠落
+  - 問題2 (要素間の space/tab 非維持): `qualifiers.Trim()` や `bitwidth.Trim() + " "` で元の空白が潰れていた。また `(?:(?<qualifiers>...)\s+)*` の繰り返しで同名グループが上書きされ最後の1個しか残らない問題もあった
+  - 修正: 正規表現を空白キャプチャグループ付きに再構成 (`ws1`/`ws2`/`ws3`/`sep`/`wsBeforeComment`)。`qualifiers` を空白ごと一括キャプチャ (`(?<qualifiers>(?:(?:signed|wire|reg|automatic)\s+)*)`)、区切り文字を `(?<sep>\s*[;,]?)` でキャプチャし、コメント前の空白も `wsBeforeComment` で維持。再構築時にキャプチャした元の空白/区切りをそのまま使用 (欠落時のみ単一スペース fallback)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 507 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `9b37ad6` "Fix PortInvertSnippet: keep trailing comma/semicolon with trailing comments and preserve original whitespace between port elements"
+
 - bind directive parse 修正 (`bind Model.Wrapper Model_IF IF();` で "unfound bind target, illegal name" エラー) → 実装完了 (ビルド成功、コミット済み)
   - 原因1: 第1引数 `Model.Wrapper` (bind_target_instance = instance 階層パス) を無条件に `DefinitionNameSpace.Get` で定義名解決していた → instance 名は定義に存在せず "unfound bind target"。BNF 上 bind_target_scope (定義名) 解決は `単一identifier + ":"` が続く form のみ
   - 原因2: instance の port connection `()` を parse 後に `)` を consume していず、`)` の位置で `;` チェックに落ち "illegal name"
