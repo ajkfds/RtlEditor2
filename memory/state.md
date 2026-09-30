@@ -2,6 +2,20 @@
 
 ## 進行中タスク
 
+- IStatement に BeginIndexReference/LastIndexReference を強制し、全 statement parser で設定 → 実装完了 (ビルド成功、コミット済み)
+  - `Verilog/Statements/IStatement.cs`: `IndexReference BeginIndexReference { get; init; }` / `IndexReference? LastIndexReference { get; set; }` を必須化 (ユーザ実施の interface 変更を含めコミット)
+  - 全 IStatement 実装クラス (CS0535 エラー 32 クラス) に required BeginIndexReference / LastIndexReference を追加し、parser で設定
+    - Begin = statement 先頭 keyword 位置 (`word.CreateIndexReference()`)
+    - Last = block 終端 keyword 位置 (SequentialBlock/ParallelBlock/CaseStatement/Randcase/Randsequence は "end"/"join"/"endcase" 位置)、それ以外は `;` 直前 (`CreateIndexReferenceBefore()`)
+  - statement で終わる構造の LastIndexReference は sub-statement の LastIndexReference を採用 (AlwaysConstruct と同一規則)
+    - `Statements.cs` に `StatementRegionUtility.SetLastIndexReference(statement, subStatement, word)` helper を新設 (subStatement が IDocumentRegeion かつ LastIndexReference != null なら採用、なければ word 直前)
+    - 適用: ConditionalStatement (最後の sub-statement) / Forever / Repeat / While / For / Foreach / WaitStatement (Statement・wait_order の最終 sub-statement) / ProceduralTimingControlStatement / ImmidiateAssertionStatement (Else ?? Statement) / ExpectPropertyStatement (Else ?? Pass) / AssertPropertyStatement・AssumePropertyStatement (Else ?? Pass) / CoverPropertyStatement・CoverSequenceStatement (CoverStatement)
+  - TaskEnable / VoidFunctionCall / VoidBuiltInMethodCall / SystemTask / SkipArguments: Begin を文頭、Last を `;` 直前に設定。VoidFunctionCall.Create / VoidBuiltInMethodCall.Create に beginIndexReference optional 引数を追加し、Statements.cs の function/method call 経路から expressionIref を伝播
+  - NameSpace 継承の NamedSequentialBlock / NamedParallelBlock / ForStatememt / ForeachStatement は NameSpace のプロパティで IStatement 要件を充足 (For/Foreach は既存 Begin 設定 + sub-statement Last 採用を追加)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `39cbe2b` "Enforce BeginIndexReference/LastIndexReference on IStatement and set them in all statement parsers" (30 files)
+  - メモ: `Verilog/ParsedDocument.cs` のユーザ変更 (GetDocumentRegionAt の depth-check 削除・比較順序変更) は本タスク外のためコミットから除外 (作業ツリーに残置)
+
 - Verilog hint/autocomplete 追加可能箇所のリストアップ → 解析完了・未実装
   - 要件: (1) `completionContext != null && EOF` のときに hint / AutoCompleteItems を update する (2) `completionContext != null` のときに parse 結果の building block tree に対する update をしないようにする
   - 既存パターン: hint/autocomplete は `ModuleInstantiation.ParseAsync` (L190-193, L513-523), `BuiltinMethodCall` (L74, L103), `ListOfArguments.AppendArgumentPopupItems` の `word.CompletionContext != null && word.Eof` で popup/autocomplete item 追加して早期 return。tree 更新抑止は `ModuleInstantiation.ParseAsync` (L343-346) の `word.CompletionContext != null` で `nameSpace.NamedElements.Add` / `DocumentRegions.Add` を skip
