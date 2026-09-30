@@ -2,6 +2,23 @@
 
 ## 進行中タスク
 
+- bind directive parse 修正 (`bind Model.Wrapper Model_IF IF();` で "unfound bind target, illegal name" エラー) → 実装完了 (ビルド成功、コミット済み)
+  - 原因1: 第1引数 `Model.Wrapper` (bind_target_instance = instance 階層パス) を無条件に `DefinitionNameSpace.Get` で定義名解決していた → instance 名は定義に存在せず "unfound bind target"。BNF 上 bind_target_scope (定義名) 解決は `単一identifier + ":"` が続く form のみ
+  - 原因2: instance の port connection `()` を parse 後に `)` を consume していず、`)` の位置で `;` チェックに落ち "illegal name"
+  - 修正1: `BindDirective.Parse` の定義名解決を `isTargetScopeForm` (targetParts.Length==1 && word.Text==":") のときのみ実行に変更。bind_target_instance form では解決せず ReferencedDefinitionNameSpace 登録も skip
+  - 修正2: `parsePortConnections` 呼び出し後に `if (word.Text == ")") word.MoveNext();` を追加 (ModuleInstantiation と同一パターン)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 507 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `355bc7f`、メイン `5a23d72` (submodule pointer 更新)
+
+- Verilog/Items の各要素を IDocumentRegeion に対応 (autocomplete / hint 対象化) → 実装完了 (ビルド成功、コミット済み)
+  - 対象: ProgramInstantiation / InterfaceInstance / BindDirective (既存 Begin/Last プロパティを interface 実装に流用) / ContinuousAssign / InitialConstruct / FinalConstruct / NetAlias / ParameterOverride / GateInstantiation
+  - Initial/Final は sub-statement の LastIndexReference 採用 (AlwaysConstruct と同一規則)
+  - 各 parse メソッド末尾で `nameSpace.DocumentRegions.Add` 登録 (`!word.Prototype && word.CompletionContext == null` 抑止付き)
+  - CompletionContext 部分parse分岐に InitialConstruct / FinalConstruct / ProgramInstantiation / InterfaceInstance / BindDirective / NetAlias / ParameterOverride を追加
+  - 対象外: dispatcher クラス (ModuleCommonItem / ModuleOrGenerateItem 等)、declaration 委譲クラス (BlockItemDeclaration / DataDeclaration 等)、Generate 構造クラス (領域は GenerateBlock が保持)、SpecifyBlock、assertion 系
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `c4466ca`、メイン `cd0b306` (submodule pointer 更新)
+
 - verilog 階層補完 (module_instance1.module_instance2.value0) で "module_instance1." のドット直後の候補が不正 (メンバではなく兄弟要素が出る、"m" 入力後に正しくなる) → 修正完了 (ビルド成功、コミット済み)
   - 原因: `NameReference.ParseCreate` の EOF member autocomplete 分岐で `memberTarget ?? memberElement` と target 優先だった。`GetElement` の `(element, target)` は target が "要素を含む NameSpace" のため、ドット直後で target 優先すると兄弟要素が候補になった。"m" 入力時は CandidateWord フィルタで AutoCompleteItems が空になり、`GetAutoCompleteItems` の fallback `AppendAll()` (`GetAutoCompleteTarget` 側は `IBuildingBlockInstantiation` → `GetInstancedBuildingBlock()` 変換済み) で正しいメンバが出ていた
   - 修正1: `NameReference.cs` EOF 分岐を `memberElement ?? memberTarget` (要素自身優先) に変更
@@ -33,7 +50,13 @@
     - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
     - コミット: CodeEditor2VerilogPlugin `bb82a8c` "Remove recursive defineElements from Object.Create to avoid infinite loop on circular class references"
     - メモ: `Verilog/ParsedDocument.cs` のユーザ変更はコミットから除外 (作業ツリーに残置)
-    - 残確認候補: `typedef class` 前方宣言経由で UserDefinedType が循環する場合の `UserDefinedVariable` 側挙動
+    - 残確認候補: `typedef class` 前方宣言経由で UserDefinedType が循環する場合の `UserDefinedVariable` 側挙動 → 確認完了 (対応不要)
+      - 結論: `typedef class A;` 前方宣言 + `class A { B b; }` / `class B { A a; }` の相互参照・自己参照のいずれでも `UserDefinedVariable` 側に無限ループは発生しない。コード修正不要
+      - 根拠1: `DataObject.Create` (DataTypeEnum.UserDefined) → `UserDefinedVariable.Create` は `AssignedMap = new ArraysBoolMap(...)` + `DataType = dataType` のみで member 再帰走査なし
+      - 根拠2: `ArraysBoolMap(IDataType)` は class typedef では `PartSelectable = false` → `bits = 1` 固定、`PackedDimensions` 空 → `initialize` 即終了 (循環辿りなし)
+      - 根拠3: `UserDefinedVariable.NamedElements` getter → `UserDefinedType.AppendChiledNamedElements` → `OriginalDataType.AppendChiledNamedElements` (`BuildingBlocks.Class`) まで辿るが、`Class` は `AppendChiledNamedElements` を override していないため `IDataType` の既定実装 (空) で即終了。member 展開は class 自身の real parse 結果への遅延解決 (bb82a8c と同一設計思想)
+      - 根拠4: `UserDefinedType.BitWidth` は class の `OriginalDataType.BitWidth == null` → null を返して終了 (乗算ループに入らない)
+      - 新たな調査候補: `Typedef.ParseDeclaration` → `DataTypeFactory.ParseCreate` に `case "class"` が存在せず、エディタ上の `typedef class A;` 前方宣言行が "data type expected" エラーになる可能性 (ClassFileOrderResolver が生成する前方宣言は simulation setup 用テキスト挿入。ユーザソース直書き時の挙動は別途確認必要)
   - bind 経路の詳細検証 (ユーザ指摘「bind で ReferencedDefinitionNameSpace に登録されるべきものが ReferencedUnitNameSpace に登録されている」) → 修正完了 (ビルド成功、コミット済み)
     - `BindDirective.Parse` を BNF に従い書き直し: bind_target_scope / bind_target_instance を hierarchical identifier として直接 parse (`parseHierarchicalIdentifier` 新設)。`Expression.ParseCreate` をやめたことで root level (nameSpace=null) の NRE リスクも解消
     - 参照登録先を `ReferencedUnitNameSpace` → `ReferencedDefinitionNameSpace` に修正 (bind target の第1引数 + bind_instantiation の第2引数の両方)。UnitNameSpace class 優先分岐と L111/L125 の二重解決を削除
