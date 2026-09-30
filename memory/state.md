@@ -57,6 +57,13 @@
       - 根拠3: `UserDefinedVariable.NamedElements` getter → `UserDefinedType.AppendChiledNamedElements` → `OriginalDataType.AppendChiledNamedElements` (`BuildingBlocks.Class`) まで辿るが、`Class` は `AppendChiledNamedElements` を override していないため `IDataType` の既定実装 (空) で即終了。member 展開は class 自身の real parse 結果への遅延解決 (bb82a8c と同一設計思想)
       - 根拠4: `UserDefinedType.BitWidth` は class の `OriginalDataType.BitWidth == null` → null を返して終了 (乗算ループに入らない)
       - 新たな調査候補: `Typedef.ParseDeclaration` → `DataTypeFactory.ParseCreate` に `case "class"` が存在せず、エディタ上の `typedef class A;` 前方宣言行が "data type expected" エラーになる可能性 (ClassFileOrderResolver が生成する前方宣言は simulation setup 用テキスト挿入。ユーザソース直書き時の挙動は別途確認必要)
+      - 調査継続 → 調査完了 (実害は偽エラー notice のみ、parse は復帰)
+        - 経路確認: `BlockItemDeclaration.Parse` / `DataDeclaration.Parse` が `word.Text == "typedef"` で `Typedef.ParseDeclaration` に委譲 → `DataTypeFactory.ParseCreate(word, nameSpace, null)` に `class` が渡る
+        - `DataTypeFactory.ParseCreate` の `class` 時: `switch` に `case "class"` なし、`GetNamedElementUpward("class")` / `UnitNameSpace.Get` / `DefinitionNameSpace.Get` いずれも null (keyword)、`defaultDataType == null` → null return
+        - 結果: `Typedef.ParseDeclaration` L53-58 で `word.AddError("data type expected")` → `SkipToKeyword(";")` で復帰。parse 破綻なし
+        - 実害評価: 偽エラー notice 表示のみ。本エディタの参照解決は name-based (順序非依存) のため、`class A` 定義が parse 済みなら前方宣言登録なしでも `A a;` は解決される。前方宣言自体の登録は不要
+        - `InterfaceClass.parseTypedef` も同様に `class` keyword 特殊処理なし → 同一の偽エラー
+        - 修正方針案 (ユーザ指示待ち): 案A = `Typedef.ParseDeclaration` 冒頭で `class` / `interface class` keyword を検出したら keyword+identifier を消費し `;` まで消費して登録なしで正常終了 (エラー抑制のみ。Typedef を登録すると real Class と名前衝突し UserDefinedType 経由で member 解決が劣化するリスクがあるため登録しない)。案B = 案A + `InterfaceClass.parseTypedef` にも同一処理
   - bind 経路の詳細検証 (ユーザ指摘「bind で ReferencedDefinitionNameSpace に登録されるべきものが ReferencedUnitNameSpace に登録されている」) → 修正完了 (ビルド成功、コミット済み)
     - `BindDirective.Parse` を BNF に従い書き直し: bind_target_scope / bind_target_instance を hierarchical identifier として直接 parse (`parseHierarchicalIdentifier` 新設)。`Expression.ParseCreate` をやめたことで root level (nameSpace=null) の NRE リスクも解消
     - 参照登録先を `ReferencedUnitNameSpace` → `ReferencedDefinitionNameSpace` に修正 (bind target の第1引数 + bind_instantiation の第2引数の両方)。UnitNameSpace class 優先分岐と L111/L125 の二重解決を削除
