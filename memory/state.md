@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- AvaloniaEdit IME preedit text の背景描画追加 → 実装完了 (ビルド成功、コミット済み)
+  - 問題: preedit 表示 (PreeditLayer) の背景が透明のため、文中間で変換入力すると後ろのテキストと重なって読めない
+  - 修正: `AvaloniaEdit/src/AvaloniaEdit/Editing/PreEditLayer.cs` `Render` 内、テキスト描画前に preedit テキスト範囲 (textLayout の WidthIncludingTrailingWhitespace × Height) に `Brushes.Black` の `FillRectangle` を描画するよう追加
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors / 752 warnings は既存)
+  - コミット: AvaloniaEdit `7351764` "Draw black background behind IME preedit text to keep it readable over existing text"
+  - Next: メインリポジトリへの submodule pointer 更新コミット
+
 - TreeControl の選択切替時に前の選択 node の selection highlight が残留する問題を修正 → 実装完了 (ビルド成功、コミット済み)
   - 原因: 選択状態が2系統で管理されていた。`nodeSlected` (SelectNode / キーボード Up/Down 経由) は `selectedNode` フィールドのみ解除し `selectedNodes` (HashSet) を更新しない一方、`AddSingleSelection` (クリック経由 HandleSelection) は `selectedNodes` のみ解除。片方の経路で選択したノードがもう片方の経路での選択切替時に解除されずハイライト残留
   - 修正: `TreeControl.axaml.cs` の `nodeSlected` を `AddSingleSelection` 呼び出しに統一 (同一 node が単一選択済みの場合は early return で冗長イベント発火を防止)。`selectedNodes` / `selectedNode` / `OnSelected` / `OnDeSelected` が全経路で整合
