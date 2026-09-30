@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- stream concatenation parse 失敗修正 (`c = {>> 8 {a, b}};` でエラー) → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `StreamingConcatenation.ParseCreate` / `ParseCreateWithFirstExpression` が閉じ括弧 `}` を1回しか消費していなかった。streaming_concatenation は外側 `}` + 内側 stream_concatenation の `}` の2重括弧だが、外側の `}` が残ったまま戻るため呼び出し元 (BlockingAssignment 等) の `;` チェック位置で `}` が残り parse エラーになっていた。`Reference` も内側 `}` 位置で作られるため範囲も1文字短かった
+  - 修正: 両メソッドの末尾に `word.MoveNext(); // } of stream_concatenation` を追加し、内側/外側の2つの `}` を消費してから `Reference` を作るように変更
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 507 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `ac4fd48` "Consume both closing braces in StreamingConcatenation parse (fix parse failure of {>> 8 {a, b}})"
+  - メモ: 作業ツリーの `Number.cs` (octal parse TryParseOctal 化) / `Updater.cs` (InterfaceInstance null ガード) のユーザ変更は本タスク外のためコミットから除外
+
 - PortInvertSnippet の動作修正 → 実装完了 (ビルド成功、コミット済み)
   - 問題1 (port の最後のコンマ欠落): 区切り再検出を `trimmedContent.TrimEnd().EndsWith(",")` で行っていたため、行末に `// comment` があるとコンマ/セミコロンが検出されず欠落
   - 問題2 (要素間の space/tab 非維持): `qualifiers.Trim()` や `bitwidth.Trim() + " "` で元の空白が潰れていた。また `(?:(?<qualifiers>...)\s+)*` の繰り返しで同名グループが上書きされ最後の1個しか残らない問題もあった
