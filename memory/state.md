@@ -2,6 +2,28 @@
 
 ## 進行中タスク
 
+- Root level module → ProjectProperty.DefinitionNameSpace / class → UnitNameSpace 登録規則の適合性確認 (class parse / object instance / bind / simulation setup) → 確認完了・未修正
+  - 基準実装: `VerilogFile.AcceptParsedDocumentAsync` (L185-208) — Root.NamedElements を走査し Package→PackageNameSpace / Class→UnitNameSpace / BuildingBlock→DefinitionNameSpace / その他→UnitNameSpace に Register。この規則自体は正しい
+  - class parse ✓: `Class.ParseDeclaration` → Root.NamedElements 登録 + `Class.ParseCreate` (L379) → Root.AddOrUpdateBuildingBlock 登録 → parse 後に UnitNameSpace.Register (L197) で反映
+  - object instance ✓: `Variable.ParseDeclaration` → `DataTypeFactory.ParseCreate` (同一ファイル: GetNamedElementUpward / クロスファイル: `UnitNameSpace.Get` L254) → `Variable.Create` (DataTypeEnum.Class → `Object.Create`、Variable.cs L94-95)。`ReferencedUnitNameSpace` に class 名登録 (Variable.cs L258-262)、`Object.GetSourceClass()` は `UnitNameSpace.GetFile` → Root.BuildingBlocks から Class 取得で正しい
+  - bind ✓/△: bind identifier が class なら `UnitNameSpace.Get` で解決 (BindDirective.cs L118-122)、それ以外は DefinitionNameSpace.Get (L125) → ReferencedUnitNameSpace に記録 (L134)。規則には合致。ただし TargetScope / TargetInstances / BindItems プロパティが parse 中に未設定 (データモデル未使用)、parameter override `#(...)` / 複数 instance / `:` instance list 未対応の簡易実装
+  - simulation setup ✓: `searchHier` で ReferencedUnitNameSpace → `UnitNameSpace.GetFile` → appendClass → ClassFiles 再帰展開 (L79-106, L193-208)。`ClassFileOrderResolver` も UnitNameSpace ベースで依存順整列 + 循環時 typedef class 前方宣言生成
+  - bind 経路の詳細検証 (ユーザ指摘「bind で ReferencedDefinitionNameSpace に登録されるべきものが ReferencedUnitNameSpace に登録されている」) → 指摘は正しい・修正未実施
+    - `BindDirective.Parse` L134: 解決できた building block を無条件に `ReferencedUnitNameSpace` に追加している。bind_directive の BNF 上、bind で参照されるのは bind_instantiation (module/interface/program/checker instantiation) と bind_target_scope (module/interface identifier) = すべて DefinitionNameSpace 登録対象で class は関与しない → 登録先は `ReferencedDefinitionNameSpace` が正 (ModuleInstantiation L210 と同一パターン)
+    - L118: 第2引数を `UnitNameSpace.Get` で class 優先解決する分岐が規則に反する (bind_instantiation に class instantiation は存在しない)。DefinitionNameSpace.Get のみで解決すべき
+    - L109/L110: 第1引数 (bind_target_scope / bind_target_instance) の `Expression.ParseCreate` の戻り値が未使用で、解決・参照登録ともに行われない。L110 の `word.Text` は expression 消費後の位置 = 第2引数を指すため、L111 と L125 が同一対象への冗長な2重解決になっている
+    - 第1引数の参照 (module/interface) が ReferencedDefinitionNameSpace に登録されない (登録経路なし)
+    - Root.cs L384 の root level 呼び出しは `BindDirective.Parse(word, null, ...)` で nameSpace=null → `Expression.ParseCreate(word, null)` → `NameReference.GetElement` / `Primary.parseCreate` L229 の nameSpace アクセスで NullReferenceException リスク (ModuleCommonItem.cs L52 経由は nameSpace != null のため顕在化しない)
+    - 実害評価: ParseHierarchy L331-347 は DefinitionNameSpace → PackageNameSpace → UnitNameSpace の fallback で parse キュー enqueue されるため動作する。SimulationSetup (UnitNameSpace.GetFile → null skip) / ClassFileOrderResolver (classToFile に無名 → エッジ skip) も実害なし。ただし ReferencedUnitNameSpace が class 専用リストとして意味的に汚染される
+    - 修正方針案: (1) bind_target (第1引数) を identifier+hierarchical path として直接 parse し DefinitionNameSpace 解決 → ReferencedDefinitionNameSpace に登録 (2) bind_instantiation 対象 (第2引数) を DefinitionNameSpace 解決 → ReferencedDefinitionNameSpace に登録 (3) UnitNameSpace class 優先分岐と ReferencedUnitNameSpace への追加を削除 (4) root level nameSpace=null 対応 (identifier 直接消費) (5) TargetScope/TargetInstances/BindItems の設定 (別途)
+  - 発見した不整合 (修正候補、ユーザ指示待ち):
+    1. `VerilogFile.AcceptParsedDocumentAsync`: `InterfaceClass` は `Class` を継承しないため L201 の `as BuildingBlock` にマッチし **DefinitionNameSpace に誤登録**される (compilation-unit scope なので UnitNameSpace であるべき)。DataTypeFactory (L262-279 の interface_class_type 解決) と BindDirective (L125) がこの誤登録に依存して動作中。修正時は両方の UnitNameSpace ベース化が必要
+    2. `Primary.parseDataObject` L494: `obj.Name` (変数名) を ReferencedUnitNameSpace に追加している。正しくは `obj.SourceName` (class 名)。GetFile(変数名) が null になるため実害はほぼないが誤り
+    3. `SimulationSetup.searchNameSpace` L276: `dataObject.DataType is ClassType` は `Variables.Object` の DataType (= BuildingBlocks.Class オブジェクト) にマッチしないため `appendClassInstance` が class instance に対して呼ばれない (ReferencedUnitNameSpace 経由で補完されるが tree 直接走査の経路が無効)
+    4. `SimulationSetup.appendClassInstance` L390: UserDefinedVariable (typedef 経由) の解決に `DefinitionNameSpace.GetFile` を使用。typedef は UnitNameSpace 登録 (AcceptParsedDocumentAsync L207) のため `UnitNameSpace.GetFile` であるべき (現状常に null → append されない)。`appendInterfaceClassInstance` (L414) は正しく UnitNameSpace.GetFile を使用しており非対称
+    5. `Class.ParseCreate` L308: 無条件の `parseClassItems` 再呼び出しが残存 (正常時 endclass で即 break の no-op、endclass 欠落エラー時は意図しない parse の恐れ)。InterfaceClass.ParseCreate には対応する余分な呼び出しなし
+    6. `Program` (Program.cs L208-211) / `Primitive` (Primitive.cs L280-283) / `Interface` (Interface.cs L238-253) の `parent.NamedElements.Add` には `word.CompletionContext != null` 抑止がない (Module.ParseCreateAsync L200-203 は対応済み、B系パターンの横展開漏れ)
+
 - IStatement に BeginIndexReference/LastIndexReference を強制し、全 statement parser で設定 → 実装完了 (ビルド成功、コミット済み)
   - `Verilog/Statements/IStatement.cs`: `IndexReference BeginIndexReference { get; init; }` / `IndexReference? LastIndexReference { get; set; }` を必須化 (ユーザ実施の interface 変更を含めコミット)
   - 全 IStatement 実装クラス (CS0535 エラー 32 クラス) に required BeginIndexReference / LastIndexReference を追加し、parser で設定
