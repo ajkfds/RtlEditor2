@@ -25,7 +25,15 @@
   - コミット: CodeEditor2VerilogPlugin `8174034` "Support iff in event expression (always @(posedge clk iff en == 1))"
   - メモ: 作業ツリーの Updater.cs / Number.cs / ParallelBlock.cs / Statements.cs は前タスク・ユーザ変更のためコミットから除外
 
-- fork ... join 後の name 表記 (`name: fork ... join : name`) の parse 対応 (SequentialBlock 参考の横展開) → 実装完了 (ビルド成功)
+- fork ... join 後の name 表記 (`name: fork ... join : name`) の parse 対応 (SequentialBlock 参考の横展開) → 実装完了 (ビルド成功、コミット済み)
+  - メモ: state.md の旧記録と実際のコードに乖離があり実装が失われていたため再実装
+  - `ParallelBlock.ParseCreate` に `blockIdentifier` optional 引数を追加。`statement_label` を block identifier としても使用 (`name : fork` 形式)
+  - `parseNamedParallelBlock` に `blockIdentifier` 引数を追加し、`fork : name` (名前トークン消費が必要) / `name : fork` (名前は消費済み) の両形式に対応。prototype/implementation 分岐の名前解決を `word.Text` → `name` 変数に統一
+  - `NamedParallelBlock` を `Items.IDocumentRegeion` 化し、`nameSpace.DocumentRegions.Add` を追加 (`!word.Prototype && word.CompletionContext == null` 抑止付き) → autocomplete / partial parse 対象化
+  - `Statements.ParseCreateStatement` の `case "fork"` から blockIdentifier を渡すよう修正
+  - `CompletionContext` 部分parse分岐に `ParallelBlock` ケースを追加 (fork block 内 caret でも部分parse)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 679 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `d07e79f`、メイン `8eef815` (submodule pointer 更新)
   - 問題: `name : fork` 形式は Statements.ParseCreateStatement の default 分岐で blockIdentifier として消費されるが、`case "fork"` が blockIdentifier を ParallelBlock.ParseCreate に渡していなかったため named block が生成されず、ラベルが捨てられたうえ `join : name` の `: name` トークンが残って parse エラー (unnamed 経路に join 後ラベル処理がなかった)
   - 修正 (ParallelBlock.cs):
     - `ParallelBlock.ParseCreate` に `blockIdentifier` optional 引数を追加。`fork : name` 形式は従来どおり parseNamedParallelBlock、`name : fork` 形式 (blockIdentifier 指定) も parseNamedParallelBlock に転送して named block 生成
