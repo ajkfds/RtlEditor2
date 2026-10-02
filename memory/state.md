@@ -2,6 +2,12 @@
 
 ## 進行中タスク
 
+- OpenRouterChat.GetAvailableModels を OpenRouterModels.cs から動的生成に変更 → 実装完了 (ビルド成功、コミット済み)
+  - `OpenRouterModels.cs` に `GetAllModels()` を新設: static `Model` フィールドをリフレクション (`Public | Static` + `MetadataToken` 順) で宣言順に列挙。モデル追加時にリスト二重管理が不要に
+  - `OpenRouterChat.cs` `GetAvailableModels()` のハードコード ModelItem リストを削除し、`GetAllModels()` → `new ModelItem { Id = model.Name, Name = model.Caption, Tag = model }` に置換 (全17モデルが自動反映、`SetModelAsync(ModelItem)` の Tag 互換は維持)
+  - ビルド成功 (CodeEditor2AiPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2AiPlugin `01436d7`、メイン `7edaad8` (submodule pointer 更新)
+
 - ILLMChatFrontEnd にモデルリスト取得/モデル設定機構を追加し、ChatControl で動作させる → 実装完了 (ビルド成功、コミット済み)
   - 既存確認: ILLMChatFrontEnd には GetAvailableModels()/SetModelAsync(ModelItem)、OpenRouterChat にはハードコード ModelItem リスト実装済み、InputItem に ModelSelector (ComboBox) + ModelItems、ChatControl.SetModel でリスト投入と SelectionChanged handler 登録済み
   - 発見した欠落と修正:
