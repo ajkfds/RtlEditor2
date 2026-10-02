@@ -13,8 +13,14 @@
   - 修正 (ProgramInstantiation.cs): `ParseAsync` で program identifier 解析時に `ReferencedDefinitionNameSpace` への登録を追加 (ModuleInstantiation / UdpInstantiation / InterfaceInstance と同一パターン)
   - 既存の `Create` の `UnfoundModules.Count != 0` → null return 経路により、参照不足時に simulation 投入がブロックされ log (red) に unfound 名が表示される
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
-  - コミット: CodeEditor2VerilogPlugin (本コミット)、メイン (state.md 更新)
+  - コミット: CodeEditor2VerilogPlugin `9717d7d`、メイン `a34ef80` (submodule pointer 更新 + state.md 更新)
   - 残課題 (対応候補): 外部プロジェクト参照の pSetup 再帰走査 / instance array・generate instance 名の file.Items lookup 規則確認 / TopFile 複数 building block 時の TopName 選択
+  - 残課題の追加対処 (外部プロジェクト再帰走査) → 実装完了 (ビルド成功、コミット済み)
+    - `appendFile` に `ids` / `path` / `buildingBlockName` 引数を追加 (searchHier からの呼び出しも更新)
+    - VerilogModuleInstance / InterfaceInstance の外部プロジェクト分岐 (sourceFile.Project != setup.Project) で、外部プロジェクト sub-setup (pSetup) にファイル追加後に `searchHier(sourceFile, instance.ModuleName, ids, pSetup, newPath)` を再帰呼び出し。外部プロジェクト側の module / class / package / include / bind 依存が pSetup 側に収集されるようになり、外部プロジェクト内の参照欠落も pSetup 経由で UnfoundModules に記録される
+    - 再帰のループ防御は既存の `Files.Contains` / `ClassFiles.Contains` / `ImportFiles.Contains` ガードによる (同一ファイルは再収集されない)
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
+    - 残課題 (対応候補): instance array・generate instance 名の file.Items lookup 規則確認 / TopFile 複数 building block 時の TopName 選択
 - AvaloniaEdit IME preedit text の背景描画追加 → 実装完了 (ビルド成功、コミット済み)
   - 問題: preedit 表示 (PreeditLayer) の背景が透明のため、文中間で変換入力すると後ろのテキストと重なって読めない
   - 修正: `AvaloniaEdit/src/AvaloniaEdit/Editing/PreEditLayer.cs` `Render` 内、テキスト描画前に preedit テキスト範囲 (textLayout の WidthIncludingTrailingWhitespace × Height) に `Brushes.Black` の `FillRectangle` を描画するよう追加
