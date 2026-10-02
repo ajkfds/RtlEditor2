@@ -2,6 +2,56 @@
 
 ## 進行中タスク
 
+- SystemVerilog parser の未対応文法項目の洗い出し → 調査中 (逐次追記)
+  - 【未対応】case_generate_construct: module 内 root level の case generate が parse されない (ModuleOrGenerateItem / ModuleCommonItem に case 分岐なし)
+  - 【未対応】checker_instantiation: checker instance の parse 分岐なし (ConcurrentAssertionItemExceptCheckerInstantiation)
+  - 【未対応】elaboration_system_task (module root level $info/$error/$fatal/$warning)
+  - 【未対応】extern declaration 群 (extern module/interface header, extern_tf_declaration, extern_constraint_declaration, extern checker)
+  - 【未対応】overload_declaration / net_type_declaration (typedef nettype)
+  - 【未対応】BlockItemDeclaration 内 package_import_declaration (TODO)
+  - 【未対応】checker_generate_item (checker 内 for/if/case generate)
+  - 【未対応】ModPort の modport_tf_ports_declaration / modport clocking_identifier 消費
+  - 【不完全】DpiImportExport: dpi_spec_string が "DPI-C" を2回比較しており "DPI" が常にエラー
+  - 【不完全】SpecifyBlock: 内容完全 skip (path_declaration / system_timing_check 未解析)
+  - 【不完全】Primitive(UDP): nonansi port 宣言は名前 skip のみ / initial 内 assign 未対応
+  - 【不完全】Class extends pkg::B が illegal class_type エラー / extends B#(params) は SkipToKeyword のみ
+  - 【不完全】ConstraintDeclaration: constraint_prototype 未対応
+  - 【不完全】CovergroupDeclaration: with function sample(arg) 未対応
+  - 【不完全】SequenceExpr: ##1 形式が ImplicitOne 扱いで数値を消費しない
+  - 【不完全】SequenceRepetition: parse 失敗時の位置復帰なし
+  - 【要確認】let_instance 呼び出し / clocking_drive / interface_port_declaration / super.new / pkg:: qualified identifier
+  - 【既知】typedef class A; は偽エラー notice のみ (修正案 A/B あり)
+  - 【追記確認】CaseGenerateConstruct.cs は実装存在するが CaseGenerateConstruct.ParseAsync の呼び出し元がゼロ (search 確認済み) → case generate は実装があっても dispatcher から未接続
+  - 【追記確認】WaitStatement: wait fork / wait_order 対応済み
+  - 【追記確認】interface_port_declaration は Port.cs に BNF コメントあり (ansi_port_header の interface_port_header 経路の実装確認は要精査)
+  - 【追記確認】interface_port_declaration / modport instance (parseInterfacePort) は実装済み (SearchBuildingBlockUpward + DefinitionNameSpace 解決、InterfaceInstance / ModportInstance 生成)
+  - 【追記確認】elaboration_system_task ($info/$error/$fatal/$warning/$asserton 等) は ProjectProperty.SystemTaskParsers に登録済み → statement 経路は動作。ただし module root level (ModuleCommonItem) に $ 分岐がなく、module body 直下の $fatal 等が非対応の可能性 → 要動作確認
+  - 【追記確認】super.new(...): "super" は Function.cs / Primary.cs に存在せず、class constructor の親 constructor 呼び出しは未対応 (super という Object 変数のみ Class.extends 時に NamedElements 登録)
+  - 【追記確認】pkg:: / std:: scope qualified identifier: NameReference が "::" separator に対応済み → 式内の package scope 解決は動作見込み (クラス宣言の extends pkg::B は別途未対応)
+  - 【追記確認】let_instance 呼び出し: Primary.parseCreate の element is Function || element is LetDeclaration 分岐で LetDeclaration が FunctionCall 経路に接続済み → 対応済み
+  - 【追記確認】randsequence / randcase: 実装存在 (RandsequenceStatement / RandcaseStatement、production 構造含む) → 対応済み
+  - 【調査総括】: 主要 dispatcher (module / interface / program / package / class / checker / statement) の BNF カバレッジは概ね良好。残る主要ギャップは (1) case_generate_construct の dispatcher 未接続 (2) checker_instantiation (3) extern declaration 群 (4) net_type_declaration / overload_declaration (5) BlockItemDeclaration 内 import (6) DPI spec string バグ (7) super.new (8) SpecifyBlock 実解析 (9) UDP nonansi 宣言。次回着手時はこのリストの優先順位をユーザに確認のこと
+  - 【実装完了 → ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)】上記ギャップの実装を実施:
+    1. case_generate_construct: ModuleCommonItem に "case"/"casex"/"casez" 分岐を追加し CaseGenerateConstruct.ParseAsync に接続 (実装は既存、dispatcher 未接続が唯一のギャップだった)
+    2. checker_instantiation: Items/CheckerInstantiation.cs を新設 (ps_checker_identifier name_of_instance(...) ; の named/ordered port connection 対応)。ConcurrentAssertionItemExceptCheckerInstantiation から DefinitionNameSpace / SearchBuildingBlockUpward で Checker 解決して転送
+    3. extern declaration 群: Items/ExternDeclaration.cs を新設 (extern module/interface/checker header, extern forkjoin task_prototype, extern method_prototype, extern [static] constraint)。PackageOrGenerateItemDeclaration の "extern" 分岐から転送
+    4. net_type_declaration: DataObjects/NetTypeDeclaration.cs を新設 (nettype data_type id [with pkg::tf] ; と nettype [pkg::]nettype id ; の両形式、INamedElement 登録)。DataDeclaration / BlockItemDeclaration に "typedef nettype" 分岐追加
+    5. overload_declaration: Items/OverloadDeclaration.cs を新設 (function <binary_op> with <func_id> ;)。PackageOrGenerateItemDeclaration に function 直後 binary_operator 判定分岐追加 (通常 function_declaration と共存)
+    6. BlockItemDeclaration 内 package_import_declaration: "import" 分岐を追加 (PackageImportDeclaration.Parse に転送)
+    7. DPI spec string バグ修正: "DPI-C" と2回比較していた誤りを "DPI-C" / "DPI" の比較に修正
+    8. SpecifyBlock: 内容完全 skip から、specparam / pulsestyle / showcancelled / system_timing_check ($setup 等の括弧スキップ) / path_declaration (括弧バランス消費) の解析に変更
+    9. Primitive(UDP) nonansi 宣言: output/input 宣言で reg / packed range / list_of_port_identifiers を解析して Port を登録。initial ステートメント (init_val) はトークン消費のみ対応
+    10. Class extends の package scope 対応: extends pkg::B / extends $unit.B を PackageNameSpace / ローカル NamedElements / DefinitionNameSpace / SearchBuildingBlockUpward で解決 ("illegal class_type" 誤エラー解消)。extends B#(params) は既存の括弧消費のまま
+    11. checker_generate_item: Checker.parseCheckerItems の for/if/case 分岐を LoopGenerateConstruct / IfGenerateConstruct / CaseGenerateConstruct 呼び出しに変更 (error skip から実 parse へ)
+    12. ModPort: modport_tf_ports_declaration (import/export + method_prototype / tf_identifier) を新設実装。modport_clocking_declaration で clocking_identifier を消費するよう修正
+    13. ConstraintDeclaration: constraint_prototype ([static] constraint id ;) 対応 (本体なしで正常終了)
+    14. CovergroupDeclaration: "with function sample(...)" の sample 引数リストを解析して RangeList に記録
+    15. SequenceExpr: ##1 / ##2 形式 (## constant_primary) を SingleValue として数値を消費するよう修正 (以前は ImplicitOne 扱いで数値が後続 parse に漏れていた)。##[...] 形式は従来どおり
+    16. SequenceRepetition / ParseBooleanAbbreviation: WordScanner.Clone による先行 probe を追加し、[*][+][=][->][n:m] の repetition でない [i] 添字式を消費しないよう位置復帰問題を解消
+    - super.new(...): Class.extends 時に super が Variables.Object (baseClass) として NamedElements 登録されており、Primary の class-object function call 経路で解決されることを確認 → 対応済みと判定 (コード変更なし)
+    - interface_port_declaration / modport instance: Port.parseInterfacePort で実装済みと確認 (コード変更なし)
+    - let_instance / pkg:: 式内 scope / wait fork / wait_order / randsequence / randcase: 既存実装確認済み (コード変更なし)
+
 - ChatControl の ModelSelector ComboBox に選択済みモデルを表示 → 実装完了 (ビルド成功、コミット済み)
   - 問題: ChatControl.SetModel は `chat.CurrentModel != null` のときのみ ComboBox を初期選択するが、OpenRouterChat はコンストラクタの modelName で初期化しても `currentModel` (ModelItem) が null のままのため表示されなかった
   - 修正: `OpenRouterChat.initialize` 成功時 (currentModelName 記録後) に `OpenRouterModels.GetAllModels()` から modelName 一致モデルを検索し `currentModel` に `new ModelItem { Id, Name=Caption, Tag }` を設定 (SetModelAsync(ModelItem) 経由の選択と同一構造)
