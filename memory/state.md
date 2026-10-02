@@ -2,6 +2,15 @@
 
 ## 進行中タスク
 
+- ChatControl: MarkdownTextItem の spinner もメッセージ右下に移動 → 実装完了 (ビルド成功、コミット済み)
+  - 問題: 前回修正は CollapsibleTextItem のみで、実際に spinner が表示される lastResultItem は MarkdownTextItem (ChatControl.axaml.cs L357) だったため、MarkdownTextItem 側は spinner が collapseAndMenuPanel (右上パネル) に残っていた。メッセージ立幅が広がっても spinner 位置が変わらない
+  - 修正: `CodeEditor2/CodeEditor2/LLM/MarkdownTextItem.cs`
+    - spinnerImage を collapseAndMenuPanel から削除
+    - markdown を内包する新設 Grid (textGrid) にオーバーレイ配置 (HorizontalAlignment=Right / VerticalAlignment=Bottom / margin (0,0,15,8))、collapseAndMenuPanel も textGrid にオーバーレイ (右上維持)
+  - ビルド成功 (CodeEditor2.csproj, 0 errors / 172 warnings は既存)
+  - コミット: CodeEditor2 `d7d0eee`、メイン `ad99b5a` (submodule pointer 更新)
+  - メモ: RtlEditor2.Desktop/Program.cs のユーザ変更はコミットから除外
+
 - completionContext 伝播の横展開 → 実装完了 (ビルド成功、コミット済み)
   - 現状確認: UdpInstantiation (ordered port connection) の EOF hint / BuiltinMethodCall の引数 hint / GenerateBlock 部分parse分岐は既に実装済みだった (state.md の記録通り)
   - 発見した欠落: NamedSequentialBlock / NamedParallelBlock は IDocumentRegeion 実装済みだが、CompletionContext の部分parse分岐が `documentRegion is SequentialBlock` / `is ParallelBlock` のみで、派生クラスの Named~ にマッチしないため named block 内の caret で部分parse (statement hint) が動作していなかった
