@@ -2,6 +2,16 @@
 
 ## 進行中タスク
 
+- SystemVerilog parser の壊れたコード (文法エラー) に対するエラー復帰強化 → 実装完了 (ビルド成功、コミット済み)
+  - 修正1 (parameter port list の無限ループ防止、5ファイル): Module / Interface / InterfaceClass / Program / Class の `#( parameter ... )` 解析ループで、`Parameter.ParseCreateDeclarationForPort` が1トークンも消費しなかった場合に "illegal parameter declaration" エラーを追加して1トークン消費する進行ガードを追加 (壊れた parameter 宣言で `SkipToKeyword(",")` → `parameter` で即停止 → `continue` の無限ループを防止)
+  - 修正2 (item ループのエラー復帰改善、5ファイル): Interface / Program / Package / Class / InterfaceClass の item ループで、未対応 item 検出時の復帰を1トークンずつの `MoveNext` から `SkipToKeyword(";")` (構造境界 keyword で停止 + `;` 消費) 方式に変更 (Module と同一パターン)。ゴミトークンのたびのエラー爆発と構造喪失を防止
+  - 修正3 (復帰停止 keyword の拡張): `General.ListOfStatementStopKeywords` に `endclass/endinterface/endpackage/endprogram/endprimitive/endtable/endclocking/endspecify/endgenerate/endcase/join/join_any/join_none` を追加し、`SkipToKeyword` 系のエラー復帰が enclosing/sibling ブロック境界を超えないようにした
+  - 修正4 (statement block の復帰境界拡張): SequentialBlock / ParallelBlock の recovery 停止 keyword リスト (`endKeyword`) に `endclass/endcase/endprimitive/else/endpackage/endprogram/join/join_any/join_none` を追加し、壊れた case/fork 文の復帰が構造境界を超えて後続 parse を壊さないようにした (重複していた "endtask" も1つに整理)
+  - 修正5 (Module ansi 側復帰の `;` 消費): NonPortModuleItem 経路の `SkipToKeyword(";")` 成功時に `;` を消費するよう修正 (non-ansi 側と対称化)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `8bc80e6`、メイン `03c8fc6` (submodule pointer 更新)
+  - 残課題 (改善候補): ModuleOrGenerateItem / ModuleCommonItem 等 dispatcher の未処理 token fall-through 時の SkipToKeyword 復帰 / Function・Task の non-ansi body 解析中の復帰強化
+
 - SystemVerilog parser の未対応文法項目の洗い出し → 調査中 (逐次追記)
   - 【未対応】case_generate_construct: module 内 root level の case generate が parse されない (ModuleOrGenerateItem / ModuleCommonItem に case 分岐なし)
   - 【未対応】checker_instantiation: checker instance の parse 分岐なし (ConcurrentAssertionItemExceptCheckerInstantiation)
