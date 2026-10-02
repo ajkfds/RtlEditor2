@@ -2,6 +2,12 @@
 
 ## 進行中タスク
 
+- ChatControl: タスク進行中スピナーをメッセージ右下に移動 → 実装完了 (ビルド成功、コミット済み)
+  - 問題: spinner (CollapsibleTextItem.spinnerImage) が textBox の InnerRightContent (collapseAndMenuPanel) 内 = メッセージ右上にあり、メッセージが長いとスクロールアウトして見えない
+  - 修正: `CodeEditor2/CodeEditor2/LLM/CollapsibleTextItem.cs` — spinnerImage を collapseAndMenuPanel から外し、textBox を内包する新設 Grid (textGrid) にオーバーレイ配置 (HorizontalAlignment=Right / VerticalAlignment=Bottom)。margin を (0,0,15,8) に調整
+  - ビルド成功 (CodeEditor2.csproj, 0 errors / 198 warnings は既存)
+  - コミット: CodeEditor2 `a4a439a`、メイン `a2405b0` (submodule pointer 更新)
+
 - ChatControl: 直前 tool call の system-hint 追加 → 実装完了 (ビルド成功、コミット済み)
   - 機能: tool result を LLM に返す際、直前の LLM レスポンス内の tool call (tool 名 + key param) を `<system-hint>` ブロックの "Previous tool calls:" として command 末尾に追記
   - 新規: `CodeEditor2/CodeEditor2/LLM/ChatControl.ToolCallHint.cs` (partial class)
