@@ -2,6 +2,15 @@
 
 ## 進行中タスク
 
+- ILLMChatFrontEnd にモデルリスト取得/モデル設定機構を追加し、ChatControl で動作させる → 実装完了 (ビルド成功、コミット済み)
+  - 既存確認: ILLMChatFrontEnd には GetAvailableModels()/SetModelAsync(ModelItem)、OpenRouterChat にはハードコード ModelItem リスト実装済み、InputItem に ModelSelector (ComboBox) + ModelItems、ChatControl.SetModel でリスト投入と SelectionChanged handler 登録済み
+  - 発見した欠落と修正:
+    1. 現在選択中モデルを取得する手段がない → `ILLMChatFrontEnd` に `ModelItem? CurrentModel { get; }` を追加。OpenRouterChat は `currentModel` フィールド + プロパティ実装、`SetModelAsync(ModelItem)` で設定
+    2. OpenRouterChat の `initialize` が `currentModelName` を更新しておらず TryReconnectAsync が常に false → `initialize` 成功時 (client 構築後) に `currentModelName = modelName` を記録
+    3. ChatControl.SetModel で SelectionChanged handler が SetModel 呼び出しのたびに重複登録 → `-=` 後 `+=` で冪等化。`chat.CurrentModel` に一致する Id の ModelItem を ModelSelector に初期選択
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors / 726 warnings は既存)
+  - コミット: CodeEditor2 `a2205bb`、CodeEditor2AiPlugin `7d06ec1`、メイン `501dcbe` (submodule pointer 更新)
+
 - ChatControl: MarkdownTextItem の spinner もメッセージ右下に移動 → 実装完了 (ビルド成功、コミット済み)
   - 問題: 前回修正は CollapsibleTextItem のみで、実際に spinner が表示される lastResultItem は MarkdownTextItem (ChatControl.axaml.cs L357) だったため、MarkdownTextItem 側は spinner が collapseAndMenuPanel (右上パネル) に残っていた。メッセージ立幅が広がっても spinner 位置が変わらない
   - 修正: `CodeEditor2/CodeEditor2/LLM/MarkdownTextItem.cs`
