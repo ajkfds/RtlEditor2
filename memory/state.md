@@ -2,6 +2,19 @@
 
 ## 進行中タスク
 
+- SimulationSetup のファイル収集漏れ修正 + 参照欠落時に simulation 投入をブロック → 実装完了 (ビルド成功、コミット済み)
+  - 解析で判明した漏れ: (1) searchNameSpace に ProgramInstantiation / UdpInstantiation 分岐なし (2) searchHier が ReferencedDefinitionNameSpace (bind / program / udp / interface instance の参照登録先) を参照せず定義ファイルが収集されない (3) virtual interface 変数の interface 定義ファイル未収集 (4) import package / class ファイル自身の依存が再帰辿りされない (5) 参照解決失敗 (class/package/program/interface/udp) が UnfoundModules に記録されず無言で skip される
+  - 修正 (SimulationSetup.cs):
+    - `searchHier` に `ReferencedDefinitionNameSpace` 走査を追加: 定義ファイル解決 → `searchHier` 再帰走査 (下位依存も収集)。解決失敗時は外部ライブラリ (ExternalRefrenceModules / ExtenralModuleLibraryPath / ExtenralPrimitiveLibraryPath) 該当を除外したうえで `UnfoundModules` に追加
+    - `ReferencedUnitNameSpace` の class 解決失敗時も `UnfoundModules` に追加
+    - `searchNameSpace` に ProgramInstantiation / UdpInstantiation 分岐を追加 (定義収集は ReferencedDefinitionNameSpace 経由で行われるため分岐はコメントのみ)
+    - DataObject 分岐に `VirtualInterface` ケースを追加し `appendVirtualInterfaceInstance` を新設: `GetSourceInterface()` で interface 定義ファイルを収集、解決失敗時は `InterfaceIdentifier` / interface 名を `UnfoundModules` に追加
+    - `appendImportedPackage` / `appendClass` に `ids` 引数を追加し、package / class ファイル自身の依存を `searchHier` で再帰辿り。class ファイル解決失敗時も `UnfoundModules` に追加
+  - 修正 (ProgramInstantiation.cs): `ParseAsync` で program identifier 解析時に `ReferencedDefinitionNameSpace` への登録を追加 (ModuleInstantiation / UdpInstantiation / InterfaceInstance と同一パターン)
+  - 既存の `Create` の `UnfoundModules.Count != 0` → null return 経路により、参照不足時に simulation 投入がブロックされ log (red) に unfound 名が表示される
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin (本コミット)、メイン (state.md 更新)
+  - 残課題 (対応候補): 外部プロジェクト参照の pSetup 再帰走査 / instance array・generate instance 名の file.Items lookup 規則確認 / TopFile 複数 building block 時の TopName 選択
 - AvaloniaEdit IME preedit text の背景描画追加 → 実装完了 (ビルド成功、コミット済み)
   - 問題: preedit 表示 (PreeditLayer) の背景が透明のため、文中間で変換入力すると後ろのテキストと重なって読めない
   - 修正: `AvaloniaEdit/src/AvaloniaEdit/Editing/PreEditLayer.cs` `Render` 内、テキスト描画前に preedit テキスト範囲 (textLayout の WidthIncludingTrailingWhitespace × Height) に `Brushes.Black` の `FillRectangle` を描画するよう追加
