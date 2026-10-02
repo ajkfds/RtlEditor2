@@ -2,6 +2,17 @@
 
 ## 進行中タスク
 
+- ChatControl: 直前 tool call の system-hint 追加 → 実装完了 (ビルド成功、コミット済み)
+  - 機能: tool result を LLM に返す際、直前の LLM レスポンス内の tool call (tool 名 + key param) を `<system-hint>` ブロックの "Previous tool calls:" として command 末尾に追記
+  - 新規: `CodeEditor2/CodeEditor2/LLM/ChatControl.ToolCallHint.cs` (partial class)
+    - `ExtractToolCalls`: LLMAgent.ParseExecutePersudoFunctionCallAsync と同一 regex で tool call 抽出 (reasoning/think 除外)。key param は block 内の最初の key/value ペア、空白圧縮 + 80 文字で truncate
+    - `AppendToolCallHintIfNeeded`: UseToolCallId 有効かつ tool call が存在する場合のみ system-hint を付与
+  - 修正: `ChatControl.axaml.cs` completeWithFunctionCall のループ内、AdvanceCounterFromToolResults 直後に `AppendToolCallHintIfNeeded(functioncallCommand, result)` 呼び出しを追加 (result は tool 実行を引き起こした LLM レスポンス)
+  - ビルド成功 (CodeEditor2.csproj, 0 errors / 172 warnings は既存)
+  - コミット: CodeEditor2 `2e75868`
+  - メモ: replace_in_file の diff パラメータが XML タグ含有時に正しく parse されないケースがあり、新規 partial ファイル方式 + 最小 SEARCH ブロックで回避
+  - Next: メインリポジトリへの submodule pointer 更新コミット
+
 - SimulationSetup のファイル収集漏れ修正 + 参照欠落時に simulation 投入をブロック → 実装完了 (ビルド成功、コミット済み)
   - 解析で判明した漏れ: (1) searchNameSpace に ProgramInstantiation / UdpInstantiation 分岐なし (2) searchHier が ReferencedDefinitionNameSpace (bind / program / udp / interface instance の参照登録先) を参照せず定義ファイルが収集されない (3) virtual interface 変数の interface 定義ファイル未収集 (4) import package / class ファイル自身の依存が再帰辿りされない (5) 参照解決失敗 (class/package/program/interface/udp) が UnfoundModules に記録されず無言で skip される
   - 修正 (SimulationSetup.cs):
