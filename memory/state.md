@@ -2,6 +2,15 @@
 
 ## 進行中タスク
 
+- completionContext 伝播の横展開 → 実装完了 (ビルド成功、コミット済み)
+  - 現状確認: UdpInstantiation (ordered port connection) の EOF hint / BuiltinMethodCall の引数 hint / GenerateBlock 部分parse分岐は既に実装済みだった (state.md の記録通り)
+  - 発見した欠落: NamedSequentialBlock / NamedParallelBlock は IDocumentRegeion 実装済みだが、CompletionContext の部分parse分岐が `documentRegion is SequentialBlock` / `is ParallelBlock` のみで、派生クラスの Named~ にマッチしないため named block 内の caret で部分parse (statement hint) が動作していなかった
+  - 修正: `Verilog/CompletionContext.cs` 部分parse分岐に `Verilog.Statements.NamedSequentialBlock` (begin 先頭) / `Verilog.Statements.NamedParallelBlock` (fork 先頭) ケースを追加し、既存の SequentialBlock / ParallelBlock 分岐と同一処理に転送
+  - 補足: ProceduralTimingControlStatement / ForeverStatement / DoStatement / ForeachStatement / WaitStatement は IDocumentRegeion 未実装のため GetDocumentRegionAt で documentRegion にならず、部分parse分岐追加は不要と確認
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `7c9b89d`、メイン `1c2c001` (submodule pointer 更新)
+  - 残課題: statement 経路の completionContext 未伝播呼び出しの横展開 (AlwaysConstruct.ParseCreate → Statements.ParseCreateStatement に completionContext 引数がない等、state.md の旧記録とコードに乖離あり)。着手する場合はコード側の現状確認を推奨
+
 - ChatControl: タスク進行中スピナーをメッセージ右下に移動 → 実装完了 (ビルド成功、コミット済み)
   - 問題: spinner (CollapsibleTextItem.spinnerImage) が textBox の InnerRightContent (collapseAndMenuPanel) 内 = メッセージ右上にあり、メッセージが長いとスクロールアウトして見えない
   - 修正: `CodeEditor2/CodeEditor2/LLM/CollapsibleTextItem.cs` — spinnerImage を collapseAndMenuPanel から外し、textBox を内包する新設 Grid (textGrid) にオーバーレイ配置 (HorizontalAlignment=Right / VerticalAlignment=Bottom)。margin を (0,0,15,8) に調整
