@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- `endinterface : name` 付き interface で body item (logic [7:0] DATA; 等) があると parse 失敗する問題を修正 → 実装完了 (ビルド成功、コミット済み)
+  - 原因: Interface.parseInterfaceItems の item ループ先頭に endinterface チェックがなく、`;` 消費直後のチェック (L399) は body が空の場合しか機能しない。body item parse 後に word が endinterface に到達すると、ModuleCommonItem.ParseAsync L114 の labeled concurrent assertion ヒューリスティック (`IsSimpleIdentifier && NextText == ":"`) が `endinterface : IF_BUS_X` に誤マッチし、ConcurrentAssertionItemExceptCheckerInstantiation が blockIdentifier="endinterface" として endinterface と `:` を消費。その後 IF_BUS_X が illegal interface item となり復帰後 EOF に到達 → "endmodule expected" エラーで parse 失敗
+  - 修正1 (Interface.cs): parseInterfaceItems の item ループ先頭に `if (word.Text == "endinterface") break;` を追加
+  - 修正2 (ModuleCommonItem.cs): labeled assertion ヒューリスティックに構造終端 keyword (endinterface/endmodule/endpackage/endprogram/endchecker/endclass/endfunction/endtask/endclocking/endproperty/endsequence/endgroup/endprimitive/endtable/endconfig/generate/endgenerate) を blockIdentifier として受理しない除外リストを追加 (Module/Program/Package 側の `endmodule : name` 等の同種問題の潜在的リスクも防止)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `e178e31`、メイン `232295c` (submodule pointer 更新)
+
 - SystemVerilog parser の壊れたコード (文法エラー) に対するエラー復帰強化 → 実装完了 (ビルド成功、コミット済み)
   - 修正1 (parameter port list の無限ループ防止、5ファイル): Module / Interface / InterfaceClass / Program / Class の `#( parameter ... )` 解析ループで、`Parameter.ParseCreateDeclarationForPort` が1トークンも消費しなかった場合に "illegal parameter declaration" エラーを追加して1トークン消費する進行ガードを追加 (壊れた parameter 宣言で `SkipToKeyword(",")` → `parameter` で即停止 → `continue` の無限ループを防止)
   - 修正2 (item ループのエラー復帰改善、5ファイル): Interface / Program / Package / Class / InterfaceClass の item ループで、未対応 item 検出時の復帰を1トークンずつの `MoveNext` から `SkipToKeyword(";")` (構造境界 keyword で停止 + `;` 消費) 方式に変更 (Module と同一パターン)。ゴミトークンのたびのエラー爆発と構造喪失を防止
