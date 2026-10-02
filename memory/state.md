@@ -2,6 +2,12 @@
 
 ## 進行中タスク
 
+- ChatControl の ModelSelector ComboBox に選択済みモデルを表示 → 実装完了 (ビルド成功、コミット済み)
+  - 問題: ChatControl.SetModel は `chat.CurrentModel != null` のときのみ ComboBox を初期選択するが、OpenRouterChat はコンストラクタの modelName で初期化しても `currentModel` (ModelItem) が null のままのため表示されなかった
+  - 修正: `OpenRouterChat.initialize` 成功時 (currentModelName 記録後) に `OpenRouterModels.GetAllModels()` から modelName 一致モデルを検索し `currentModel` に `new ModelItem { Id, Name=Caption, Tag }` を設定 (SetModelAsync(ModelItem) 経由の選択と同一構造)
+  - ビルド成功 (CodeEditor2AiPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2AiPlugin `e8aab08`、メイン `6049320` (submodule pointer 更新)
+
 - OpenRouterChat.GetAvailableModels を OpenRouterModels.cs から動的生成に変更 → 実装完了 (ビルド成功、コミット済み)
   - `OpenRouterModels.cs` に `GetAllModels()` を新設: static `Model` フィールドをリフレクション (`Public | Static` + `MetadataToken` 順) で宣言順に列挙。モデル追加時にリスト二重管理が不要に
   - `OpenRouterChat.cs` `GetAvailableModels()` のハードコード ModelItem リストを削除し、`GetAllModels()` → `new ModelItem { Id = model.Name, Name = model.Caption, Tag = model }` に置換 (全17モデルが自動反映、`SetModelAsync(ModelItem)` の Tag 互換は維持)
