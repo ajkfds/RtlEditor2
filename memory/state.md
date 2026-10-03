@@ -2,6 +2,13 @@
 
 ## 進行中タスク
 
+- verilog parser string system defined method bug (a.atoreal() が undefined function) → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `Primary.parseCreate` の built-in method call 分岐 (L347) が `targetElement is DataObjects.Variables.Object` (class object のみ) を条件としていたため、`string a; a.atoreal()` のような組み込み型変数のメソッド呼び出し (`targetElement` は `Variables.String`) にマッチせず fall-through → "undefined function" 誤エラー
+  - 解決経路の確認: `NameReference.GetElement` → `searchElement(variable)` → `String.NamedElements` (遅延評価) → `StringType.AppendChiledNamedElements` に atoreal/itoa 等が登録済み → `element = BuiltInMethod` としては正しく解決されていた (分岐条件のみの問題)
+  - 修正: `Primary.cs` の条件を `targetElement is DataObjects.DataObject` に緩和 (`BuiltinMethodCall.ParseCreate` は `dataObject.NamedElements` 参照のみで汎用動作)。class object (randomize/srandom) は従来どおり動作し、string (atoreal/itoa等) / enum (first/name等) の built-in method も同時に対応
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `980d171` "Support built-in method calls on any data object (string.atoreal(), enum.first(), ...)"
+
 - verilog parser implicit port 認識bug → 実装完了 (ビルド成功、コミット済み)
   - 原因: `test mod(a, b, c);` (ordered port connection) は `parseOrderedPortConnections` → `Expression.ParseCreate` (acceptmplicitNet=false) で解析され、未定義識別子 c が implicit net 生成ロジック (`Primary.parseCreate` の `acceptImplicitNet && element == null && CanBeImplecitNet` 分岐) に到達せず "unfound object" エラーになっていた。named connection (`.c()`) は `ParseCreateAcceptImplicitNet` を使用するため正常
   - 修正: `ModuleInstantiation.parseOrderedPortConnections` の2箇所の `Expression.ParseCreate(word, nameSpace)` を `Expression.ParseCreateAcceptImplicitNet(word, nameSpace, false)` に変更 (入出力両方の implicit net を許容する設計とする。named connection と同一挙動)
