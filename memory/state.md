@@ -2,6 +2,49 @@
 
 ## 進行中タスク
 
+- verilog parser implicit port 認識bug → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `test mod(a, b, c);` (ordered port connection) は `parseOrderedPortConnections` → `Expression.ParseCreate` (acceptmplicitNet=false) で解析され、未定義識別子 c が implicit net 生成ロジック (`Primary.parseCreate` の `acceptImplicitNet && element == null && CanBeImplecitNet` 分岐) に到達せず "unfound object" エラーになっていた。named connection (`.c()`) は `ParseCreateAcceptImplicitNet` を使用するため正常
+  - 修正: `ModuleInstantiation.parseOrderedPortConnections` の2箇所の `Expression.ParseCreate(word, nameSpace)` を `Expression.ParseCreateAcceptImplicitNet(word, nameSpace, false)` に変更 (入出力両方の implicit net を許容する設計とする。named connection と同一挙動)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `0aa4d48` "Accept implicit net in ordered port connections (test mod(a, b, c))"
+
+## 旧記録 (解析完了)
+下記のコードで、cをimplicit netと認識せず、undefined objectと判断してしまう
+``` verilog
+/*
+:name: implicit_port_connection
+:description: implicit port connection tests
+:tags: 6.10
+*/
+module top();
+	wire a = 1;
+	wire b = 0;
+	wire d;
+
+	test mod(a, b, c);
+
+	assign d = c;
+endmodule
+
+module test(input a, input b, output c);
+	assign c = a | b;
+endmodule
+```
+- verilog parser string system defined method bug
+下記のコードでatoreal()がundefined functionになる
+```Verilog
+/*
+:name: string_atoreal
+:description: string.atoreal()  tests
+:tags: 6.16.10
+:unsynthesizable: 1
+*/
+module top();
+	string a = "4.76";
+	real b = a.atoreal();
+endmodule
+```
+
 - `endinterface : name` 付き interface で body item (logic [7:0] DATA; 等) があると parse 失敗する問題を修正 → 実装完了 (ビルド成功、コミット済み)
   - 原因: Interface.parseInterfaceItems の item ループ先頭に endinterface チェックがなく、`;` 消費直後のチェック (L399) は body が空の場合しか機能しない。body item parse 後に word が endinterface に到達すると、ModuleCommonItem.ParseAsync L114 の labeled concurrent assertion ヒューリスティック (`IsSimpleIdentifier && NextText == ":"`) が `endinterface : IF_BUS_X` に誤マッチし、ConcurrentAssertionItemExceptCheckerInstantiation が blockIdentifier="endinterface" として endinterface と `:` を消費。その後 IF_BUS_X が illegal interface item となり復帰後 EOF に到達 → "endmodule expected" エラーで parse 失敗
   - 修正1 (Interface.cs): parseInterfaceItems の item ループ先頭に `if (word.Text == "endinterface") break;` を追加
