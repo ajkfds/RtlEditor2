@@ -1,6 +1,114 @@
 # 作業状態 (State)
 
+## 未解決課題
+
+- concat_op-bit_select error
+下記のsystem verilog codeのparse時にconcat_bit select部でエラーが出る 
+```
+/*
+:name: concat_op-bit_select
+:description: concatenation operator w/ bit selection test
+:tags: 11.4.12
+*/
+module top();
+
+  bit [3:0] a;
+
+  bit [7:0] b = 8'b10101100;
+  bit [7:0] c = 8'b01010011;
+
+  initial begin
+	a = {b, c}[9:6];
+  end
+
+endmodule
+```
+
+- unpack_stream_pad error
+
+下記のsystemverilog codeの{<<{a, b, c}}の最後の｝の位置でillegal streaming concatenation エラーが出る
+/*
+:name: unpack_stream_pad
+:description: padded stream unpack test
+:tags: 11.4.14.3
+*/
+module top();
+
+int a = 1;
+int b = 2;
+int c = 3;
+
+initial begin
+	bit [127:0] d = {<<{a, b, c}};
+end
+
+endmodule
+
+- systemverilog union未対応
+
+- systemverilog clocking_block未対応
+下記の#10ns #5nsの位置でillegal identifier errorが出る
+
+/*
+:name: clocking_block
+:description: clocking block test
+:tags: 14.3
+:unsynthesizable: 1
+*/
+module top(input clk);
+
+clocking ck1 @(posedge clk);
+	default input #10ns output #5ns;
+endclocking
+
+endmodule
+
+- Systemverilog associatibe array bug
+
+下記のコードでarraya[ 0 ] のような箇所でillegal rangeエラーが出る。
+/*
+:name: associative-arrays-as-arguments
+:description: Test passing associative array as arugments support
+:tags: 7.9.10 7.8
+:type: simulation elaboration parsing
+:unsynthesizable: 1
+*/
+module top ();
+
+string arraya[int];
+
+task fun (string arrayb[int]);
+	arrayb[ 1 ] = "d";
+	$display(":assert: (('%s' == 'a') and ('%s' == 'd') and ('%s' == 'c'))",
+		arrayb[0], arrayb[1], arrayb[2]);
+endtask
+
+initial begin
+	arraya[ 0 ] = "a";
+	arraya[ 1 ] = "b";
+	arraya[ 2 ] = "c";
+
+	$display(":assert: (('%s' == 'a') and ('%s' == 'b') and ('%s' == 'c'))",
+		arraya[0], arraya[1], arraya[2]);
+
+	fun(arraya);
+
+	$display(":assert: (('%s' == 'a') and ('%s' == 'b') and ('%s' == 'c'))",
+		arraya[0], arraya[1], arraya[2]);
+end
+
+endmodule
+
+
 ## 進行中タスク
+
+- unpack_stream_pad error → 解析完了 (作業ツリーの壊れた修正も修復、ビルド成功、コミット済み)
+  - 問題: `{<<{a, b, c}}` (slice_size 省略形の streaming_concatenation) の最後の `}` で "illegal streaming concatenation" エラー
+  - 解析: `StreamingConcatenation.ParseCreate` は slice_size 解析を無条件に実行し、`{` 直前チェックがなかったため、slice_size の expression parse が内側の `{` を不正消費/誤解析して stream_concatenation の `}` チェックに失敗していた
+  - 作業ツリー状態: 前回の修正試みが未完のまま (ParseCreate 側の `else` ブロック未閉鎖 CS1513、ParseCreateWithFirstExpression 側の余分な `}` CS1519) でビルド破損していた → 修復
+  - 修正内容: `ParseCreate` 側は `word.GetCharAt(0) == '{'` 時に slice_size 解析を skip し else ブロックを正しく閉鎖 (stream_concatenation 解析は共通後続コードで実行)。`ParseCreateWithFirstExpression` 側も同条件化 (`word.GetCharAt(0) != '{'` で slice_size 解析 skip) し余分な `}` を削除
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 512 warnings は既存)
+  - Next: `{<<{a, b, c}}` の動作確認 (エディタ上での parse 確認)
 
 - verilog parser string system defined method bug (a.atoreal() が undefined function) → 実装完了 (ビルド成功、コミット済み)
   - 原因: `Primary.parseCreate` の built-in method call 分岐 (L347) が `targetElement is DataObjects.Variables.Object` (class object のみ) を条件としていたため、`string a; a.atoreal()` のような組み込み型変数のメソッド呼び出し (`targetElement` は `Variables.String`) にマッチせず fall-through → "undefined function" 誤エラー
