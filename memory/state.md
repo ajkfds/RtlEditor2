@@ -46,22 +46,12 @@ endmodule
 
 - systemverilog union未対応
 
-- systemverilog clocking_block未対応
-下記の#10ns #5nsの位置でillegal identifier errorが出る
-
-/*
-:name: clocking_block
-:description: clocking block test
-:tags: 14.3
-:unsynthesizable: 1
-*/
-module top(input clk);
-
-clocking ck1 @(posedge clk);
-	default input #10ns output #5ns;
-endclocking
-
-endmodule
+- systemverilog clocking_block → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `Clocking.cs` の clocking_item 解析が `clocking_direction` 直後の clocking_skew (`default input #10ns output #5ns;` の skew 部分) に未対応で、`#` / `10ns` トークンが信号名解析ループに落ち "illegal identifier" エラー (トークナイザは `10ns` を1トークンとして正しく消費済み)
+  - 修正: `parseClockingSkew` helper を新設 (`#` / `##` + number[time_unit] / `#(...)` を消費し delay expression を返す)、`input` / `output` case 直後に呼び出し。信号名ループと外側ループに next direction keyword (`input/output/inout`) 検出時の break/continue ガードを追加 (`;` を挟まない item 連鎖に対応)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `e411f50` "Support clocking_skew in clocking item direction (default input #10ns output #5ns)"
+  - Next: エディタ上での clocking_block parse 動作確認
 
 - Systemverilog associatibe array bug
 
