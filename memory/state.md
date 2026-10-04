@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- `@seq` (sequence identifier への event control) の "unfound object" エラー → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `sequence seq; ... endsequence` 宣言に対する `@seq y = 1;` で "unfound object" エラー
+  - 原因: `sequence` 宣言は `PackageOrGenerateItemDeclaration` で `nameSpace.NamedElements` に登録されるが、`Primary.parseCreate` に `SequenceDeclaration` / `PropertyDeclaration` を参照として受理する分岐がなく fall-through → "unfound object" 誤エラー
+  - 修正: `Verilog/Expressions/SequenceReference.cs` を新設 (Primary 派生の参照クラス)、`Primary.parseCreate` に `element is SequenceDeclaration || element is PropertyDeclaration` 分岐を追加 (`event_control ::= @ ps_or_hierarchical_sequence_identifier` 対応)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 513 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `c853a17`
+  - Next: エディタ上で `sequence seq; @(posedge clk) a ##1 b ##1 c; endsequence` + `@seq y = 1;` の parse 動作確認
+
 - wait statement + procedural_timing_control_statement の "expected ;" エラー → 実装完了 (ビルド成功、コミット済み)
   - 問題: `wait (enable) #10 a = b;` の sub-statement (procedural_timing_control_statement は自身の `;` を消費済み) の後に WaitStatement がさらに `;` を要求し `end` 位置で "expected ;" エラー
   - 修正: `WaitStatement.ParseCreate` の sub-statement 存在時は追加 `;` チェックを廃止 (statement_or_null は自身の `;` を消費)。sub-statement parse 失敗時のみエラー復帰として `;` チェックを維持
