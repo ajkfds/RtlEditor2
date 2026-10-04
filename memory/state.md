@@ -2,6 +2,22 @@
 
 ## 未解決課題
 
+- class/interface/interfaceclass/program の parameter_port_list で `parameter` keyword 以外の形式 (例: `class Foo #(int N, int P);`) がエラー → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `class Foo #(int N, int P);` の `int` 位置でエラー。Class / Interface / InterfaceClass / Program の parameter port list 解析は `parameter` keyword 形式のみ対応で、`#(int N, int P)` (data_type list_of_param_assignments 形式の parameter_port_declaration) に未対応
+  - 修正 (4ファイル): Module.cs で前回実装済みの同一パターンを横展開。parameter port list ループに (1) `)` 即 break (`#()` 空かっこ対応)、(2) identifier 検出時 `DataTypeFactory.ParseCreate` 先行 probe (Clone 位置比較) → 型 keyword 消費なしは implicit 型の `list_of_param_assignments`、消費時は `data_type list_of_param_assignments` として `Constants.ParseCreateParamAssignmentsForPort` 呼び出し、(3) その他トークンは1トークン消費のエラー復帰 を追加
+  - 対象: `Verilog/BuildingBlocks/Class.cs` / `Interface.cs` / `InterfaceClass.cs` / `Program.cs`
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `15bfd49`
+  - Next: エディタ上で `class Foo #(int N, int P);` の parse 動作確認
+
+- module parameter_port_list の `list_of_param_assignments` / 空かっこ未対応 → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `parameter_port_list ::= # ( list_of_param_assignments { , parameter_port_declaration } ) | # ( parameter_port_declaration { , parameter_port_declaration } ) | # ( )` のうち、`parameter` keyword で始まる `parameter_port_declaration` 形式のみ対応しており、`#(A = 1)` (list_of_param_assignments) / `#()` (空かっこ) / `#(int A = 2)` (implicit 型なし parameter_port_declaration) でエラー
+  - 修正1 (Module.cs): parameter port list ループ冒頭に `)` 即 break を追加 (`#()` 空かっこ対応)。`parameter` keyword 以外の identifier 検出時、`DataTypeFactory.ParseCreate` を先行 probe (Clone 位置比較) し、型 keyword 消費なしの場合は implicit 型の `list_of_param_assignments`、消費した場合は `data_type list_of_param_assignments` として解析。それ以外のトークンは1トークン消費のエラー復帰
+  - 修正2 (Constants.cs): `ParseCreateParamAssignmentsForPort` helper を新設 (`param_assignment { , param_assignment }` 解析、identifier { unpacked_dimension } [= constant_param_expression]。type 推定は ParseCreateDeclarationForPort と同一規則、PortParameterNameList 登録済み)。Module.cs から呼び出し
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 514 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `0f29787`
+  - Next: エディタ上で `module m #(A = 1, int B = 2, localparam C = 3) (...)` 等の parse 動作確認
+
 - `default clocking @(posedge clk);` の無名 clocking 宣言で `@` 位置のエラー → 実装完了 (ビルド成功、コミット済み)
   - 問題: `default clocking @(posedge clk); default input #10ns output #5ns; endclocking` が `@(posedge` 位置でエラー
   - 原因: `Clocking.ParseDefaultClocking` は `default clocking clocking_identifier ;` (既存名付き clocking への参照形式) のみ対応で、`default` keyword を含む clocking_declaration (宣言形式) が `@` で "illegal clocking identifier" エラー
