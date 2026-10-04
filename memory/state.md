@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- `default clocking @(posedge clk);` の無名 clocking 宣言で `@` 位置のエラー → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `default clocking @(posedge clk); default input #10ns output #5ns; endclocking` が `@(posedge` 位置でエラー
+  - 原因: `Clocking.ParseDefaultClocking` は `default clocking clocking_identifier ;` (既存名付き clocking への参照形式) のみ対応で、`default` keyword を含む clocking_declaration (宣言形式) が `@` で "illegal clocking identifier" エラー
+  - 修正: `ParseDefaultClocking` 冒頭に `WordScanner.Clone(false)` 先行 probe を追加し、`default clocking` 直後が identifier + `;` でない (宣言形式) 場合は `ParseCreate` に丸ごと委譲 (`[ default ] clocking ...` BNF 対応)。参照形式 (`default clocking cb;`) は従来どおり
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 513 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `9d07eb2`
+  - Next: エディタ上で `default clocking @(posedge clk);` の parse 動作確認
+
 - `@seq` (sequence identifier への event control) の "unfound object" エラー → 実装完了 (ビルド成功、コミット済み)
   - 問題: `sequence seq; ... endsequence` 宣言に対する `@seq y = 1;` で "unfound object" エラー
   - 原因: `sequence` 宣言は `PackageOrGenerateItemDeclaration` で `nameSpace.NamedElements` に登録されるが、`Primary.parseCreate` に `SequenceDeclaration` / `PropertyDeclaration` を参照として受理する分岐がなく fall-through → "unfound object" 誤エラー
