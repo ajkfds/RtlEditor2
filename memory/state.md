@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- tagged union の void member (`void Invalid;`) parse エラー → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `typedef union tagged { void Invalid; int Valid; } u_int;` が void member の位置で parse 失敗
+  - 原因: `StructType.parseMembers` が `void` を消費した後 `dataType == null` のまま identifier を消費し、`if (dataType == null) return false;` で member ループ中断 → `}` チェック失敗
+  - 修正: `StructType.parseMembers` に `isVoid` フラグを追加し、void member は identifier (と次 `,` まで) を消費して Member 登録なしで正常継続 (BNF `data_type_or_void ::= data_type | "void"` は tagged union member として正当)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 513 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `6ce3de1`
+  - Next: エディタ上で `typedef union tagged { void Invalid; int Valid; } u_int;` の parse 動作確認
+
 - concat_op-bit_select error
 下記のsystem verilog codeのparse時にconcat_bit select部でエラーが出る 
 ```
@@ -24,27 +32,17 @@ module top();
 endmodule
 ```
 
-- unpack_stream_pad error
-
-下記のsystemverilog codeの{<<{a, b, c}}の最後の｝の位置でillegal streaming concatenation エラーが出る
-/*
-:name: unpack_stream_pad
-:description: padded stream unpack test
-:tags: 11.4.14.3
-*/
-module top();
-
-int a = 1;
-int b = 2;
-int c = 3;
-
-initial begin
-	bit [127:0] d = {<<{a, b, c}};
-end
-
-endmodule
-
-- systemverilog union未対応
+- systemverilog union未対応 → 実装完了 (ビルド成功、コミット済み)
+  - 実装内容:
+    - `Verilog/DataObjects/DataTypes/UnionType.cs` を新設: `StructType` 派生クラス。`union [ tagged ] [ packed [ signing ] ] { members } { packed_dimension }` を parse (parse コアは StructType.parseCommon を共通化して横展開)。`Type = DataTypeEnum.Union`、`BitWidth` はメンバの最大幅 (union セマンティクス)、hover 用 `AppendTypeLabel` は union 表記
+    - `StructType.cs` リファクタ: protected コンストラクタ化 + `parseCommon` 抽出 (tagged/packed/signed/members 解析を struct/union 共通化)、`IsUnion` フラグ追加、`BitWidth` / `AppendTypeLabel` を virtual 化
+    - `DataTypeFactory.cs`: `DataTypeEnum` に `Union` を追加、`ParseCreate` switch に `case "union"` を追加
+    - `DataObject.Create` / `Variable.Create`: `DataTypeEnum.Union` を Struct と同一経路 (Variables.Struct) で生成 (UnionType は StructType 派生のため既存の member access / part select 機構がそのまま動作)
+    - `Module.cs`: implicit net 判定 keyword リストに "union" を追加
+  - 対応範囲: packed/unpacked union 宣言、typedef による named union、member access、packed union の part select、hover 表示 (union メンバ一覧)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 513 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `35058c3`
+  - Next: エディタ上で `typedef union packed { ... } u_t;` 等の parse 動作確認
 
 - systemverilog clocking_block → 実装完了 (ビルド成功、コミット済み)
   - 原因: `Clocking.cs` の clocking_item 解析が `clocking_direction` 直後の clocking_skew (`default input #10ns output #5ns;` の skew 部分) に未対応で、`#` / `10ns` トークンが信号名解析ループに落ち "illegal identifier" エラー (トークナイザは `10ns` を1トークンとして正しく消費済み)
@@ -53,9 +51,12 @@ endmodule
   - コミット: CodeEditor2VerilogPlugin `e411f50` "Support clocking_skew in clocking item direction (default input #10ns output #5ns)"
   - Next: エディタ上での clocking_block parse 動作確認
 
-- Systemverilog associatibe array bug
-
-下記のコードでarraya[ 0 ] のような箇所でillegal rangeエラーが出る。
+- Systemverilog associatibe array bug → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `DataObjectReference.ParseCreate` の `[` 添字解析経路に associative/dynamic/queue array の index select が存在せず、UnpackedArrays 登録なし (associative array) / Packable でない (index 次元) ですべての分岐を通過した後に `[` が残り、末尾の fall-through 分岐 (L475) で "illegal range" エラー
+  - 修正: `DataObjectReference.cs` に index select 解析分岐を追加 (`[` + indexExpression + `]` を消費、TargetDataObject が AssociativeArray / DynamicArray / Queue の場合に有効)。解析失敗時は "illegal index expression" エラー + `]`/`;` まで skip で復帰
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 684 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `c84fcac`
+  - Next: エディタ上での `arraya[ 0 ]` parse 動作確認
 /*
 :name: associative-arrays-as-arguments
 :description: Test passing associative array as arugments support
@@ -92,7 +93,7 @@ endmodule
 
 ## 進行中タスク
 
-- unpack_stream_pad error → 解析完了 (作業ツリーの壊れた修正も修復、ビルド成功、コミット済み)
+- unpack_stream_pad error → 完了 (動作確認済み `{<<{a, b, c}}` が正常 parse されることを確認、ユーザ報告)。解析完了 (作業ツリーの壊れた修正も修復、ビルド成功、コミット済み)
   - 問題: `{<<{a, b, c}}` (slice_size 省略形の streaming_concatenation) の最後の `}` で "illegal streaming concatenation" エラー
   - 解析: `StreamingConcatenation.ParseCreate` は slice_size 解析を無条件に実行し、`{` 直前チェックがなかったため、slice_size の expression parse が内側の `{` を不正消費/誤解析して stream_concatenation の `}` チェックに失敗していた
   - 作業ツリー状態: 前回の修正試みが未完のまま (ParseCreate 側の `else` ブロック未閉鎖 CS1513、ParseCreateWithFirstExpression 側の余分な `}` CS1519) でビルド破損していた → 修復
@@ -860,6 +861,14 @@ endmodule
   - ビルド成功 (`RtlEditor2.Desktop.csproj`, 0 errors)
   - コミット: CodeEditor2 (このターンで作成予定)
   - メモ: 各プラグイン側 (例: Verilog) の `GetPopupItem` / `CarletPopupItems` / `MouseOverPopupItems` への出力は今後も必要だが、本ターンは CodeEditor2 (メインディレクトリ) 側の infrastructure のみ整えた
+
+- class の parameter_value_assignment (C #(int) obj) 対応 → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `DataTypeFactory.ParseCreate` の Class / InterfaceClass 分岐が class 名消費後に即 return し、直後の `#(...)` (parameter_value_assignment) を解析しないため `C #(int) obj;` で "illegal identifier" エラー
+  - 修正 (DataTypeFactory.cs): Class (ローカル解決) / Class (UnitNameSpace 解決) / InterfaceClass (ローカル解決) / InterfaceClass (DefinitionNameSpace 解決) の4分岐で、identifier 消費後に `#` 検出時 `ParameterValueAssignment.ParseCreate` を呼び出し (ModuleInstantiation と同一パターン)。Class 分岐では override 対象 parameter の definition reference に override 値の hint を付与
+  - 実装範囲の注記: module instance の `GetInstancedBuildingBlock` (定義の override 付き再 parse による per-instance Module 生成) は Data 層の VerilogModuleInstance 機構に依存し、class には相当機構が存在しないため未実装。参照解決は name-based のため `C #(int) obj;` は parse・解決とも動作するが、parameter 値の違いによる型差 (C#(int) と C#(byte) の区別) は未反映。per-instance class clone は将来課題 (Data 層に class instance wrapper 新設が必要)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 512 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `3ade0b1`
+  - Next: エディタ上で `class C #(type T = int);` + `C #(int) obj;` の parse 動作確認
 
 ## Next Steps
 
