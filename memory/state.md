@@ -2,6 +2,13 @@
 
 ## 未解決課題
 
+- wait statement + procedural_timing_control_statement の "expected ;" エラー → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `wait (enable) #10 a = b;` の sub-statement (procedural_timing_control_statement は自身の `;` を消費済み) の後に WaitStatement がさらに `;` を要求し `end` 位置で "expected ;" エラー
+  - 修正: `WaitStatement.ParseCreate` の sub-statement 存在時は追加 `;` チェックを廃止 (statement_or_null は自身の `;` を消費)。sub-statement parse 失敗時のみエラー復帰として `;` チェックを維持
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 513 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `ba65ece`
+  - Next: エディタ上で `wait (enable) #10 a = b;` の parse 動作確認
+
 - tagged union の void member (`void Invalid;`) parse エラー → 実装完了 (ビルド成功、コミット済み)
   - 問題: `typedef union tagged { void Invalid; int Valid; } u_int;` が void member の位置で parse 失敗
   - 原因: `StructType.parseMembers` が `void` を消費した後 `dataType == null` のまま identifier を消費し、`if (dataType == null) return false;` で member ループ中断 → `}` チェック失敗
