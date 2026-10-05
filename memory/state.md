@@ -170,6 +170,13 @@ endmodule
 
 ## 進行中タスク
 
+- TextFile初回読み込み直後の Ctrl+Z でファイルが空になる問題 → 実装完了 (ビルド成功、コミット済み)
+  - 問題: TextFile を最初に読み込んだ直後に Ctrl+Z するとファイル内容が全消えする
+  - 原因: `FileCheckAsync` の initialLoad 経路 / `FileCheckBackgroundAsync` の外部変更 reload 経路 (UI thread / background 両方) が `doc.TextDocument.Replace(0, TextLength, text)` で全テキストを挿入しており、この挿入が AvaloniaEdit UndoStack に「全テキスト挿入」として記録される。初回読み込み直後の undo でこの挿入が取り消され空ファイルになった
+  - 修正 (TextFile.cs): 3箇所の全テキスト Replace 後に `doc.ClearHistory()` (UndoStack.ClearAll) を追加 (initialLoad / reload UI thread / reload background)。読み込み・外部 reload による置換を undo 対象から除外
+  - ビルド成功 (CodeEditor2.csproj, 0 errors / 172 warnings は既存)
+  - Next: エディタ上で初回読み込み直後の Ctrl+Z 動作確認 (undo が効かない＝空にならないこと)
+
 - unpack_stream_pad error → 完了 (動作確認済み `{<<{a, b, c}}` が正常 parse されることを確認、ユーザ報告)。解析完了 (作業ツリーの壊れた修正も修復、ビルド成功、コミット済み)
   - 問題: `{<<{a, b, c}}` (slice_size 省略形の streaming_concatenation) の最後の `}` で "illegal streaming concatenation" エラー
   - 解析: `StreamingConcatenation.ParseCreate` は slice_size 解析を無条件に実行し、`{` 直前チェックがなかったため、slice_size の expression parse が内側の `{` を不正消費/誤解析して stream_concatenation の `}` チェックに失敗していた
