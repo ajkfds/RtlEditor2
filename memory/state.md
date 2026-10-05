@@ -2,6 +2,15 @@
 
 ## 未解決課題
 
+- case ... matches の case_pattern_item (`tagged a '{.v, 0}` 等) の parse エラー → 実装完了 (ビルド成功)
+  - 問題: `case (tmp) matches` 内の `tagged a '{.v, 0}` / `tagged a '{.v1, .v2}` / `tagged c '{0, .v}` で tagged / pattern 位置にエラー
+  - 原因: (1) `matches` が keyword として AddSystemVerilogError の誤エラー対象 (2) case item 解析が pattern 非対応 (`case_pattern_item ::= pattern [ &&& expression ] : statement_or_null` 未実装) (3) `'{.v, ...}` の pattern variable (`.v`) を expression 解析できず
+  - 修正1 (`Verilog/Expressions/CasePattern.cs` 新設): `PatternVariable` (`.v` pattern variable、未宣言なら implicit variable として nameSpace に bind) / `TaggedPattern` (`tagged [ unique ] union_member_identifier [ pattern ]`) / `CasePatternParser.ParsePattern` (pattern ::= constant_expression | assignment_pattern | tagged_pattern の dispatcher) を実装
+  - 修正2 (`Verilog/DataObjects/AssignmentPattern.cs`): `ParseCreate` / `parseCreate` 系に `patternMode` 引数を追加 (patternMode 時は要素解析を CasePatternParser.ParsePattern に委譲し `.v` / tagged / constant を受理)
+  - 修正3 (`Verilog/Statements/CaseStatement.cs`): matches 時の AddSystemVerilogError を削除、`CaseItem.ParseCreatePattern` を新設 (pattern + [ &&& expression ] + `:` + statement_or_null 解析)、case item ループで IsMatchesMode 時に振り分け
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で `case (tmp) matches ... tagged a '{.v, 0} : $display("a %d", v);` の parse 動作確認
+
 - localparam の前方参照 function call (`localparam a = fun(3);` が function 宣言より前方) で "=" 位置に "; expected" エラー → 実装完了 (ビルド成功)
   - 問題: `localparam a = fun(3);` が `function int fun(int val);` より前にあると `=` 位置で "; expected" エラー (const_function テストコード)
   - 原因: parse 時点で `fun` が NamedElements に未登録のため `Primary.parseCreate` の `element == null` 経路 (L306) が識別子 `fun` のみを消費して return。残った `(3)` が `Constants.ParseCreateDeclaration` の `;` チェックに失敗し "; expected" エラー。既存の `parseUndefinedFunction` (識別子 + 引数リストを消費して ReparseRequested を立てる正しい回復処理) は `element != null` の L387 経路のみで到達不可
