@@ -2,6 +2,23 @@
 
 ## 未解決課題
 
+- マクロ呼び出し (引数付き) の閉じ括弧 `)` 未消費による parse エラー → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `` `define D(x,y) initial $display("start", x , y, "end"); `` に対する `` `D( "msg1" , "msg2" ) `` の最後の `)` 位置で parse エラー
+  - 原因: `WordScanner.parseMacroArguments` (WordScanner.cs) の引数ループが閉じ括弧 `)` を検出時に break して消費せず戻るため、`parseMacro` 復帰後も元ドキュメントの `wordPointer` が `)` を指したまま。マクロ本文解析完了後 `returnHierarchy` で元ドキュメントに復帰すると孤立した `)` が module 本体に残り parse エラー (未定義マクロ経路 L1095-1109 では `)` を消費済みで、定義済みマクロ経路のみ漏れ)
+  - 修正: `parseMacroArguments` の引数ループ後に `wordPointer.Text == ")"` なら `MoveNext()` で消費する分岐を追加
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `1362d6d`
+  - Next: エディタ上で `` `D( "msg1" , "msg2" ) `` の parse 動作確認
+
+- マクロ formal argument の default 値 (`a=5`) / 空実引数 (`MACRO1( , 2, )`) 対応 → 実装完了 (ビルド成功、コミット済み)
+  - 対応前の問題: (1) `Macro.Create` が formal argument を `Split(',')` + trim のみで `a=5` 全体が argument 名になっていた (default 機構なし) (2) 空実引数は `""` として収集されるが default 値への置換なし (3) 既存の `string.Replace` 置換は引数名が他 token に埋め込まれた場合 (例: `$display` 中の `a`) も置換してしまう word-boundary 問題
+  - 修正1 (`Verilog/Macro.cs`): formal argument の `=` 以降を default 値として分離し `ArgumentDefaults` (引数毎の default 値リスト、null = default なし) に保持。word-boundary 置換 helper `Macro.ReplaceArgument(text, argumentName, actualText)` を新設 (識別子単位 `[A-Za-z_$][A-Za-z0-9_$]*` でのみ一致)
+  - 修正2 (`Verilog/WordScanner.cs` `parseMacroArguments`): 置換を `Macro.ReplaceArgument` の2段階方式に変更 (第1段: formal argument → placeholder `\0XXXX`、第2段: placeholder → 実引数)。空実引数かつ formal argument に default 値がある場合は default 値を使用
+  - テスト対象: `` `define MACRO1(a=5,b="B",c) initial $display(a,,b,,c); `` + `` `MACRO1 ( , 2, ) `` (a→default 5, b→2, c→default "B")
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `bbc3b8a`
+  - Next: エディタ上で `` `MACRO1 ( , 2, ) `` の parse 動作確認
+
 - SystemVerilog mailbox 対応 → 実装完了 (ビルド成功、コミット済み)
   - `Verilog/DataObjects/DataTypes/MailboxType.cs` 新設: IDataType 実装 (`DataTypeEnum.Mailbox`)、AppendChiledNamedElements で mailbox built-in methods (num/put/get/try_put/try_get/peek/try_peek、IEEE 1800-2017 section 15.4) を BuiltInMethod として登録
   - `Verilog/DataObjects/Variables/Mailbox.cs` 新設: Variable 派生、NamedElements は DataType 経由の遅延解決 (String と同一パターン)
@@ -13,6 +30,10 @@
   - Next: エディタ上で `mailbox mb; mb.put(...)` / `mb.get(...)` の parse・autocomplete 動作確認
 
 - SplashWindow の history 右クリックメニュー (Delete / Rename) → 実装完了 (ビルド成功、コミット済み)
+  - 追加修正: createHistoryContextMenu 内 historyTarget[button] の KeyNotFoundException → 修正完了 (ビルド成功、コミット済み)
+    - 原因: createHistoryButtons の L47-48 で createHistoryContextMenu(button) が historyTarget.Add(button, history) より前に呼ばれ、メソッド内の historyTarget[button] 参照時にキー未登録
+    - 修正: historyTarget.Add を createHistoryContextMenu 呼び出し前に移動
+    - コミット: CodeEditor2 `c28b357`
   - `Views/SplashWindow.axaml.cs`:
     - ボタン生成を `createHistoryButtons()` に切り出し (Rename/Delete 後の再描画用、Children.Clear + historyTarget.Clear)
     - 各 history ボタンに `ContextMenu` を設定 (`createHistoryContextMenu`)。MenuItem Click で対象 history をクロージャキャプチャ (Avalonia の ContextMenu に Target プロパティが存在しないため sender 経由は不使用)
