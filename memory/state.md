@@ -2,6 +2,26 @@
 
 ## 未解決課題
 
+- SystemVerilog mailbox 対応 → 実装完了 (ビルド成功、コミット済み)
+  - `Verilog/DataObjects/DataTypes/MailboxType.cs` 新設: IDataType 実装 (`DataTypeEnum.Mailbox`)、AppendChiledNamedElements で mailbox built-in methods (num/put/get/try_put/try_get/peek/try_peek、IEEE 1800-2017 section 15.4) を BuiltInMethod として登録
+  - `Verilog/DataObjects/Variables/Mailbox.cs` 新設: Variable 派生、NamedElements は DataType 経由の遅延解決 (String と同一パターン)
+  - `DataTypeFactory.cs`: `DataTypeEnum.Mailbox` 追加 + `case "mailbox"` 分岐
+  - `DataObject.Create` / `Variable.Create`: `DataTypeEnum.Mailbox` → `Variables.Mailbox.Create` 分岐追加
+  - `Module.cs` / `Checker.cs`: implicit 型 / 変数宣言 keyword リストに "mailbox" 追加
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `24e1820`、メイン submodule pointer 更新
+  - Next: エディタ上で `mailbox mb; mb.put(...)` / `mb.get(...)` の parse・autocomplete 動作確認
+
+- SplashWindow の history 右クリックメニュー (Delete / Rename) → 実装完了 (ビルド成功、コミット済み)
+  - `Views/SplashWindow.axaml.cs`:
+    - ボタン生成を `createHistoryButtons()` に切り出し (Rename/Delete 後の再描画用、Children.Clear + historyTarget.Clear)
+    - 各 history ボタンに `ContextMenu` を設定 (`createHistoryContextMenu`)。MenuItem Click で対象 history をクロージャキャプチャ (Avalonia の ContextMenu に Target プロパティが存在しないため sender 経由は不使用)
+    - Rename: `Tools.InputWindow` で新名入力 → `history.Name` 更新 + `SaveSetup()` + 再描画 (空文字/同一名はスキップ)
+    - Delete: `Tools.YesNoWindow` で確認 (`Yes` フィールド判定) → `Historys.Remove` + `SaveSetup()` + 再描画
+  - ビルド成功 (CodeEditor2.csproj, 0 errors / 174 warnings は既存)
+  - コミット: CodeEditor2 `c4ed415`
+  - メモ: `CodeEditor2/LLM/InputItem.cs` のユーザ変更はコミットから除外
+
 - ChatControl 自動スクロール → 動作確認完了 (ユーザ報告、問題なし)
 
 - SimulationSetup 残課題の確認 → 確認完了 (TopName 選択は案Cで対応済み)
