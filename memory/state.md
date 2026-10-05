@@ -9,7 +9,11 @@
     - `VerilogModuleInstance.CreateArray` は配列インスタンスを `name[i]` 形式で Items に登録する一方、`SimulationSetup.searchNameSpace` はプレーン名 (`inst`) で lookup するため instance array は lookup miss になる
     - 同一プロジェクト内は `searchHier` の ReferencedDefinitionNameSpace 走査で定義ファイルが収集されるため実害なし
     - 外部プロジェクト参照の instance array のみ、ExternalProjectEntryInstance 登録と外部 sub-setup (pSetup) への再帰走査が欠落 (依存収集漏れの可能性)
-    - 修正候補: TryGetValue 失敗時に InstanceRange があれば `name[i]` (InstanceCount 分) を lookup、または StartsWith fallback → 未実装 (ユーザ指示待ち)
+    - 修正実装 → 完了 (ビルド成功、コミット済み)
+      - `searchNameSpace` の ModuleInstantiation 分岐に instance array fallback を追加: プレーン名 lookup 失敗かつ InstanceRange != null のとき、`name[i]` (i = 0 .. InstanceCount-1) を順に `file.Items` から lookup し、各要素を `searchHier` に渡して外部プロジェクト sub-setup (pSetup) への再帰走査を実現
+      - ExternalProjectEntryInstance 登録に重複チェック追加 (同一パスの複数 array element 登録時の ArgumentException 防止)
+    - コミット: CodeEditor2VerilogPlugin `649d34e`
+    - 残課題: なし (SimulationSetup 残課題はすべて対応完了)
     - 補足: InterfaceInstance には InstanceRange/CreateArray が存在せず interface instance array は Updater 側でも instance 化されない (既知制限)。generate block は NameSpace 再帰分岐で正しく辿れることを確認済み
   - 残課題2 (TopFile 複数 building block 時の TopName 選択): 案C (現状維持 + ドキュメント化) を採用
     - `Create` は BuildingBlocks の最初に宣言された building block を top とする。意図的な挙動として SimulationSetup.cs にコメント追記済み (top-module selector UI は将来拡張候補)
