@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- foreach(test[i]) の "i" でエラー (string 配列) → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `string test [4] = '{"111", ...};` に対する `foreach(test[i])` で `i` 位置にエラー
+  - 原因: `ForeachStatement.ParseCreate` は配列名を `Primary.ParseCreateWoRange` (acceptRange=false) で解析し `[i]` を loop_variables として自前解析する設計だが、`DataObjectReference.parseCreate` の string index select 分岐 (L491) のみ `acceptRange` チェックがなかったため、`test[i]` の `[i]` を string の bit-select として消費してしまう。この時点で `i` は loop variable として未登録のため "unfound object" エラー、さらに `[` が消費済みで foreach 側の loop_variables 解析も破綻
+  - 修正: `Verilog/Expressions/DataObjectReference.cs` の string bit-select while 分岐に `acceptRange` 条件を追加 (acceptRange=false の場合は `[` を消費せず ForeachStatement 側に委ねる)
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `b6a63eb`
+  - Next: エディタ上で `foreach(test[i]) $display(i, test[i]);` の parse 動作確認
+
 - Simulation実行時メニューでデッドロック (UIフリーズ) する問題 → 実装完了 (ビルド成功、コミット済み)
   - 原因1 (無限ループ): `SimulationSetup.Create` のクラス依存探索 `while(true)` ループ (L81-106) が `newClassFiles.Contains` のバッチ内重複チェックのみで `setup.ClassFiles` 全体の重複をチェックしていなかったため、クラス循環参照 (A→B→A / 自己参照) でバッチ間を交互に追加し続け永久ループ。メニュークリック (UI スレッド) から `SimulationTab.Create` → `SimulationSetup.Create` が同期的に呼ばれるため UI スレッドが占有され、さらに背景スレッドの `Dispatcher.UIThread.Invoke` 同期呼び出し (Item.cs / FileNode.cs / FolderNode.cs) までブロックしてデッドロック様フリーズに発展
   - 原因2 (UIスレッド実行): `IcarusVerilogSimulation.RunSimulationAsync` も `SimulationSetup.Create` を再実行 + shell prompt 待ちループを持つが、UI スレッド継続上で実行されていた
