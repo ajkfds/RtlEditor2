@@ -2,6 +2,13 @@
 
 ## 未解決課題
 
+- localparam の前方参照 function call (`localparam a = fun(3);` が function 宣言より前方) で "=" 位置に "; expected" エラー → 実装完了 (ビルド成功)
+  - 問題: `localparam a = fun(3);` が `function int fun(int val);` より前にあると `=` 位置で "; expected" エラー (const_function テストコード)
+  - 原因: parse 時点で `fun` が NamedElements に未登録のため `Primary.parseCreate` の `element == null` 経路 (L306) が識別子 `fun` のみを消費して return。残った `(3)` が `Constants.ParseCreateDeclaration` の `;` チェックに失敗し "; expected" エラー。既存の `parseUndefinedFunction` (識別子 + 引数リストを消費して ReparseRequested を立てる正しい回復処理) は `element != null` の L387 経路のみで到達不可
+  - 修正 (Primary.cs): `element == null` 経路で `word.NextText == "("` の場合は `parseUndefinedFunction` に委譲する分岐を追加 (前方参照の function call でも識別子 + 括弧まで消費し、再 parse で後方の function 宣言が解決される)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で `localparam a = fun(3);` (function 宣言より前方) の parse 動作確認
+
 - tagged union expression (`a = tagged Invalid;` / `b = tagged Valid(42);`) の parse エラー → 実装完了 (ビルド成功)
   - 問題: `typedef union tagged { void Invalid; int Valid; } u_int;` に対する `a = tagged Invalid;` / `b = tagged Valid(42);` が tagged / Invalid / Valid の位置でエラー
   - 原因: `Primary.parseCreate` に tagged_union_expression の解析分岐がなく、`tagged` が keyword リスト (`General.ListOfKeywords`) に含まれるため keyword チェックで null return → fall-through で後続 parse が破綻 (BNF `tagged_union_expression ::= tagged [ unique ] union_member_identifier [ ( expression ) ] { . union_member_identifier [ ( expression ) ] }` 未対応)
