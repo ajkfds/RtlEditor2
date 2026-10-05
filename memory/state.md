@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- tagged union expression (`a = tagged Invalid;` / `b = tagged Valid(42);`) の parse エラー → 実装完了 (ビルド成功)
+  - 問題: `typedef union tagged { void Invalid; int Valid; } u_int;` に対する `a = tagged Invalid;` / `b = tagged Valid(42);` が tagged / Invalid / Valid の位置でエラー
+  - 原因: `Primary.parseCreate` に tagged_union_expression の解析分岐がなく、`tagged` が keyword リスト (`General.ListOfKeywords`) に含まれるため keyword チェックで null return → fall-through で後続 parse が破綻 (BNF `tagged_union_expression ::= tagged [ unique ] union_member_identifier [ ( expression ) ] { . union_member_identifier [ ( expression ) ] }` 未対応)
+  - 修正1 (`Verilog/Expressions/TaggedUnionExpression.cs` 新設): Primary 派生クラス。`tagged [ unique ] union_member_identifier [ ( expression ) ]` + `{ . union_member_identifier [ ( expression ) ] }` を解析 (`ParseCreate`、MemberIdentifier / MemberExpression 保持、AppendLabel / CreateString 対応)
+  - 修正2 (`Primary.cs`): `parseCreate` の keyword チェック前に `tagged` 分岐を追加 (`!lValue` 条件。lValue 位置の tagged は不正)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で `a = tagged Invalid; b = tagged Valid(42); c = a.Valid;` の parse 動作確認
+
 - foreach(test[i]) の "i" でエラー (string 配列) → 実装完了 (ビルド成功、コミット済み)
   - 問題: `string test [4] = '{"111", ...};` に対する `foreach(test[i])` で `i` 位置にエラー
   - 原因: `ForeachStatement.ParseCreate` は配列名を `Primary.ParseCreateWoRange` (acceptRange=false) で解析し `[i]` を loop_variables として自前解析する設計だが、`DataObjectReference.parseCreate` の string index select 分岐 (L491) のみ `acceptRange` チェックがなかったため、`test[i]` の `[i]` を string の bit-select として消費してしまう。この時点で `i` は loop variable として未登録のため "unfound object" エラー、さらに `[` が消費済みで foreach 側の loop_variables 解析も破綻
