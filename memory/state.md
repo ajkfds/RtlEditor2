@@ -248,6 +248,13 @@ endmodule
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 536 warnings は既存)
   - コミット: CodeEditor2VerilogPlugin `e993b87`
   - Next: エディタ上で `int'{1,2,3}` / `type_t'{a:1}` の parse 動作確認。残る追加候補 (2) BitWidth 等の override (3) repetition (4) bracket array key はユーザ指示待ち
+  - 実装2 (Expression override 群) → 実装完了 (ビルド成功、コミット済み)
+    - `AssignmentPattern` に `AppendLabel` / `CreateString` / `AppendString` / `AppendRefrencedDataObjects` を override 実装 (WithKey/WithoutKey 両方の要素を再帰処理、hover 表示・simulation setup の式文字列化・references 解析に反映)
+    - `AssignmentPatternWithoutKey.Expressions` を public 化 (label/string/references 処理から参照)
+    - BitWidth / Constant / Value は構造的に要素ごとに異なるため未設定のまま (誤った型チェックを避けるため null 維持)
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+    - コミット: CodeEditor2VerilogPlugin `64507e4`
+    - Next: エディタ上で `'{a:1, b:2}` / `'{1,2,3}` の hover 表示・references 確認。残る追加候補 (3) repetition (4) bracket array key はユーザ指示待ち
 
 - TextFile初回読み込み直後の Ctrl+Z でファイルが空になる問題 → 実装完了 (ビルド成功、コミット済み)
   - 問題: TextFile を最初に読み込んだ直後に Ctrl+Z するとファイル内容が全消えする
