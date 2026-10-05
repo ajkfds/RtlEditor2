@@ -2,6 +2,18 @@
 
 ## 未解決課題
 
+- SystemVerilog semaphore / wait_order 対応 → 実装完了 (ビルド成功、コミット済み)
+  - semaphore (IEEE 1800-2017 section 20.4): mailbox と同一パターンで実装
+    - `Verilog/DataObjects/DataTypes/SemaphoreType.cs` 新設: IDataType 実装 (`DataTypeEnum.Semaphore`)、AppendChiledNamedElements で semaphore built-in methods (get/try_get/put、keyCount 引数、get/try_get は int 返却) を BuiltInMethod として登録
+    - `Verilog/DataObjects/Variables/Semaphore.cs` 新設: Variable 派生、NamedElements は DataType 経由の遅延解決 (Mailbox と同一パターン)
+    - `DataTypeFactory.cs`: `DataTypeEnum.Semaphore` 追加 + `case "semaphore"` 分岐
+    - `DataObject.Create` / `Variable.Create`: `DataTypeEnum.Semaphore` → `Variables.Semaphore.Create` 分岐追加
+    - `Module.cs` / `Checker.cs`: implicit 型 / 変数宣言 keyword リストに "semaphore" 追加
+  - wait_order: statement 実装は既存 (WaitStatement.parseCreate_wait_order) だったが、`General.ListOfKeywords` に "wait_order" が未登録のため keyword 色付けが効いていなかった → 登録追加
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `37fb2e8`、メイン `300d6bc` (submodule pointer 更新)
+  - Next: エディタ上で `semaphore sem; sem.get(); sem.put(2);` / `wait_order(a, b) $display("ok");` の parse・autocomplete 動作確認
+
 - マクロ呼び出し (引数付き) の閉じ括弧 `)` 未消費による parse エラー → 実装完了 (ビルド成功、コミット済み)
   - 問題: `` `define D(x,y) initial $display("start", x , y, "end"); `` に対する `` `D( "msg1" , "msg2" ) `` の最後の `)` 位置で parse エラー
   - 原因: `WordScanner.parseMacroArguments` (WordScanner.cs) の引数ループが閉じ括弧 `)` を検出時に break して消費せず戻るため、`parseMacro` 復帰後も元ドキュメントの `wordPointer` が `)` を指したまま。マクロ本文解析完了後 `returnHierarchy` で元ドキュメントに復帰すると孤立した `)` が module 本体に残り parse エラー (未定義マクロ経路 L1095-1109 では `)` を消費済みで、定義済みマクロ経路のみ漏れ)
