@@ -58,27 +58,13 @@
   - コミット: CodeEditor2VerilogPlugin `6ce3de1`
   - Next: エディタ上で `typedef union tagged { void Invalid; int Valid; } u_int;` の parse 動作確認
 
-- concat_op-bit_select error
-下記のsystem verilog codeのparse時にconcat_bit select部でエラーが出る 
-```
-/*
-:name: concat_op-bit_select
-:description: concatenation operator w/ bit selection test
-:tags: 11.4.12
-*/
-module top();
-
-  bit [3:0] a;
-
-  bit [7:0] b = 8'b10101100;
-  bit [7:0] c = 8'b01010011;
-
-  initial begin
-	a = {b, c}[9:6];
-  end
-
-endmodule
-```
+- concat_op-bit_select error (`a = {b, c}[9:6];` の concatenation + bit select) → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `Concatenation.ParseCreateConcatenationOrMultipleConcatenation` 返却後に `{b, c}` に対する `[9:6]` (range select) を消費する経路が存在せず、`Expression.parseCreate` に戻った後 `[` が残ってエラー
+  - 修正1 (Primary.cs): `parseCreate` の `{` 分岐で、concat 解析成功後かつ `acceptRange && word.Text == "["` の場合 `RangeExpression.ParseCreate` で range select を解析し新設の `ConcatenationWithRange` でラップ (BNF `primary ::= concatenation [ [ range_expression ] ]` 対応)
+  - 修正2 (Concatenation.cs): `ConcatenationWithRange` (Primary派生) を新設 (BitWidth は range の幅、Constant / Reference / label / CreateString / AssertAssigned / AppendRefrencedDataObjects は内包 primary に委譲)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `1f1a9ce`
+  - Next: エディタ上で `a = {b, c}[9:6];` の parse 動作確認
 
 - systemverilog union未対応 → 実装完了 (ビルド成功、コミット済み)
   - 実装内容:
