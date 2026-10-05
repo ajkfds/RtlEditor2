@@ -2,6 +2,20 @@
 
 ## 未解決課題
 
+- ChatControl 自動スクロール → 動作確認完了 (ユーザ報告、問題なし)
+
+- SimulationSetup 残課題の確認 → 確認完了 (TopName 選択は案Cで対応済み)
+  - 残課題1 (instance array / generate instance 名の file.Items lookup 規則): 確認完了
+    - `VerilogModuleInstance.CreateArray` は配列インスタンスを `name[i]` 形式で Items に登録する一方、`SimulationSetup.searchNameSpace` はプレーン名 (`inst`) で lookup するため instance array は lookup miss になる
+    - 同一プロジェクト内は `searchHier` の ReferencedDefinitionNameSpace 走査で定義ファイルが収集されるため実害なし
+    - 外部プロジェクト参照の instance array のみ、ExternalProjectEntryInstance 登録と外部 sub-setup (pSetup) への再帰走査が欠落 (依存収集漏れの可能性)
+    - 修正候補: TryGetValue 失敗時に InstanceRange があれば `name[i]` (InstanceCount 分) を lookup、または StartsWith fallback → 未実装 (ユーザ指示待ち)
+    - 補足: InterfaceInstance には InstanceRange/CreateArray が存在せず interface instance array は Updater 側でも instance 化されない (既知制限)。generate block は NameSpace 再帰分岐で正しく辿れることを確認済み
+  - 残課題2 (TopFile 複数 building block 時の TopName 選択): 案C (現状維持 + ドキュメント化) を採用
+    - `Create` は BuildingBlocks の最初に宣言された building block を top とする。意図的な挙動として SimulationSetup.cs にコメント追記済み (top-module selector UI は将来拡張候補)
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 696 warnings は既存)
+    - コミット: CodeEditor2VerilogPlugin `52ad81c`
+
 - ChatControl の自動スクロール (最下部追随) で「最下部にロックされスクロールが効かない」問題 → 実装完了 (ビルド成功、コミット済み)
   - 問題: LLM ストリーミング中など extent 変化が高頻度で続く間、`_isInternalScrolling` の true 窓が常時存在して ScrollChanged のユーザスクロール判定がスキップされ、ユーザが上にスクロールしても `autoScroll = false` にならず、さらに extent 変化ごとに `Offset = double.MaxValue` で最下部へ引き戻される (最下部ロック)
   - 修正 (ChatControl.axaml.cs):
