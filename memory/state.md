@@ -2,6 +2,15 @@
 
 ## 未解決課題
 
+- Simulation実行時メニューでデッドロック (UIフリーズ) する問題 → 実装完了 (ビルド成功、コミット済み)
+  - 原因1 (無限ループ): `SimulationSetup.Create` のクラス依存探索 `while(true)` ループ (L81-106) が `newClassFiles.Contains` のバッチ内重複チェックのみで `setup.ClassFiles` 全体の重複をチェックしていなかったため、クラス循環参照 (A→B→A / 自己参照) でバッチ間を交互に追加し続け永久ループ。メニュークリック (UI スレッド) から `SimulationTab.Create` → `SimulationSetup.Create` が同期的に呼ばれるため UI スレッドが占有され、さらに背景スレッドの `Dispatcher.UIThread.Invoke` 同期呼び出し (Item.cs / FileNode.cs / FolderNode.cs) までブロックしてデッドロック様フリーズに発展
+  - 原因2 (UIスレッド実行): `IcarusVerilogSimulation.RunSimulationAsync` も `SimulationSetup.Create` を再実行 + shell prompt 待ちループを持つが、UI スレッド継続上で実行されていた
+  - 修正1 (SimulationSetup.cs): `newClassFiles` 追加条件に `!setup.ClassFiles.Contains(newfile)` を追加 (循環参照でも各ファイルを1度のみ収集)、`setup.ClassFiles.Add` 側にも重複チェック、防御用反復上限 (1000) を追加
+  - 修正2 (SimulationTab.cs): `CreateAsync` を新設 (`SimulationSetup.CreateAsync` を Task.Run で UI 外実行、tab 生成のみ UI スレッドへ InvokeAsync)。`work` の `Simulation.RunSimulationAsync` を `Task.Run` で UI スレッド外に移動
+  - 修正3 (Plugin.cs): `MenuItem_RunSimulation_Click` を async 化し `SimulationTab.CreateAsync` を使用
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で循環参照クラスを持つプロジェクトの Simulation 実行動作確認
+
 - class/interface/interfaceclass/program の parameter_port_list で `parameter` keyword 以外の形式 (例: `class Foo #(int N, int P);`) がエラー → 実装完了 (ビルド成功、コミット済み)
   - 問題: `class Foo #(int N, int P);` の `int` 位置でエラー。Class / Interface / InterfaceClass / Program の parameter port list 解析は `parameter` keyword 形式のみ対応で、`#(int N, int P)` (data_type list_of_param_assignments 形式の parameter_port_declaration) に未対応
   - 修正 (4ファイル): Module.cs で前回実装済みの同一パターンを横展開。parameter port list ループに (1) `)` 即 break (`#()` 空かっこ対応)、(2) identifier 検出時 `DataTypeFactory.ParseCreate` 先行 probe (Clone 位置比較) → 型 keyword 消費なしは implicit 型の `list_of_param_assignments`、消費時は `data_type list_of_param_assignments` として `Constants.ParseCreateParamAssignmentsForPort` 呼び出し、(3) その他トークンは1トークン消費のエラー復帰 を追加
