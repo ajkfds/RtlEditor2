@@ -255,6 +255,13 @@ endmodule
     - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
     - コミット: CodeEditor2VerilogPlugin `64507e4`
     - Next: エディタ上で `'{a:1, b:2}` / `'{1,2,3}` の hover 表示・references 確認。残る追加候補 (3) repetition (4) bracket array key はユーザ指示待ち
+  - 実装3 (repetition 形式) → 実装完了 (ビルド成功、コミット済み)
+    - `AssignmentPatternWithoutKey.parseCreate` に repetition 分岐を追加: 要素式解析後に `{` が続く場合 `'{ count { element } }` 形式 (BNF `'{ constant_expression { expression { , expression } } }`) として解析し `RepeatedExpression` でラップ。patternMode (case pattern) では無効
+    - `RepeatedExpression` (Expressions.Expression 派生) を新設: Count / Element 保持、AppendLabel / CreateString / AppendString / AppendRefrencedDataObjects 対応
+    - 対応例: `'{4{1'b0}}` / `'{N{default}}`
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+    - コミット: CodeEditor2VerilogPlugin `1fad74f`
+    - Next: エディタ上で `logic [7:0] a = '{4{8'hFF}};` 等の parse 動作確認。残る追加候補 (4) bracket array key はユーザ指示待ち
 
 - TextFile初回読み込み直後の Ctrl+Z でファイルが空になる問題 → 実装完了 (ビルド成功、コミット済み)
   - 問題: TextFile を最初に読み込んだ直後に Ctrl+Z するとファイル内容が全消えする
