@@ -2,6 +2,17 @@
 
 ## 未解決課題
 
+- ChatControl の自動スクロール (最下部追随) で「最下部にロックされスクロールが効かない」問題 → 実装完了 (ビルド成功、コミット済み)
+  - 問題: LLM ストリーミング中など extent 変化が高頻度で続く間、`_isInternalScrolling` の true 窓が常時存在して ScrollChanged のユーザスクロール判定がスキップされ、ユーザが上にスクロールしても `autoScroll = false` にならず、さらに extent 変化ごとに `Offset = double.MaxValue` で最下部へ引き戻される (最下部ロック)
+  - 修正 (ChatControl.axaml.cs):
+    - `_isInternalScrolling` フラグとその deferred reset (Dispatcher.Post) を廃止。extent 変化時のスクロール後は最下部に位置するため ScrollChanged の `isAtBottom` チェックで `autoScroll = true` が維持されるだけで無害
+    - ユーザのホイール上スクロールを確実に検出するため `PointerWheelChanged` (Tunnel) handler を追加: 上スクロールで即 `autoScroll = false`
+    - ScrollChanged は `isAtBottom` 判定一本化 (threshold 10px)。最下部復帰で `autoScroll = true` に再解除
+    - completeWork ストリーミング経路の `_isInternalScrolling` 操作を削除 (ScrollToEnd + UpdateLayout は維持)
+  - ビルド成功 (CodeEditor2.csproj, 0 errors / 172 warnings は既存)
+  - コミット: CodeEditor2 `15d4e26`、メイン `efd99f7` (submodule pointer 更新)
+  - Next: エディタ上でストリーミング中の上スクロール (autoScroll 停止) / 最下部復帰 (追随再開) の動作確認
+
 - case ... matches の case_pattern_item (`tagged a '{.v, 0}` 等) の parse エラー → 実装完了 (ビルド成功)
   - 問題: `case (tmp) matches` 内の `tagged a '{.v, 0}` / `tagged a '{.v1, .v2}` / `tagged c '{0, .v}` で tagged / pattern 位置にエラー
   - 原因: (1) `matches` が keyword として AddSystemVerilogError の誤エラー対象 (2) case item 解析が pattern 非対応 (`case_pattern_item ::= pattern [ &&& expression ] : statement_or_null` 未実装) (3) `'{.v, ...}` の pattern variable (`.v`) を expression 解析できず
