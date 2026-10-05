@@ -262,6 +262,12 @@ endmodule
     - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
     - コミット: CodeEditor2VerilogPlugin `1fad74f`
     - Next: エディタ上で `logic [7:0] a = '{4{8'hFF}};` 等の parse 動作確認。残る追加候補 (4) bracket array key はユーザ指示待ち
+  - 実装4 (bracket index array_pattern_key) → 実装完了 (ビルド成功、コミット済み)
+    - `AssignmentPatternWithKey.parseCreate` に `[` 検出時の bracket index key 解析を追加: `[` + constant_expression + `]` を消費し `"[<expr>]"` 形式の key 文字列として KeyExpressions に登録 (BNF `array_pattern_key ::= constant_expression` 対応)。エラー時は "illegal array pattern key" / "] required" で復帰
+    - 対応例: `'{[2]:1, [0]:0}`
+    - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+    - コミット: CodeEditor2VerilogPlugin `1bff9fb`
+    - assignment pattern の BNF 差分対応は全項目完了 (1. type'{} 2. Expression override 群 3. repetition 4. bracket index key)
 
 - TextFile初回読み込み直後の Ctrl+Z でファイルが空になる問題 → 実装完了 (ビルド成功、コミット済み)
   - 問題: TextFile を最初に読み込んだ直後に Ctrl+Z するとファイル内容が全消えする
