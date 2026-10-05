@@ -241,6 +241,14 @@ endmodule
 
 ## 進行中タスク
 
+- assignment pattern の追加実装候補の精査 → 1 (type'{...} 形式) 実装完了 (ビルド成功、コミット済み)
+  - 解析結果: assignment pattern (`AssignmentPattern.cs`) 自体は実装済み。BNF との差分として (1) `type'{...}` (assignment_pattern_expression_type) が Cast 経路に阻害され parse エラー (2) BitWidth/Constant/AppendLabel/AppendRefrencedDataObjects 等の Expression override なし (3) repetition `'{4{1'b0}}` 未対応 (4) array_pattern_key の bracket index 式未対応 を特定
+  - 実装1 (`Verilog/Expressions/Cast.cs`): `Cast.ParseCreate` の型解決後、`'` 直後が `{` の場合 (通常 cast の `(` ではなく) `AssignmentPattern.ParseCreate` に委譲する分岐を追加。戻り型合わせのため `AssignmentPatternPrimary` (Primary 派生ラッパー) を新設し `Reference` を設定
+  - 対応: `int'{1, 2, 3}` / `type_t'{a:1, b:2}` 等 (ps_type_identifier / ps_parameter_identifier / integer_atom_type / type_reference)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors / 536 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `e993b87`
+  - Next: エディタ上で `int'{1,2,3}` / `type_t'{a:1}` の parse 動作確認。残る追加候補 (2) BitWidth 等の override (3) repetition (4) bracket array key はユーザ指示待ち
+
 - TextFile初回読み込み直後の Ctrl+Z でファイルが空になる問題 → 実装完了 (ビルド成功、コミット済み)
   - 問題: TextFile を最初に読み込んだ直後に Ctrl+Z するとファイル内容が全消えする
   - 原因: `FileCheckAsync` の initialLoad 経路 / `FileCheckBackgroundAsync` の外部変更 reload 経路 (UI thread / background 両方) が `doc.TextDocument.Replace(0, TextLength, text)` で全テキストを挿入しており、この挿入が AvaloniaEdit UndoStack に「全テキスト挿入」として記録される。初回読み込み直後の undo でこの挿入が取り消され空ファイルになった
