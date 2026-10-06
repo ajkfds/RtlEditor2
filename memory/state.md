@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- SimulationSetup.UnfoundModules の表示形式変更 (RelativePath:Name) → 実装完了 (ビルド成功、コミット済み)
+  - `addUnfoundModule(setup, file, name)` helper を新設: `file.RelativePath + ":" + name` 形式で `UnfoundModules` に登録 (RelativePath 取得失敗時は file.ID フォールバック、重複排除)
+  - 登録箇所をすべて置き換え: parsedDocument.UnfoundModules (instance unfound) / 参照クラス未解決 (searchHier) / 参照定義 (module/interface/program/udp) 未解決 (ReferencedDefinitionNameSpace 走査) / virtual interface 未解決 (appendVirtualInterfaceInstance 2箇所) / 参照クラスファイル未解決 (appendClass)
+  - `appendClass` に `referrer` 引数を追加し、参照元ファイルを `addUnfoundModule` に渡すよう修正 (呼び出し元2箇所も更新)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `0968bfc`、メイン `92f1c80` (submodule pointer 更新)
+  - Next: エディタ上で unfound module が "path/to/file.sv:ModuleName" 形式で log (red) 表示されることの確認
+
 - SimulationSetup.searchHier の無限再帰 (デッドロック/UIフリーズ) → 修正完了 (ビルド成功、コミット済み)
   - 原因: `searchHier` 冒頭の `ids.Contains(file.ID)` 訪問済みガードに対し、`ids` への追加処理がコード全体に存在せず常に空リストのまま → ガードが常に false となり無効。同一ファイルの再走査が `appendFile` の `setup.Files.Contains` (追加抑制のみ、走査抑制なし) では遮断されず、(a) module 相互参照 (b) ReferencedDefinitionNameSpace 相互参照 (bind等) (c) クラス循環参照 (appendClass→searchHier 再帰) (d) 外部プロジェクト循環 で無限再帰 → StackOverflow / メニュースレッド (UI) からの同期呼び出しでフリーズ様
   - 修正 (SimulationSetup.cs): `searchHier` 冒頭で訪問済みキー `file.ID + ":" + buildingBlockName` を `ids` に登録 (同一ファイルでも別 building block なら走査可、循環は遮断)。コメントに経緯記載
