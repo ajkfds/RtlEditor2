@@ -2,6 +2,11 @@
 
 ## 未解決課題
 
+- class の type generics 対応 (`class Foo #(int W=8, type Int=int) extends Bar #(x,y,z);`) で "type" が parameter として認識されるエラー → 修正完了 (ビルド成功)
+  - 原因: `Constants.ParseCreateTypeAssignmentsForPort` (Constants.cs) が呼び出し元 (Class.parseClassItems) から `type` keyword 未消費の word を受け取り、関数内ループの `General.IsIdentifier` (keyword 除外なし) が最初のトークン `type` を型パラメータ名 "type" として消費していた。`Int = int` が解析されずエラー
+  - 修正 (Constants.cs): `ParseCreateTypeAssignmentsForPort` 冒頭で `word.Text == "type"` の場合 keyword 色付け + `MoveNext()` で消費してから list_of_type_assignments 解析を開始
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で `class Foo #(int W=8, type Int=int) extends Bar #(x,y,z); endclass` の parse 動作確認
 - class の type generics 対応 (`class Foo #(int W=8, type Int=int) extends Bar #(x,y,z);`) → 実装完了 (ビルド成功、コミット済み)
   - 対応1 (Constants.cs): `ParseCreateTypeAssignmentsForPort` helper を新設 (`type list_of_type_assignments` 形式の parameter_port_declaration 解析)。type_identifier [= data_type] を解析し、type parameter を Typedef として NamedElements に登録 (DataTypeFactory 経由で `Int var;` 等の宣言が解決される)。デフォルト型なしの場合は TypeReference(null,null) プレースホルダ。カンマ後が data_type 開始の場合は既存 `nextStartsWithDataType` で break (カンマ未消費) し parameter_port_list ループに委譲
   - 対応2 (Class.cs): parameter port list ループに `type` keyword 分岐を追加 (parameter 分岐の前に挿入、no-progress 時のエラー復帰ガード付き)
