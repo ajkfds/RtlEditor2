@@ -2,6 +2,16 @@
 
 ## 未解決課題
 
+- class の type generics 対応 (`class Foo #(int W=8, type Int=int) extends Bar #(x,y,z);`) → 実装完了 (ビルド成功、コミット済み)
+  - 対応1 (Constants.cs): `ParseCreateTypeAssignmentsForPort` helper を新設 (`type list_of_type_assignments` 形式の parameter_port_declaration 解析)。type_identifier [= data_type] を解析し、type parameter を Typedef として NamedElements に登録 (DataTypeFactory 経由で `Int var;` 等の宣言が解決される)。デフォルト型なしの場合は TypeReference(null,null) プレースホルダ。カンマ後が data_type 開始の場合は既存 `nextStartsWithDataType` で break (カンマ未消費) し parameter_port_list ループに委譲
+  - 対応2 (Class.cs): parameter port list ループに `type` keyword 分岐を追加 (parameter 分岐の前に挿入、no-progress 時のエラー復帰ガード付き)
+  - 対応3 (Class.cs): extends の parameter_value_assignment を `SkipToKeyword(")")` のみの簡易実装から `ParameterValueAssignment.ParseCreate` 呼び出しに置換 (`extends Bar #(x,y,z)` の ordered / named 両形式を解析)
+  - 対応例: `class Bar #(int X=0, int Y=1, int Z=2); endclass` + `class Foo #(int W=8, type Int=int) extends Bar #(x,y,z); endclass`
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `8a1cf7c`
+  - Next: エディタ上で `class Foo #(int W=8, type Int=int) extends Bar #(x,y,z); endclass` の parse 動作確認
+  - メモ: `Verilog/Expressions/DataObjectReference.cs` のユーザ変更はコミットから除外
+
 - `class Foo #(int N, int P);` の parameter port list 解析エラー (int の位置で illegal separator) → 再修正完了 (ビルド成功、コミット済み)
   - 前回修正 (state.md 記録 `769368f`) の `ParseCreateParamAssignmentsForPort` (Constants.cs) が `,` を `MoveNext()` で消費した**後**に `startsWithDataType` で break しており、呼び出し元の parameter_port_list ループ (Class/Interface/InterfaceClass/Program/Module の `if (word.Text != ",")` チェック) に戻ったとき `word.Text` が `int` になり "illegal separator" エラー
   - 修正: `,` を消費する**前**に `nextStartsWithDataType` (新設 helper、カンマ後トークンを Clone probe で data_type 判定) をチェックし、data_type 開始時はカンマを残したまま break するように変更 (同ファイル既存の `if (word.NextText == "parameter") break;` L267 と同一パターン)。未使用になった旧 `startsWithDataType` は削除
