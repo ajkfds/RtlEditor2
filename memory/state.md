@@ -2,6 +2,13 @@
 
 ## 未解決課題
 
+- IcarusVerilog シミュレーション結果タブの log が tab ヘッダ位置に表示される問題 → 根本原因修正完了 (CodeTabItem の StyleKeyOverride 欠落、ユーザ指摘)
+  - 根本原因: CodeTabItem は旧 Avalonia で `IStyleable.StyleKey => typeof(TabItem)` を要求していた (https://github.com/AvaloniaUI/Avalonia/issues/2566)。Avalonia 12 への version up で IStyleable が削除され style key 指定が失効 → 派生クラスに TabItem テーマが適用されず、テンプレート未適用の content (SimPanel log) がタブヘッダ領域に描画されていた
+  - 修正 (`CodeEditor2/CodeEditor2/Views/CodeTabItem.cs`): `protected override Type StyleKeyOverride => typeof(TabItem);` を追加 (Avalonia 11+ の IStyleable.StyleKey 代替機構)
+  - 補助修正 (前ターン `9c3757c`): SimPanel の log 表示を ListBox → `ScrollViewer + ItemsControl` 構成に変更 (選択 / ScrollIntoView を使わない、自動スクロールは `ScrollToEnd()` deferred)
+  - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `e01e068`
+  - Next: エディタ上でシミュレーション結果タブの表示確認 (log がヘッダに出ないこと)
 - IcarusVerilog シミュレーション結果タブの log が tab ヘッダ位置に表示される問題 → 修正完了 (ClipToBounds では改善せず、ListBox を廃止して解決)
   - 原因: ListBox の `ScrollIntoView` / item 選択 (`IsSelected = true`) が内部で `BringIntoView` を伝播させ、ビジュアルツリー未確定のタイミングで item がタブヘッダ領域にまで描画される (ListBox の virtualization + bring-into-view 挙動に起因)
   - 修正1 (`790f609`): `Views/SimPanel.axaml` の ListBox0 に `ClipToBounds="True"` → 改善せず (ユーザ報告)
