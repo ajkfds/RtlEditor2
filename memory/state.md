@@ -2,12 +2,12 @@
 
 ## 未解決課題
 
-- IcarusVerilog シミュレーション結果タブの log が tab ヘッダ位置に表示される問題 → 修正完了 (ビルド成功、コミット済み)
-  - 原因: SimPanel の ListBox が ClipToBounds=false のため、ScrollIntoView/選択時のレイアウトで ListBox 領域外 (上方向) にはみ出した log 行がクリップされず描画され、タブヘッダの上に重なって表示されていた
-  - 修正: `Views/SimPanel.axaml` の ListBox0 に `ClipToBounds="True"` を設定
+- IcarusVerilog シミュレーション結果タブの log が tab ヘッダ位置に表示される問題 → 修正完了 (ClipToBounds では改善せず、ListBox を廃止して解決)
+  - 原因: ListBox の `ScrollIntoView` / item 選択 (`IsSelected = true`) が内部で `BringIntoView` を伝播させ、ビジュアルツリー未確定のタイミングで item がタブヘッダ領域にまで描画される (ListBox の virtualization + bring-into-view 挙動に起因)
+  - 修正1 (`790f609`): `Views/SimPanel.axaml` の ListBox0 に `ClipToBounds="True"` → 改善せず (ユーザ報告)
+  - 修正2 (`9c3757c`): ListBox を廃止し `ScrollViewer + ItemsControl` 構成に変更 (選択 / ScrollIntoView を使わない)。自動スクロールは `ScrollViewer0.ScrollToEnd()` (Dispatcher.Post で deferred)。log item は ListBoxItem のまま TextBlock を内包 (色付き行対応)、1000 行制限は維持
   - ビルド成功 (CodeEditor2IcarusVerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
-  - コミット: CodeEditor2IcarusVerilogPlugin `790f609`
-  - Next: エディタ上でシミュレーション実行時の log 表示位置確認
+  - Next: エディタ上でシミュレーション実行時の log 表示位置確認 (ヘッダに log が出ないこと)
 
 - SimulationSetup.UnfoundModules の表示形式変更 (RelativePath:Name) → 実装完了 (ビルド成功、コミット済み)
   - `addUnfoundModule(setup, file, name)` helper を新設: `file.RelativePath + ":" + name` 形式で `UnfoundModules` に登録 (RelativePath 取得失敗時は file.ID フォールバック、重複排除)
