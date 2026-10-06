@@ -2,6 +2,13 @@
 
 ## 未解決課題
 
+- IcarusVerilog シミュレーション結果タブの log が tab ヘッダ位置に表示される問題 → 修正完了 (ビルド成功、コミット済み)
+  - 原因: SimPanel の ListBox が ClipToBounds=false のため、ScrollIntoView/選択時のレイアウトで ListBox 領域外 (上方向) にはみ出した log 行がクリップされず描画され、タブヘッダの上に重なって表示されていた
+  - 修正: `Views/SimPanel.axaml` の ListBox0 に `ClipToBounds="True"` を設定
+  - ビルド成功 (CodeEditor2IcarusVerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2IcarusVerilogPlugin `790f609`
+  - Next: エディタ上でシミュレーション実行時の log 表示位置確認
+
 - SimulationSetup.UnfoundModules の表示形式変更 (RelativePath:Name) → 実装完了 (ビルド成功、コミット済み)
   - `addUnfoundModule(setup, file, name)` helper を新設: `file.RelativePath + ":" + name` 形式で `UnfoundModules` に登録 (RelativePath 取得失敗時は file.ID フォールバック、重複排除)
   - 登録箇所をすべて置き換え: parsedDocument.UnfoundModules (instance unfound) / 参照クラス未解決 (searchHier) / 参照定義 (module/interface/program/udp) 未解決 (ReferencedDefinitionNameSpace 走査) / virtual interface 未解決 (appendVirtualInterfaceInstance 2箇所) / 参照クラスファイル未解決 (appendClass)
