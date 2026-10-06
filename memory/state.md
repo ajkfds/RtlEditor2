@@ -1122,6 +1122,13 @@ endmodule
 
 ## Next Steps
 
+- VS Code 拡張 (vscode-extension) の動作確認 → 残作業: `npm install` がコマンド許可リスト外のためユーザ実行が必要
+  - `cd vscode-extension && npm install` (vscode-languageclient 導入) 後、F5 (Extension Development Host) で起動確認
+  - または `npx vsce package` で .vsix 化してインストール
+  - サーバは `SystemVerilogLanguageServer/publish/SystemVerilogLanguageServer.exe` を自動検出 (無ければ `systemverilogLsp.serverPath` 設定 or `dotnet run` fallback)
+  - 実装済み: `vscode-extension/{package.json, extension.js, README.md, .gitignore, .vscodeignore}` (languages 登録 systemverilog/verilog, documentSelector, stdio transport)
+  - サーバ実行形式: `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish` (実施済み、`--selftest` で initialize/documentSymbol 応答確認済み)
+  - 既知の未対応 (接続は可能だが影響あり): UTF-16 position 変換 (multi-byte 文字で位置ずれ)、publishDiagnostics push 未実装、未 open ファイルは解析対象外
 - 動作確認完了: `func(` / `func(a, ` / `func(.p|` / `func(.p(` / `inst0(clk, ` / `task_call(` の各入力位置で hint popup・autocomplete dropdown の出現を確認済み
 - 横展開候補: `UdpInstantiation` (ordered port connection) / GenerateBlock 内 statement 経路 / `BuiltinMethodCall` (呼び出し元が今後復活した場合) への completionContext 伝播
 - 動作確認完了: 入力時 hint popup の caret 直下表示、mouse-over popup との同時表示、caret 移動で hint popup が閉じること、auto-complete dropdown と非衝突を確認済み
