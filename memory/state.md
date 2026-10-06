@@ -15,7 +15,7 @@
   - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
   - コミット: CodeEditor2VerilogPlugin `8a1cf7c`
   - Next: エディタ上で `class Foo #(int W=8, type Int=int) extends Bar #(x,y,z); endclass` の parse 動作確認
-  - メモ: `Verilog/Expressions/DataObjectReference.cs` のユーザ変更はコミットから除外
+  - メモ: `Verilog/Expressions/DataObjectReference.cs` のユーザ変更 (constants.Expression null チェック追加) はコミット済み (CodeEditor2VerilogPlugin `c7c32d2`、メイン submodule pointer `d3289af`)
 
 - `class Foo #(int N, int P);` の parameter port list 解析エラー (int の位置で illegal separator) → 再修正完了 (ビルド成功、コミット済み)
   - 前回修正 (state.md 記録 `769368f`) の `ParseCreateParamAssignmentsForPort` (Constants.cs) が `,` を `MoveNext()` で消費した**後**に `startsWithDataType` で break しており、呼び出し元の parameter_port_list ループ (Class/Interface/InterfaceClass/Program/Module の `if (word.Text != ",")` チェック) に戻ったとき `word.Text` が `int` になり "illegal separator" エラー
