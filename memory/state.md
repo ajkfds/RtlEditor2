@@ -2,6 +2,13 @@
 
 ## 未解決課題
 
+- SimulationSetup.searchHier の無限再帰 (デッドロック/UIフリーズ) → 修正完了 (ビルド成功、コミット済み)
+  - 原因: `searchHier` 冒頭の `ids.Contains(file.ID)` 訪問済みガードに対し、`ids` への追加処理がコード全体に存在せず常に空リストのまま → ガードが常に false となり無効。同一ファイルの再走査が `appendFile` の `setup.Files.Contains` (追加抑制のみ、走査抑制なし) では遮断されず、(a) module 相互参照 (b) ReferencedDefinitionNameSpace 相互参照 (bind等) (c) クラス循環参照 (appendClass→searchHier 再帰) (d) 外部プロジェクト循環 で無限再帰 → StackOverflow / メニュースレッド (UI) からの同期呼び出しでフリーズ様
+  - 修正 (SimulationSetup.cs): `searchHier` 冒頭で訪問済みキー `file.ID + ":" + buildingBlockName` を `ids` に登録 (同一ファイルでも別 building block なら走査可、循環は遮断)。コメントに経緯記載
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `f1e458a`、メイン `7e12090` (submodule pointer 更新)
+  - Next: エディタ上で相互参照 module / 循環クラス参照プロジェクトの Simulation 実行動作確認 (フリーズしないこと)
+
 - SystemVerilog semaphore / wait_order 対応 → 実装完了 (ビルド成功、コミット済み)
   - semaphore (IEEE 1800-2017 section 20.4): mailbox と同一パターンで実装
     - `Verilog/DataObjects/DataTypes/SemaphoreType.cs` 新設: IDataType 実装 (`DataTypeEnum.Semaphore`)、AppendChiledNamedElements で semaphore built-in methods (get/try_get/put、keyCount 引数、get/try_get は int 返却) を BuiltInMethod として登録
