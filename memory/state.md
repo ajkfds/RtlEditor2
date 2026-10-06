@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- `class Foo #(int N, int P);` の parameter port list 解析エラー (int が parameter 名扱いになり P がエラー) → 修正完了 (ビルド成功、コミット済み)
+  - 原因: `Constants.ParseCreateParamAssignmentsForPort` (Constants.cs) が `,` を消費した後も同一ループで次の param_assignment を解析し続けるため、`#(int N, int P)` の2つ目の `int` が parameter 名として扱われ、残った `P` がエラー
+  - BNF: `parameter_port_list ::= # ( list_of_param_assignments { , parameter_port_declaration } )` — カンマ後は param_assignment 継続 または data_type で始まる新 parameter_port_declaration の両方があり得る
+  - 修正 (Constants.cs): `,` 消費後、次トークンが data_type 開始 (組み込み型 keyword または `startsWithDataType` による DataTypeFactory.Clone probe で identifier が型解決可能) の場合は break して parameter_port_list ループ (Class/Module/Interface/Program/InterfaceClass 側) に処理を返す
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `769368f`
+  - Next: エディタ上で `class Foo #(int N, int P); endclass` の parse 動作確認
+
 - SimulationSetup が class 宣言を含むファイルで "Packet が見つからない" エラー → 修正完了 (ビルド成功、コミット済み)
   - 問題: `class Packet; ... endclass` + `module MODULE5; ... Packet pkt = new(); ...` をシミュレーションすると Packet unfound エラー
   - 原因1: `searchHier` の `Class? class_ = UnitNameSpace.GetFile(className) as Class` は GetFile がファイル (IVerilogRelatedFile) を返すため常に null → ReferencedUnitNameSpace 上の全 class 参照が unfound 扱い。RegisterNameSpace.Get と同一規則 (file取得後に Root.NamedElements から Class 解決) に修正
