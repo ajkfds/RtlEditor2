@@ -2,7 +2,14 @@
 
 ## 未解決課題
 
-- `class Foo #(int N, int P);` の parameter port list 解析エラー (int が parameter 名扱いになり P がエラー) → 修正完了 (ビルド成功、コミット済み)
+- `class Foo #(int N, int P);` の parameter port list 解析エラー (int の位置で illegal separator) → 再修正完了 (ビルド成功、コミット済み)
+  - 前回修正 (state.md 記録 `769368f`) の `ParseCreateParamAssignmentsForPort` (Constants.cs) が `,` を `MoveNext()` で消費した**後**に `startsWithDataType` で break しており、呼び出し元の parameter_port_list ループ (Class/Interface/InterfaceClass/Program/Module の `if (word.Text != ",")` チェック) に戻ったとき `word.Text` が `int` になり "illegal separator" エラー
+  - 修正: `,` を消費する**前**に `nextStartsWithDataType` (新設 helper、カンマ後トークンを Clone probe で data_type 判定) をチェックし、data_type 開始時はカンマを残したまま break するように変更 (同ファイル既存の `if (word.NextText == "parameter") break;` L267 と同一パターン)。未使用になった旧 `startsWithDataType` は削除
+  - 動作: `#(int N, int P)` → `int N` を param_assignment 解析 → `,` 残して break → 呼び出し元ループが `,` 消費 → `int P` を parameter_port_declaration (data_type + param_assignment) として解析
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `df68786`、メイン `a065f62` (submodule pointer 更新)
+  - Next: エディタ上で `class Foo #(int N, int P); endclass` の parse 動作確認
+  - メモ: サブモジュール作業ツリーに `Verilog/Expressions/DataObjectReference.cs` のユーザ変更が残置 (コミットから除外)
   - 原因: `Constants.ParseCreateParamAssignmentsForPort` (Constants.cs) が `,` を消費した後も同一ループで次の param_assignment を解析し続けるため、`#(int N, int P)` の2つ目の `int` が parameter 名として扱われ、残った `P` がエラー
   - BNF: `parameter_port_list ::= # ( list_of_param_assignments { , parameter_port_declaration } )` — カンマ後は param_assignment 継続 または data_type で始まる新 parameter_port_declaration の両方があり得る
   - 修正 (Constants.cs): `,` 消費後、次トークンが data_type 開始 (組み込み型 keyword または `startsWithDataType` による DataTypeFactory.Clone probe で identifier が型解決可能) の場合は break して parameter_port_list ループ (Class/Module/Interface/Program/InterfaceClass 側) に処理を返す
