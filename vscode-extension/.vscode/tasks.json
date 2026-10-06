@@ -1,0 +1,11 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "watch",
+            "type": "shell",
+            "command": "echo 'No build step required (plain JS extension)'",
+            "problemMatcher": []
+        }
+    ]
+}
