@@ -1,0 +1,61 @@
+{
+  "name": "systemverilog-lsp",
+  "displayName": "SystemVerilog LSP (RtlEditor2)",
+  "description": "SystemVerilog language server (definition, references, hover, document symbols) backed by RtlEditor2 SystemVerilogLanguageServer",
+  "version": "0.1.0",
+  "publisher": "rtleditor2",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:systemverilog",
+    "onLanguage:verilog"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "systemverilog",
+        "aliases": [
+          "SystemVerilog",
+          "systemverilog"
+        ],
+        "extensions": [
+          ".sv",
+          ".svh"
+        ]
+      },
+      {
+        "id": "verilog",
+        "aliases": [
+          "Verilog",
+          "verilog"
+        ],
+        "extensions": [
+          ".v",
+          ".vh"
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "SystemVerilog LSP",
+      "properties": {
+        "systemverilogLsp.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the published SystemVerilogLanguageServer executable (or its directory). If empty, the extension tries 'dotnet run --project' fallback."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
