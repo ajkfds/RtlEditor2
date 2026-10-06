@@ -1123,6 +1123,11 @@ endmodule
 ## Next Steps
 
 - VS Code 拡張 (vscode-extension) の動作確認 → 残作業: `npm install` がコマンド許可リスト外のためユーザ実行が必要
+  - デバッグ起動設定を追加 → 実装完了 (コミット済み)
+    - `vscode-extension/.vscode/launch.json` 新設: "Run Extension" 構成 (extensionHost + --extensionDevelopmentPath、プレーン JS 拡張のため outFiles のみで preLaunchTask 不要)
+    - `vscode-extension/.vscode/tasks.json` 新設: ダミータスクのみ (ビルドステップなし)
+    - コミット: メイン `8d3e8dd`
+    - Next: ユーザが `npm install` 実行後、F5 で Extension Development Host 起動確認
   - `cd vscode-extension && npm install` (vscode-languageclient 導入) 後、F5 (Extension Development Host) で起動確認
   - または `npx vsce package` で .vsix 化してインストール
   - サーバは `SystemVerilogLanguageServer/publish/SystemVerilogLanguageServer.exe` を自動検出 (無ければ `systemverilogLsp.serverPath` 設定 or `dotnet run` fallback)
