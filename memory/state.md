@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- SimulationSetup が class 宣言を含むファイルで "Packet が見つからない" エラー → 修正完了 (ビルド成功、コミット済み)
+  - 問題: `class Packet; ... endclass` + `module MODULE5; ... Packet pkt = new(); ...` をシミュレーションすると Packet unfound エラー
+  - 原因1: `searchHier` の `Class? class_ = UnitNameSpace.GetFile(className) as Class` は GetFile がファイル (IVerilogRelatedFile) を返すため常に null → ReferencedUnitNameSpace 上の全 class 参照が unfound 扱い。RegisterNameSpace.Get と同一規則 (file取得後に Root.NamedElements から Class 解決) に修正
+  - 原因2: top 選択 `BuildingBlocks.Values.FirstOrDefault()` が module より先に宣言された `class Packet` を拾い TopName=Packet になっていた → Class / InterfaceClass / Package を除外して選択するよう修正 (fallback は従来動作)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `9986751`
+  - Next: エディタ上で class + module 同一ファイルのシミュレーション実行確認 (unfound エラーが出ないこと)
+
 - IcarusVerilog シミュレーション結果タブの log が tab ヘッダ位置に表示される問題 → 根本原因修正完了 (CodeTabItem の StyleKeyOverride 欠落、ユーザ指摘)
   - 根本原因: CodeTabItem は旧 Avalonia で `IStyleable.StyleKey => typeof(TabItem)` を要求していた (https://github.com/AvaloniaUI/Avalonia/issues/2566)。Avalonia 12 への version up で IStyleable が削除され style key 指定が失効 → 派生クラスに TabItem テーマが適用されず、テンプレート未適用の content (SimPanel log) がタブヘッダ領域に描画されていた
   - 修正 (`CodeEditor2/CodeEditor2/Views/CodeTabItem.cs`): `protected override Type StyleKeyOverride => typeof(TabItem);` を追加 (Avalonia 11+ の IStyleable.StyleKey 代替機構)
