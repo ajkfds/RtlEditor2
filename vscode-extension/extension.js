@@ -338,9 +338,8 @@ function provideDocumentSemanticTokens(doc) {
                 if (d[i] > 0) char = d[i + 1]; else char += d[i + 1];
                 const length = d[i + 2];
                 const type = tokenTypesByIndex[d[i + 3]] || 'identifier';
-                const start = new vscode.Position(line, char);
-                const end = new vscode.Position(line, char + length);
-                builder.push(start, end, type);
+                const range = new vscode.Range(line, char, line, char + length);
+                builder.push(range, type, []);
                 count++;
             }
         }
