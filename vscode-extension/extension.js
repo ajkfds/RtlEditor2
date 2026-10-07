@@ -327,7 +327,7 @@ function activate(context) {
         )
     );
     context.subscriptions.push(
-        vscode.languages.registerReferencesProvider(
+        vscode.languages.registerReferenceProvider(
             [{ scheme: 'file', language: 'systemverilog' }, { scheme: 'file', language: 'verilog' }],
             { provideReferences: (doc, pos, opts) => withClient(() => provideReferences(doc, pos, opts)) }
         )
