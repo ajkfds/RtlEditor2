@@ -303,6 +303,30 @@ function provideDocumentSymbols(doc) {
     });
 }
 
+// CompletionItemKind values used by the server
+const completionKinds = {
+    3: vscode.CompletionItemKind.Function,
+    6: vscode.CompletionItemKind.Variable,
+    9: vscode.CompletionItemKind.Module,
+    14: vscode.CompletionItemKind.Keyword,
+};
+
+function provideCompletion(doc, pos) {
+    logLine('provideCompletion @ ' + pos.line + ':' + pos.character);
+    return client.request('textDocument/completion', positionParams(doc, pos)).then((result) => {
+        if (!result || !result.items) return [];
+        logLine('completion result count: ' + result.items.length);
+        return result.items.map((item) => {
+            const ci = new vscode.CompletionItem(
+                item.label,
+                completionKinds[item.kind] !== undefined ? completionKinds[item.kind] : vscode.CompletionItemKind.Text
+            );
+            if (item.detail) ci.detail = item.detail;
+            return ci;
+        });
+    });
+}
+
 function toLocations(items) {
     const list = Array.isArray(items) ? items : [items];
     return list.map((loc) => {
@@ -437,6 +461,13 @@ function activate(context) {
         vscode.languages.registerReferenceProvider(
             [{ scheme: 'file', language: 'systemverilog' }, { scheme: 'file', language: 'verilog' }],
             { provideReferences: (doc, pos, opts) => withClient(() => provideReferences(doc, pos, opts)) }
+        )
+    );
+    context.subscriptions.push(
+        vscode.languages.registerCompletionItemProvider(
+            [{ scheme: 'file', language: 'systemverilog' }, { scheme: 'file', language: 'verilog' }],
+            { provideCompletionItems: (doc, pos) => withClient(() => provideCompletion(doc, pos)) },
+            '.', '`', '$'
         )
     );
     try {
