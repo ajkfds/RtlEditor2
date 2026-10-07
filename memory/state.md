@@ -1122,6 +1122,16 @@ endmodule
 
 ## Next Steps
 
+- 宣言位置が全て identifier 色になる問題 → 修正完了 (テスト 33/33 合格、コミット済み)
+  - ユーザ報告「type/keyword/number/string は正しいが variable であるべき箇所も全て identifier」
+  - 原因: 宣言シンボルと同一範囲に generic identifier トークンも重複して付与され、sort 後に identifier が優先されていた
+  - 修正 (`LightweightParser.Parse` 末尾): 宣言シンボル範囲と完全一致する identifier トークンを RemoveAll で除去 (シンボル種別トークンが勝つ)
+  - 併せて Dark テーマ向けの配色調整を extension 側設定書き込みに反映 (`configurationDefaults` の semanticTokenColorCustomizations は複合オブジェクト設定に不確実なため、activate 時にユーザ settings.json へ書き込み。旧既定 (identifier #D4D4D4) があれば自動更新): identifier (参照)=#9CDCFE / variable=#F48FB1 / net(property)=#E86FB8 / function=#DCDCAA / register=#FF6B6B (pluginVerilog の色相維持、Dark 向け明度調整)
+  - 色適用の仕組み確認済み: `editor.semanticHighlighting.enabled=true` (ユーザ設定) で semantic tokens が有効化、`Developer: Inspect Editor Tokens and Scopes` で semantic token type + 適用色の確認が可能
+  - 注意: extension が `dotnet run` fallback でサーバを起動するとビルド DLL ロック (MSB3027) が起きるため、publish exe 最新化を推奨 (`dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish` 済み。publish exe があれば extension はそちらを優先使用)
+  - テスト 33/33 合格、publish 更新済み
+  - コミット: SystemVerilogLanguageServer `aa2b6e8`、メイン `163770b`、extension 側色調整 `c3e0233` / `5c46d2b`
+  - Next: ユーザ側で Reload Window 後の色分け確認 (宣言 variable が桃色 #F48FB1 / 参照 identifier が薄青 #9CDCFE に分かれること)
 - TextMate でのカラーリングが優先され parse 結果が反映されない問題 → 修正完了 (ビルド成功、テスト 33/33 合格、コミット済み)
   - ユーザ報告「カラーリングが pluginVerilog のものではなく textmate でのカラーリングになっている。parse 結果を反映した色になってない」
   - 修正: package.json から `contributes.grammars` (TextMate grammar) を削除し semantic tokens のみに統一 (TextMate は lexical ベースで parse 結果を反映しない。`syntaxes/systemverilog.tmLanguage.json` は残置だが未使用)。semantic tokens は lightweight parser の宣言シンボル種別に基づくため parse 結果を反映
