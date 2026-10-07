@@ -325,7 +325,8 @@ function provideDocumentSemanticTokens(doc) {
         logLine('semanticTokens: client is null');
         return new vscode.SemanticTokens(new Uint32Array(0));
     }
-    return client.request('textDocument/semanticTokens/full', positionParams(doc)).then((result) => {
+    return client.request('textDocument/semanticTokens/full', { textDocument: { uri: doc.uri.toString() } }).then((result) => {
+        logLine('semanticTokens raw result: ' + JSON.stringify(result).substring(0, 200));
         const builder = new vscode.SemanticTokensBuilder(
             new vscode.SemanticTokensLegend(tokenTypesByIndex, []));
         let count = 0;
