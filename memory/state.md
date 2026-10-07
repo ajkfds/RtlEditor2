@@ -330,7 +330,16 @@ endmodule
     - クエリ時の同期待ち (`GetAwaiter().GetResult()`) は UI スレッドがないためデッドロックなし (テストで実証)
   - メイン `28a8ec6`: submodule pointer 更新
   - publish 更新済み (`dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish`)
-  - Next: ユーザ側で Reload Window 後の hover / F12 / Outline 動作確認 (本物 parser 由来のシンボルになっていること)。references の本物 parser 由来化 (DataObject.UsedReferences/AssignedReferences の走査) / semantic tokens の本物 parser 由来化 は後続候補
+  - Next: ユーザ側で Reload Window 後の hover / F12 / Outline 動作確認 (本物 parser 由来のシンボルになっていること)。references の本物 parser 由来化 (DataObject.UsedReferences/AssignedReferences の走査) は後続候補
+
+- LSP semantic tokens を本物 parser 由来の色セグメントに移行 → 実装完了 (テスト 34/34 合格、publish 更新、コミット済み)
+  - 背景と問題: ユーザ報告「syntax highlight が LightweightParser のまま、SystemVerilogCore の結果が使われていない」。semantic tokens だけ LightweightParser 依存が残っていた (シンボル系は本物 parser 移行済み)
+  - 実装1 (CodeEditor2VerilogPlugin `1585dc4`): `CoreBridge/ColorSegmentAdapter.cs` 新設。ParsedDocument.CodeDocument.TextColors の行単位カラーセグメント (行相対 offset + Avalonia Color) をドキュメント絶対 index のフラットセグメント (index, length, CodeDrawStyle.ColorType) に変換。RGB を plugin パレットに逆引きして ColorType を復元 (parser はパレット色のみ書き込むため完全一致)。Normal 色は除外
+  - 実装2 (SystemVerilogLanguageServer `c6790ac`): `InMemoryFile.GetTokens` を本物 parser 色セグメント優先に変更 (`_parsedDocument` を BuildSymbols で保持)。ColorType → LSP TokenTypes 対応 (Keyword/Comment/Number/Identifier/Register/Net→Property/Variable/Parameter)。本物 parser 未実行時のみ LightweightParser にフォールバック
+  - メイン `79b6fff`: submodule pointer 更新
+  - publish 更新済み
+  - 注意: semantic tokens は didOpen/didChange で parse が完了している InMemoryFile にのみ本物 parser 由来が効く (hover 等の初回クエリ時に lazy parse された場合も 2 回目以降は本物 parser 由来になる)。立ち上がり直後の初回表示では lightweight 結果が出る場合がある
+  - Next: ユーザ側で Reload Window 後の色分け確認 (エディタ pluginVerilog と同一の色種になっていること)。未対応候補: didOpen/didChange 時の先行 parse (初回から本物 parser 由来にする)、references の本物 parser 由来化
 
 - assignment pattern の追加実装候補の精査 → 1 (type'{...} 形式) 実装完了 (ビルド成功、コミット済み)
   - 解析結果: assignment pattern (`AssignmentPattern.cs`) 自体は実装済み。BNF との差分として (1) `type'{...}` (assignment_pattern_expression_type) が Cast 経路に阻害され parse エラー (2) BitWidth/Constant/AppendLabel/AppendRefrencedDataObjects 等の Expression override なし (3) repetition `'{4{1'b0}}` 未対応 (4) array_pattern_key の bracket index 式未対応 を特定
