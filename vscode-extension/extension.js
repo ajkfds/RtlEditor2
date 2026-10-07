@@ -359,6 +359,20 @@ function activate(context) {
             { provideReferences: (doc, pos, opts) => withClient(() => provideReferences(doc, pos, opts)) }
         )
     );
+
+    // Eagerly start the LSP session as soon as a matching document is
+    // (or becomes) open, so didOpen + publishDiagnostics work without
+    // requiring the user to hover first.
+    const isMatchingDoc = (doc) => doc &&
+        (doc.languageId === 'systemverilog' || doc.languageId === 'verilog');
+    if (vscode.workspace.textDocuments.some(isMatchingDoc)) {
+        ensureClient().catch((err) => logLine('ERROR: ' + (err && err.stack ? err.stack : err.message)));
+    }
+    context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((doc) => {
+        if (isMatchingDoc(doc)) {
+            ensureClient().catch((err) => logLine('ERROR: ' + (err && err.stack ? err.stack : err.message)));
+        }
+    }));
 }
 
 function deactivate() {
