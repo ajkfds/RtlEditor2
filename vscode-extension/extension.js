@@ -385,6 +385,30 @@ function activate(context) {
         editorConfig.update('semanticHighlighting.enabled', true, vscode.ConfigurationTarget.Global)
             .then(() => logLine('semanticHighlighting.enabled set to true (user settings)'));
     }
+
+    // configurationDefaults does not reliably apply semanticTokenColorCustomizations;
+    // write the pluginVerilog CodeDrawStyle colors into user settings when absent.
+    const existingColors = editorConfig.inspect('semanticTokenColorCustomizations');
+    if (!existingColors.globalValue && !existingColors.workspaceValue) {
+        const colors = {
+            rules: {
+                keyword: '#569CD6',
+                comment: '#6A9955',
+                type: '#4EC9B0',
+                function: '#4EC9B0',
+                parameter: '#FF5EC2',
+                macro: '#FF5EC2',
+                property: '#FF96C8',
+                variable: '#FFC8C8',
+                number: '#CE9178',
+                string: '#CE9178',
+                register: '#FF3232',
+                identifier: '#D4D4D4',
+            }
+        };
+        editorConfig.update('semanticTokenColorCustomizations', colors, vscode.ConfigurationTarget.Global)
+            .then(() => logLine('semanticTokenColorCustomizations written (user settings)'));
+    }
     context.subscriptions.push(
         vscode.languages.registerHoverProvider(
             [{ scheme: 'file', language: 'systemverilog' }, { scheme: 'file', language: 'verilog' }],
