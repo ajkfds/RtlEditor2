@@ -319,6 +319,7 @@ function provideDocumentSemanticTokens(doc) {
     return client.request('textDocument/semanticTokens/full', positionParams(doc)).then((result) => {
         const builder = new vscode.SemanticTokensBuilder(
             new vscode.SemanticTokensLegend(tokenTypesByIndex, []));
+        let count = 0;
         if (result && Array.isArray(result.data)) {
             const d = result.data;
             let line = 0, char = 0;
@@ -330,9 +331,14 @@ function provideDocumentSemanticTokens(doc) {
                 const start = new vscode.Position(line, char);
                 const end = new vscode.Position(line, char + length);
                 builder.push(start, end, type);
+                count++;
             }
         }
+        logLine('semanticTokens: ' + count + ' tokens');
         return builder.build();
+    }, (err) => {
+        logLine('semanticTokens ERROR: ' + (err && err.message));
+        throw err;
     });
 }
 

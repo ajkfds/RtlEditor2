@@ -41,18 +41,6 @@
         ]
       }
     ],
-    "grammars": [
-      {
-        "language": "systemverilog",
-        "scopeName": "source.systemverilog",
-        "path": "./syntaxes/systemverilog.tmLanguage.json"
-      },
-      {
-        "language": "verilog",
-        "scopeName": "source.systemverilog",
-        "path": "./syntaxes/systemverilog.tmLanguage.json"
-      }
-    ],
     "configurationDefaults": {
       "editor.semanticTokenColorCustomizations": {
         "rules": {
