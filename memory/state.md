@@ -1122,6 +1122,16 @@ endmodule
 
 ## Next Steps
 
+- VS Code extension に pluginVerilog の色付け (CodeDrawStyle) を LSP semantic tokens 経由で実装 → 実装完了 (ビルド成功、テスト 33/33 合格、コミット済み)
+  - ユーザ指示「色分けは TextMate ではなく、pluginVerilog で行っている色付けを使って」に対応 (TextMate grammar 実装 de8a133 は残置、semantic tokens が優先適用される)
+  - 対応1 (`Server/LightweightParser.cs`): `ParseResult` に `Tokens` / `AddToken` を追加 (TokenTypes enum: keyword/comment/string/number/macro/function/type/variable/property=net/parameter/register/identifier)。Parse メインループにコメント/文字列/数字 (sized literal 対応)/マクロ (`` `NAME``)/system task (`$display`) のトークン収集を組み込み、keyword 判定 (`IsKeywordWord` 新設、SystemVerilog 全 keyword) と宣言シンボル → 色トークン変換を追加
+  - 対応2 (`InMemorySystemVerilogCore.cs`): `InMemoryFile.GetTokens()` を新設 (lazy parse + キャッシュ)
+  - 対応3 (`LspHandler.cs`): `textDocument/semanticTokens/full` handler を新設 (行/文字 delta エンコーディング、multi-line token は先頭行に clamp)。`ServerCapabilities` に `semanticTokensProvider` (legend: 12 token types) を追加、`SemanticTokensCapability` / `SemanticTokensLegend` / `SemanticTokens` DTO 新設
+  - 対応4 (`vscode-extension/extension.js`): `registerDocumentSemanticTokensProvider` を追加 (legend は server と同一順序)。delta デコード → `SemanticTokensBuilder` 変換
+  - 色対応 (pluginVerilog CodeDrawStyle ベース、テーマ側で semantic token 色を設定した場合): keyword / comment / string / number / macro / function・型宣言 / parameter / net (property) / variable
+  - テスト 33/33 合格、publish 更新済み
+  - コミット: SystemVerilogLanguageServer `4165430`、メイン `f63aede` (submodule pointer + extension.js)
+  - Next: ユーザ側で Reload Window 後の色分け確認。semantic token の色はテーマに依存するため、pluginVerilog と同一 RGB にする場合は extension 側で `semanticTokenColorCustomizations` 設定 or テーマ提供が必要 (要望あれば対応)
 - LSP サーバが何も parse しないため hover/definition/symbol がすべて空になる問題 → 実装完了 (ビルド成功、テスト 33/33 合格、selftest 正常、コミット済み)
   - 根本原因: `InMemorySystemVerilogCore` はテキスト保持のみで parse 結果のシンボル登録機構が存在せず、`FindDefinition` が常に空ヒット。parser-backed adapter (CoreBridge) は CodeEditor2 依存が深く Phase 10 未完のため LSP プロセスから使用不可
   - 対応1 (`Server/LightweightParser.cs` 新設): トークンベースの軽量スキャナ (module/interface/package/program/checker/primitive/class の block 宣言 + スコープスタック、function/task 宣言、typedef、wire/reg/logic/int 等の変数宣言、`name :` label、参照収集、コメント/文字列 skip)。ParseResult に Symbols / References / Scopes (Owner chain 付き) を出力
