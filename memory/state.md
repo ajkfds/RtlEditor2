@@ -319,7 +319,18 @@ endmodule
   - テスト: 34/34 合格 (既存 33 + 新規 1)。ハング解消を確認
   - 判明した UI 依存箇所の記録 (将来の全面 UI フリー化の参考): `Item.NavigatePanelNode` getter (Item.cs L598, `Dispatcher.UIThread.Invoke` 同期) / `TextFile.FileCheckAsync` 経路の `Dispatcher.UIThread.Post` 群 / `Project.CreateAsync` → `project.UpdateAsync()` の項目ツリー構築。テスト/LSP はこれらを迂回する最小構成 (ParseEngine + 手動登録) で動作
   - 運用上の注意: テストハング時に `testhost` が CodeEditor2VerilogPlugin.dll をロックし、次の dotnet test/build が MSB3027 で失敗する。taskkill で testhost を終了してから再実行 (taskkill はコマンド許可リスト外のためユーザ実行)
-  - Next (後続候補): LSP の InMemoryFile が ParseEngine を使うよう接続し LightweightParser から本物 parser へ移行 / ParseEngine に複数ファイル (パッケージ・クロスファイル解決) 対応の拡張 / `Item.NavigatePanelNode` 等 Data 層 UI 依存の分岐ガード化 (全面 UI フリー化)
+  - Next (後続候補): ParseEngine に複数ファイル (パッケージ・クロスファイル解決) 対応の拡張 / `Item.NavigatePanelNode` 等 Data 層 UI 依存の分岐ガード化 (全面 UI フリー化)
+
+- LSP を plugin ParseEngine (本物 parser) に接続 → 実装完了 (テスト 34/34 合格、publish 更新、コミット済み)
+  - SystemVerilogLanguageServer `e5047d3`:
+    - `SystemVerilogLanguageServer.csproj`: CodeEditor2VerilogPlugin への ProjectReference を追加
+    - `InMemorySystemVerilogCore.cs` `InMemoryFile.BuildSymbols` を差し替え: plugin `CoreBridge.ParseEngine.ParseSystemVerilogAsync` で本物 VerilogParser を駆動し、ParsedDocument の BuildingBlock ツリー (Root → module/interface/package/class... → members) を InMemoryBlock / InMemoryElement に変換。parse 失敗時は LightweightParser にフォールバック (`BuildSymbolsLightweight`)
+    - 内部で plugin 側 VerilogFile + ParserProjectStub (protected Project コンストラクタを継承で呼ぶ stub) を生成し、`ProjectProperties["Verilog"]` を手動登録 (WordScanner.ProjectProperty が要求するため)
+    - ParsedDocument にはフラットな参照リストがないため references 収集は未実装 (definition / documentSymbol は本物 parser 由来)。semantic tokens は LightweightParser を継続使用 (将来色情報を本物 parser 由来に差し替え)
+    - クエリ時の同期待ち (`GetAwaiter().GetResult()`) は UI スレッドがないためデッドロックなし (テストで実証)
+  - メイン `28a8ec6`: submodule pointer 更新
+  - publish 更新済み (`dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish`)
+  - Next: ユーザ側で Reload Window 後の hover / F12 / Outline 動作確認 (本物 parser 由来のシンボルになっていること)。references の本物 parser 由来化 (DataObject.UsedReferences/AssignedReferences の走査) / semantic tokens の本物 parser 由来化 は後続候補
 
 - assignment pattern の追加実装候補の精査 → 1 (type'{...} 形式) 実装完了 (ビルド成功、コミット済み)
   - 解析結果: assignment pattern (`AssignmentPattern.cs`) 自体は実装済み。BNF との差分として (1) `type'{...}` (assignment_pattern_expression_type) が Cast 経路に阻害され parse エラー (2) BitWidth/Constant/AppendLabel/AppendRefrencedDataObjects 等の Expression override なし (3) repetition `'{4{1'b0}}` 未対応 (4) array_pattern_key の bracket index 式未対応 を特定
