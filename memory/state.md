@@ -1155,6 +1155,13 @@ endmodule
 
 ## Next Steps
 
+- LSP references の本物 parser 由来化 + didOpen/didChange 時の先行 parse → 実装完了 (ビルド成功、テスト 35/35 合格、コミット済み)
+  - 実装1 (SystemVerilogLanguageServer `c319ff2`): `InMemoryFile.BuildSymbolsFromParsedDocument` に references 収集を追加。`AppendReferences` (building block tree 再帰走査 + 訪問済み HashSet で循環防御) → `DataObject.DefinedReference` (宣言位置) / `UsedReferences` / `AssignedReferences` (use 位置) を `InMemoryElement` として `_allElements` / `_byName` に登録。struct/class object の member も再帰収集
+  - 実装2 (同コミット): `InMemoryFile.ForceBuild()` を新設し、`HandleDidOpen` / `HandleDidChange` で `AddOrUpdateFile` 直後に先行 parse を実行 (初回 semantic tokens / hover / definition クエリが lightweight fallback にならないように解消)
+  - 実装3 (メイン `4a0fbc5`): `ParserBackedAdapterTests.InMemoryCore_ReferencesFromRealParser` を追加 (`wire sig` + 2箇所の `assign = sig` で宣言 + 2 use site = 3 件以上の references を検証)。テスト 35/35 合格
+  - publish 更新済み (`dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish`)
+  - 全体ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: ユーザ側で Reload Window 後の references (Shift+F12) 動作確認 (use site が複数ファイルから返ること)
 - 宣言位置が全て identifier 色になる問題 → 修正完了 (テスト 33/33 合格、コミット済み)
   - ユーザ報告「type/keyword/number/string は正しいが variable であるべき箇所も全て identifier」
   - 原因: 宣言シンボルと同一範囲に generic identifier トークンも重複して付与され、sort 後に identifier が優先されていた
