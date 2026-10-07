@@ -366,6 +366,16 @@ function activate(context) {
     context_ = context;
     initLog(context);
     logLine('extension activated');
+
+    // configurationDefaults does not reliably apply to already-open
+    // workspaces; force-enable semantic highlighting programmatically
+    // (only when the current value is the default 'configuredByTheme').
+    const editorConfig = vscode.workspace.getConfiguration('editor');
+    const current = editorConfig.inspect('semanticHighlighting.enabled');
+    if (current.globalValue === undefined && current.workspaceValue === undefined) {
+        editorConfig.update('semanticHighlighting.enabled', true, vscode.ConfigurationTarget.Global)
+            .then(() => logLine('semanticHighlighting.enabled set to true (user settings)'));
+    }
     context.subscriptions.push(
         vscode.languages.registerHoverProvider(
             [{ scheme: 'file', language: 'systemverilog' }, { scheme: 'file', language: 'verilog' }],
