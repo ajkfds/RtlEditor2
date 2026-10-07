@@ -311,6 +311,31 @@ function toLocations(items) {
     }).filter((l) => l);
 }
 
+// semantic tokens: build a vscode.SemanticTokens from the server response
+const tokenTypesByIndex = ['keyword', 'comment', 'string', 'number', 'macro',
+    'function', 'type', 'variable', 'property', 'parameter', 'register', 'identifier'];
+
+function provideDocumentSemanticTokens(doc) {
+    return client.request('textDocument/semanticTokens/full', positionParams(doc)).then((result) => {
+        const builder = new vscode.SemanticTokensBuilder(
+            new vscode.SemanticTokensLegend(tokenTypesByIndex, []));
+        if (result && Array.isArray(result.data)) {
+            const d = result.data;
+            let line = 0, char = 0;
+            for (let i = 0; i + 4 < d.length; i += 5) {
+                line += d[i];
+                if (d[i] > 0) char = d[i + 1]; else char += d[i + 1];
+                const length = d[i + 2];
+                const type = tokenTypesByIndex[d[i + 3]] || 'identifier';
+                const start = new vscode.Position(line, char);
+                const end = new vscode.Position(line, char + length);
+                builder.push(start, end, type);
+            }
+        }
+        return builder.build();
+    });
+}
+
 // DocumentSymbol -> vscode.DocumentSymbol (recursive, SymbolKind passthrough numeric)
 function toSymbol(sym) {
     if (!sym || !sym.range || !sym.selectionRange) return null;
@@ -357,6 +382,17 @@ function activate(context) {
         vscode.languages.registerReferenceProvider(
             [{ scheme: 'file', language: 'systemverilog' }, { scheme: 'file', language: 'verilog' }],
             { provideReferences: (doc, pos, opts) => withClient(() => provideReferences(doc, pos, opts)) }
+        )
+    );
+    context.subscriptions.push(
+        vscode.languages.registerDocumentSemanticTokensProvider(
+            [{ scheme: 'file', language: 'systemverilog' }, { scheme: 'file', language: 'verilog' }],
+            { provideDocumentSemanticTokens: (doc) => withClient(() => provideDocumentSemanticTokens(doc)) },
+            new vscode.SemanticTokensLegend(
+                ['keyword', 'comment', 'string', 'number', 'macro',
+                 'function', 'type', 'variable', 'property', 'parameter', 'register', 'identifier'],
+                []
+            )
         )
     );
 
