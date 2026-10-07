@@ -41,6 +41,18 @@
         ]
       }
     ],
+    "grammars": [
+      {
+        "language": "systemverilog",
+        "scopeName": "source.systemverilog",
+        "path": "./syntaxes/systemverilog.tmLanguage.json"
+      },
+      {
+        "language": "verilog",
+        "scopeName": "source.systemverilog",
+        "path": "./syntaxes/systemverilog.tmLanguage.json"
+      }
+    ],
     "configuration": {
       "title": "SystemVerilog LSP",
       "properties": {

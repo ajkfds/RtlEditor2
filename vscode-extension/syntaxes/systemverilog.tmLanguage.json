@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SystemVerilog",
+  "scopeName": "source.systemverilog",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#system-tasks" },
+    { "include": "#macros" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.systemverilog",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.systemverilog",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.systemverilog",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.systemverilog",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.systemverilog",
+          "match": "\\b\\d+('s?[bodh][0-9a-fA-F_xzXZ?]+|'[bodh][0-9a-fA-F_xzXZ?]+|\\d*(\\.\\d+)?)\\b"
+        }
+      ]
+    },
+    "system-tasks": {
+      "name": "support.function.systemverilog",
+      "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "macros": {
+      "name": "entity.name.function.preprocessor.systemverilog",
+      "match": "`[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.systemverilog",
+          "match": "\\b(if|else|case|casex|casez|endcase|default|for|foreach|forever|repeat|while|do|break|continue|return|begin|end|fork|join|join_any|join_none|wait|wait_order|disable|assert|assume|cover|expect|property|endproperty|sequence|endsequence|clocking|endclocking|randcase|randsequence|endsequence)\\b"
+        },
+        {
+          "name": "keyword.other.systemverilog",
+          "match": "\\b(module|endmodule|macromodule|interface|endinterface|package|endpackage|program|endprogram|checker|endchecker|primitive|endprimitive|config|endconfig|class|endclass|extends|implements|virtual|with|inside|dist|iff|posedge|negedge|edge|always|always_comb|always_ff|always_latch|initial|final|assign|force|release|deassign|defparam|generate|endgenerate|genvar|bind|alias|import|export|extern|pure|context|local|static|automatic|typedef|enum|struct|packed|union|tagged|new|null|this|super|unique|priority|rand|randc|constraint|solve|before|cross|coverpoint|covergroup|endgroup|sample|wait_order|timeunit|timeprecision|timescale|cell|use|liblist|instance|design|incdir|include|option|library|nettype|interconnect|soft|expect)\\b"
+        },
+        {
+          "name": "keyword.operator.direction.systemverilog",
+          "match": "\\b(input|output|inout|ref)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.systemverilog",
+          "match": "\\b(bit|logic|reg|wire|wand|wor|tri|tri0|tri1|uwire|supply0|supply1|int|integer|byte|shortint|longint|time|real|shortreal|realtime|string|void|event|signed|unsigned|semaphore|mailbox|process|chandle|var|const)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "name": "keyword.operator.systemverilog",
+      "match": "(<=|>=|==\\?|!=\\?|===|!==|==|!=|&&&|\\|\\||&&|<<|>>|<<<|>>>|[+\\-*/%!~&|^?:#@])"
+    }
+  }
+}
