@@ -1122,6 +1122,16 @@ endmodule
 
 ## Next Steps
 
+- LSP 既知の未対応 2 点 (UTF-16 position 変換 / 未 open ファイル解析対象外) + publishDiagnostics push → 実装完了 (ビルド成功、テスト 33/33 合格、コミット済み)
+  - 修正1 (URI/パス変換, LspHandler.cs): 旧 `ToAbsolutePath` (`Substring("file://".Length)` で Windows で `/D:/x` になる不正変換) を `UriToAbsolutePath` / `PathToUri` (`System.Uri` ベース、ドライブレター・percent escape・Unix/Windows 共通) に置換。workspace ロードされたファイルも URI → パス正変換で解決
+  - 修正2 (position → index 変換, TryGetFileAndIndex): 行末超過 character の行末 clamp + caret が word 直後に位置する場合の 1 文字後退 (word 解析成功率向上)。LSP の UTF-16 character は .NET string index と 1:1 対応のため本質的な変換問題はなし
+  - 修正3 (未 open ファイル対応, CollectWorkspaceRoots / LoadWorkspaceFiles): initialize 時に rootUri / rootPath / workspaceFolders を収集し、ワークスペース配下の .sv/.svh/.v/.vh をディスクから一括ロード (obj/bin/publish/node_modules 除外、IOException/UnauthorizedAccessException skip)。未 open ファイルも definition/references 解決対象に
+  - 修正4 (publishDiagnostics push, PushDiagnostics + NotificationSender): LspHandler に `NotificationSender` (Action&lt;LspMessage&gt;) を注入する機構を新設。didOpen/didChange 後に doc.Diagnostics を `textDocument/publishDiagnostics` 通知として push (SystemVerilogSeverity → LSP severity 変換、Diagnostic DTO / PublishDiagnosticsParams DTO 新設)。Program.cs で writer を注入 (単一スレッドメッセージループ内同期書き込みのため競合なし)
+  - 修正5 (テスト csproj 参照パス修正, SystemVerilogLanguageServer.Tests.csproj): 実在しない `SystemVerilogCore/SystemVerilogCore/SystemVerilogCore.csproj` / `SystemVerilogLanguageServer/SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj` 参照を実在パスに修正 (修正前はテストプロジェクト自体がビルド不可だった)
+  - ビルド成功 (0 errors)、テスト 33/33 合格、--selftest 正常
+  - publish 更新: `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish`
+  - コミット: SystemVerilogLanguageServer `bcadbc0`、メイン `091d77e` (submodule pointer + tests csproj)
+  - Next: ユーザ側で Reload Window 後の動作確認 (hover / definition / references / outline / diagnostics 表示、未 open ファイルへの cross-file definition ジャンプ)
 - VS Code 拡張 (vscode-extension) の activation エラー修正 → 実装完了 (ビルド不要、コミット済み)
   - 問題: extension activation 時 "Cannot find module 'vscode-languageclient/node'"。`npm install` がコマンド許可リスト外でユーザ側でも未実行だった
   - 修正: `extension.js` を `vscode-languageclient` 依存ゼロの raw JSON-RPC (LSP over stdio) クライアントに全面書き換え
