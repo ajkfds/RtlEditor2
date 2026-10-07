@@ -147,28 +147,30 @@ endmodule
            project.AddOrUpdateFile("mem://completion.sv", null, text, true);
            var memFile = (SystemVerilogLanguageServer.Server.InMemoryFile)project.FindFile("mem://completion.sv")!;
 
-           // caret right after "my" (incomplete candidate word)
+           // caret in the middle of "my" (incomplete candidate word within the
+           // assign statement; the partial parse of ContinuousAssign collects
+           // DataObject candidates filtered by the candidate word "my")
            int index = text.IndexOf("my", StringComparison.Ordinal) + 1;
            var entries = project.GetCompletionItems(memFile, index);
 
            Assert.True(entries != null,
                $"entries is null; docLen={memFile.CodeDocument.Length}, index={index}, textLen={text.Length}");
            // the partial parse must produce concrete candidates (keywords at
-   // minimum; DataObject items appear for expression / LHS positions)
-   Assert.NotEmpty(entries!);
-   Assert.Contains(entries!, e => e.Text == "begin");
+           // minimum; DataObject items appear for expression / LHS positions)
+           Assert.NotEmpty(entries!);
+           Assert.Contains(entries!, e => e.Text == "begin");
        }
 
-      [Fact]
-      public void InMemoryCore_DiagnosticsFromRealParser()
-      {
-          EnsurePluginRegistered();
+       [Fact]
+       public void InMemoryCore_DiagnosticsFromRealParser()
+       {
+           EnsurePluginRegistered();
 
-          var core = new SystemVerilogLanguageServer.Server.InMemorySystemVerilogCore();
-          var project = (SystemVerilogLanguageServer.Server.InMemoryProject)core.GetOrCreateProject("default");
+           var core = new SystemVerilogLanguageServer.Server.InMemorySystemVerilogCore();
+           var project = (SystemVerilogLanguageServer.Server.InMemoryProject)core.GetOrCreateProject("default");
 
-          // undeclared identifier "dst" produces a parse diagnostic
-          string text =
+           // undeclared identifier "dst" produces a parse diagnostic
+           string text =
 """
 module top;
     wire sig;
@@ -176,13 +178,21 @@ module top;
 endmodule
 """;
 
-          project.AddOrUpdateFile("mem://diag.sv", null, text, true);
-          var memFile = (SystemVerilogLanguageServer.Server.InMemoryFile)project.FindFile("mem://diag.sv")!;
-          memFile.ForceBuild();
+           project.AddOrUpdateFile("mem://diag.sv", null, text, true);
+           var memFile = (SystemVerilogLanguageServer.Server.InMemoryFile)project.FindFile("mem://diag.sv")!;
+           memFile.ForceBuild();
 
-          var doc = project.GetDocument(memFile);
-          Assert.NotNull(doc);
-          Assert.True(doc!.Diagnostics.Count > 0, "expected at least one diagnostic (undeclared dst)");
-      }
-  }
+           var doc = project.GetDocument(memFile);
+           Assert.NotNull(doc);
+           Assert.True(doc!.Diagnostics.Count > 0, "expected at least one diagnostic (undeclared dst)");
+           // all diagnostic ranges must be within the document and at least
+           // one character long (end position sanity check)
+           foreach (var d in doc.Diagnostics)
+           {
+               Assert.True(d.Range.EndIndex > d.Range.StartIndex);
+               Assert.True(d.Range.EndIndex <= memFile.CodeDocument.Length,
+                   $"range end {d.Range.EndIndex} exceeds document length {memFile.CodeDocument.Length}");
+           }
+       }
+   }
 }
