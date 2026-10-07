@@ -389,21 +389,27 @@ function activate(context) {
     // configurationDefaults does not reliably apply semanticTokenColorCustomizations;
     // write the pluginVerilog CodeDrawStyle colors into user settings when absent.
     const existingColors = editorConfig.inspect('semanticTokenColorCustomizations');
-    if (!existingColors.globalValue && !existingColors.workspaceValue) {
+    // overwrite when the previous extension-written default (identifier #D4D4D4) is present
+    const prevDefault = existingColors.globalValue &&
+        existingColors.globalValue.rules && existingColors.globalValue.rules.identifier === '#D4D4D4';
+    if (!existingColors.globalValue && !existingColors.workspaceValue || prevDefault) {
+        // pluginVerilog CodeDrawStyle hues, adjusted for VS Code dark themes
+        // (the original colors are tuned for the CodeEditor2 light background
+        // and read as white on dark backgrounds).
         const colors = {
             rules: {
                 keyword: '#569CD6',
                 comment: '#6A9955',
                 type: '#4EC9B0',
-                function: '#4EC9B0',
+                function: '#DCDCAA',
                 parameter: '#FF5EC2',
                 macro: '#FF5EC2',
-                property: '#FF96C8',
-                variable: '#FFC8C8',
+                property: '#E86FB8',
+                variable: '#F48FB1',
                 number: '#CE9178',
                 string: '#CE9178',
-                register: '#FF3232',
-                identifier: '#D4D4D4',
+                register: '#FF6B6B',
+                identifier: '#9CDCFE',
             }
         };
         editorConfig.update('semanticTokenColorCustomizations', colors, vscode.ConfigurationTarget.Global)
