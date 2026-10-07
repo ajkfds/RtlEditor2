@@ -1179,6 +1179,16 @@ endmodule
   - メインコミット: `abb6594` (submodule pointer 更新)
   - Next: ユーザ側で Reload Window 後の動作確認 (parse エラー位置に波線 (赤/黄) が付き、Problems パネルにメッセージが表示されること)。未解決 identifier (dst 等) の "unfound object" エラーがアンダーライン表示されるはず
   - 注意: publish exe 更新後、VS Code 側で LSP サーバ再起動が必要 (旧サーバプロセスが DLL ロックを起こすため taskkill も併用)
+- diagnostic marker の end 位置がおかしい問題 → 修正完了 (ビルド成功、テスト 37/37 合格、publish 更新、コミット済み)
+  - ユーザ報告「markerのstart位置は正しいけどend位置がおかしい」
+  - 原因1: `SystemVerilogRange(start, ...)` の第2引数は Length だが `start + length` (end位置) を渡していた (Range.EndIndex = StartIndex + Length のため end が2重加算で飛び出す)
+  - 原因2: plugin `WordPointer.length` は word 長ではなく「次トークン開始位置までの距離」(コメント skip 含む、エディタ mark 用規約) を持つため、LSP underline にそのまま使うと end が次トークン以降に伸びる
+  - 修正 (SystemVerilogLanguageServer `de6f88b`): `CollectDiagnostics` で message.Index 位置の identifier を実スキャン (letter/digit/_/$ の連続、上限256) して length を算出。identifier でない位置 (記号トークン) は区切り文字まで消費。`SystemVerilogRange(start, length)` に修正
+  - 検証: `wire sig; assign dst = 1;` → `sig` (21..24) / `dst` (37..40) と正しい3文字幅に正常化 (以前は 21..45 / 37..77)
+  - テスト (SystemVerilogLanguageServer.Tests `076182f`): diagnostic range の sanity check 追加 (EndIndex > StartIndex、EndIndex <= docLength)。37/37 合格
+  - publish 更新済み、全体ビルド 0 errors
+  - メインコミット: submodule pointer 更新
+  - Next: ユーザ側で Reload Window 後の波線範囲確認 (識別子単位の幅になること)
 - (旧) LSP autocomplete 未実装の分析 (参考): LspHandler に `textDocument/completion` ハンドラなし・`CompletionItem` DTO なし・extension にも provider なし → 上記で解消
 - LSP references の本物 parser 由来化 + didOpen/didChange 時の先行 parse → 実装完了 (ビルド成功、テスト 35/35 合格、コミット済み)
   - 実装1 (SystemVerilogLanguageServer `c319ff2`): `InMemoryFile.BuildSymbolsFromParsedDocument` に references 収集を追加。`AppendReferences` (building block tree 再帰走査 + 訪問済み HashSet で循環防御) → `DataObject.DefinedReference` (宣言位置) / `UsedReferences` / `AssignedReferences` (use 位置) を `InMemoryElement` として `_allElements` / `_byName` に登録。struct/class object の member も再帰収集
