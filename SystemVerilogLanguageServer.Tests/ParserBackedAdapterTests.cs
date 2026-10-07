@@ -158,5 +158,31 @@ endmodule
    Assert.NotEmpty(entries!);
    Assert.Contains(entries!, e => e.Text == "begin");
        }
-   }
+
+      [Fact]
+      public void InMemoryCore_DiagnosticsFromRealParser()
+      {
+          EnsurePluginRegistered();
+
+          var core = new SystemVerilogLanguageServer.Server.InMemorySystemVerilogCore();
+          var project = (SystemVerilogLanguageServer.Server.InMemoryProject)core.GetOrCreateProject("default");
+
+          // undeclared identifier "dst" produces a parse diagnostic
+          string text =
+"""
+module top;
+    wire sig;
+    assign dst = 1;
+endmodule
+""";
+
+          project.AddOrUpdateFile("mem://diag.sv", null, text, true);
+          var memFile = (SystemVerilogLanguageServer.Server.InMemoryFile)project.FindFile("mem://diag.sv")!;
+          memFile.ForceBuild();
+
+          var doc = project.GetDocument(memFile);
+          Assert.NotNull(doc);
+          Assert.True(doc!.Diagnostics.Count > 0, "expected at least one diagnostic (undeclared dst)");
+      }
+  }
 }
