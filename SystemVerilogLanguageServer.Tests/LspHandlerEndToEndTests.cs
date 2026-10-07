@@ -248,6 +248,8 @@ public class LspHandlerEndToEndTests
         public IReadOnlyDictionary<string, ISystemVerilogBuildingBlock> BuildingBlocks =>
             new Dictionary<string, ISystemVerilogBuildingBlock>();
         public IReadOnlyList<ISystemVerilogNamedElement> Members => _members;
+        public IReadOnlyList<ISystemVerilogAutocompleteItem> AutocompleteItems { get; }
+            = System.Array.Empty<ISystemVerilogAutocompleteItem>();
         public void AddMember(ISystemVerilogNamedElement member) => _members.Add(member);
         SystemVerilogNamedElementKind ISystemVerilogNamedElement.Kind => SystemVerilogNamedElementKind.Unknown;
     }

@@ -25,4 +25,9 @@
     <ProjectReference Include="..\SystemVerilogLanguageServer\SystemVerilogLanguageServer.csproj" />
   </ItemGroup>
 
+  <!-- Phase 10: parser-backed adapter tests (references the real plugin) -->
+  <ItemGroup>
+    <ProjectReference Include="..\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.csproj" />
+  </ItemGroup>
+
 </Project>

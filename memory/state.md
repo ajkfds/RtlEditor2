@@ -308,6 +308,27 @@ endmodule
 
 ## 進行中タスク
 
+- SystemVerilogCore 抽象化 Phase 10 (parser-backed adapter テスト / Wrap 接続) → 部分完了・本体 parser の UI フリー化は未達 (要方針決定)
+  - 実装完了分 (コミット済み):
+    - CodeEditor2VerilogPlugin `3766ba0`: `VerilogSystemVerilogCore` に `Instance` シングルトン追加 + `Plugin.projectCreated` から `Wrap(project, Id + ":" + project.Name)` を呼び出し (エディタ上の project を SystemVerilogCore seam 経由で共有)
+    - CodeEditor2VerilogPlugin `ab43bbc`: `CoreBridge/AutocompleteAdapter.cs` 新設 (INamedElement → ISystemVerilogAutocompleteItem 変換、BuildingBlock.Members からの候補生成) + `BuildingBlockAdapter.AutocompleteItems` / `EmptyRootBlockAdapter.AutocompleteItems` 実装
+    - メイン `e352717`: submodule pointer 更新
+  - 未達 (本体 parser の UI フリー化): `ParserBackedAdapterTests` (メインリポジトリ、未コミット) が本物の plugin parser (VerilogParser) を xUnit プロセス上で駆動しようとするがハングする
+    - 根本原因: CodeEditor2 の Data 層に UI 依存が散在。確認できた箇所:
+      - `VerilogFile.AcceptParsedDocumentAsync` L241 / `InterfaceInstance` L263: `Controller.CodeEditor.GetTextFileAsync()` → `Dispatcher.UIThread.InvokeAsync` 同期待ち (Global.codeView 参照)
+      - `VerilogFile.updateIncludeFilesAsync` L276-278: `NavigatePanel.GetSelectedNodeAsync()` + `GetTextFileAsync()`
+      - `Item.NavigatePanelNode` getter (Item.cs L598): `Dispatcher.UIThread.Invoke` (同期) — `Project.CreateAsync` → `project.UpdateAsync()` の項目ツリー構築で発火
+      - `TextFile.FileCheckAsync` 経路の `Dispatcher.UIThread.Post` 群
+    - xUnit プロセスには Avalonia Dispatcher / UI スレッドが存在しないためこれらの Invoke が永久待ちになる (`Global.codeView` は `null!` 初期化で NRE ではなくハングになる点に注意)
+    - 対応済み (未コミット): VerilogFile.cs (AcceptParsedDocumentAsync / updateIncludeFilesAsync) と InterfaceInstance.cs のエディタ反映ブロックを `CodeEditor2.Global.UIThread != null` ガードで分岐 (エディタ有無で動作分離の第一歩)。ビルド成功 (0 エラー)
+    - ただしガード追加だけでは `Project.CreateAsync` → `UpdateAsync` → `NavigatePanelNode` 経路など Data 層全体の UI 依存を拾い切れず、テストはまだハングする
+  - 運用上の注意: ハングした `testhost` プロセスが CodeEditor2VerilogPlugin.dll をロックし続け、次の dotnet test が MSB3027 で失敗する。taskkill で testhost を終了してから再実行すること (taskkill はコマンド許可リスト外のためユーザ実行)
+  - Next (方針決定待ち):
+    - 案A: ParserBackedAdapterTests を `[Fact(Skip=...)]` で保留し、Phase 10 は現状 (Wrap 接続 + AutocompleteAdapter) で完了とする。本体 parser の UI フリー化は独立タスク化
+    - 案B: CodeEditor2 Data 層の UI 依存 (`Dispatcher.UIThread.Invoke` 全箇所) を UI スレッド有無で分岐する全面改造 (工数大・エディタ本体への影響要検証)
+    - 案C: Avalonia Headless (XUnitBackgroundThread / HeadlessTestHost) でテストプロセスに UI スレッドを用意する
+  - 未コミットの変更: VerilogFile.cs / InterfaceInstance.cs (UIThread ガード)、SystemVerilogLanguageServer.Tests 側 (ParserBackedAdapterTests.cs の Instance 利用化 + ユーザ変更とみられる AdapterBehaviorTests.cs / LspHandlerEndToEndTests.cs / csproj の差分)
+
 - assignment pattern の追加実装候補の精査 → 1 (type'{...} 形式) 実装完了 (ビルド成功、コミット済み)
   - 解析結果: assignment pattern (`AssignmentPattern.cs`) 自体は実装済み。BNF との差分として (1) `type'{...}` (assignment_pattern_expression_type) が Cast 経路に阻害され parse エラー (2) BitWidth/Constant/AppendLabel/AppendRefrencedDataObjects 等の Expression override なし (3) repetition `'{4{1'b0}}` 未対応 (4) array_pattern_key の bracket index 式未対応 を特定
   - 実装1 (`Verilog/Expressions/Cast.cs`): `Cast.ParseCreate` の型解決後、`'` 直後が `{` の場合 (通常 cast の `(` ではなく) `AssignmentPattern.ParseCreate` に委譲する分岐を追加。戻り型合わせのため `AssignmentPatternPrimary` (Primary 派生ラッパー) を新設し `Reference` を設定

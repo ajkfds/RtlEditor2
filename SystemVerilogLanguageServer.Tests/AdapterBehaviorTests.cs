@@ -227,6 +227,8 @@ public class AdapterBehaviorTests
         public ISystemVerilogBuildingBlock? Owner => null;
         public IReadOnlyDictionary<string, ISystemVerilogBuildingBlock> BuildingBlocks => _children;
         public IReadOnlyList<ISystemVerilogNamedElement> Members => _members;
+        public IReadOnlyList<ISystemVerilogAutocompleteItem> AutocompleteItems { get; }
+            = System.Array.Empty<ISystemVerilogAutocompleteItem>();
 
         public void AddChild(InMemoryBuildingBlock child) => _children[child.Name] = child;
         public void AddMember(ISystemVerilogNamedElement member) => _members.Add(member);
