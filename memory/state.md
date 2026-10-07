@@ -1122,7 +1122,19 @@ endmodule
 
 ## Next Steps
 
-- VS Code 拡張 (vscode-extension) の動作確認 → 残作業: `npm install` がコマンド許可リスト外のためユーザ実行が必要
+- VS Code 拡張 (vscode-extension) の activation エラー修正 → 実装完了 (ビルド不要、コミット済み)
+  - 問題: extension activation 時 "Cannot find module 'vscode-languageclient/node'"。`npm install` がコマンド許可リスト外でユーザ側でも未実行だった
+  - 修正: `extension.js` を `vscode-languageclient` 依存ゼロの raw JSON-RPC (LSP over stdio) クライアントに全面書き換え
+    - `RawLspClient` 新設: Content-Length フレーミング parse / request-response pending map / notification dispatch / spawn したサーバプロセスの stdin/stdout 接続
+    - `textDocument/publishDiagnostics` 受信 → DiagnosticCollection へ反映 (従来未実装だった diagnostics push も受信対応)
+    - provider は初回呼び出し時遅延起動 (`ensureClient`): `initialize` → `initialized` → 既存 open ドキュメントの `didOpen` 同期 → onDidOpen/didChange/didClose で全文同期
+    - hover (MarkdownString) / definition / references / documentSymbol (DocumentSymbol 再帰変換) を実装
+    - サーバ解決は従来方式維持 (publish exe → `systemverilogLsp.serverPath` → `dotnet run` fallback)
+  - `package.json` から `dependencies` (vscode-languageclient) を削除 → `npm install` 不要、`vsce package` も node_modules なしで可能
+  - コミット: メイン `013f55a`
+  - Next: ユーザ側で Developer: Reload Window → testRtl の .sv ファイルで hover / Go to Definition / Find References / Outline の動作確認
+  - 既知の未対応 (接続は可能だが影響あり): UTF-16 position 変換 (multi-byte 文字で位置ずれ)、未 open ファイルは解析対象外
+- (旧) VS Code 拡張 (vscode-extension) の動作確認 → 残作業: `npm install` がコマンド許可リスト外のためユーザ実行が必要 (上記の raw JSON-RPC 化により解消)
   - デバッグ起動設定を追加 → 実装完了 (コミット済み)
     - `vscode-extension/.vscode/launch.json` 新設: "Run Extension" 構成 (extensionHost + --extensionDevelopmentPath、プレーン JS 拡張のため outFiles のみで preLaunchTask 不要)
     - `vscode-extension/.vscode/tasks.json` 新設: ダミータスクのみ (ビルドステップなし)
