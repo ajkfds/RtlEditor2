@@ -3,6 +3,18 @@
 const vscode = require('vscode');
 const { spawn } = require('child_process');
 
+let log = null;
+function initLog(context) {
+    if (!log) {
+        log = vscode.window.createOutputChannel('SystemVerilog LSP');
+        context.subscriptions.push(log);
+    }
+    return log;
+}
+function logLine(msg) {
+    if (log) log.appendLine('[' + new Date().toISOString() + '] ' + msg);
+}
+
 // ---- raw JSON-RPC (LSP over stdio) client, no external dependencies ----
 
 class RawLspClient {
@@ -130,6 +142,7 @@ const openedDocs = new Map(); // uri -> open count
 
 function withClient(fn) {
     return ensureClient().then(fn, (err) => {
+        logLine('ERROR: ' + (err && err.stack ? err.stack : err.message));
         vscode.window.showErrorMessage('SystemVerilog LSP: ' + err.message);
         return undefined;
     });
@@ -146,7 +159,10 @@ function ensureClient() {
         ));
     }
 
+    logLine('starting server: ' + server.command + ' ' + server.args.join(' '));
     const proc = spawn(server.command, server.args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    proc.on('error', (err) => logLine('server spawn error: ' + err.message));
+    proc.on('exit', (code) => logLine('server exited with code ' + code));
     client = new RawLspClient(proc);
     client.onNotification('textDocument/publishDiagnostics', (params) => {
         const uri = vscode.Uri.parse(params.uri);
@@ -173,12 +189,13 @@ function ensureClient() {
             ? vscode.workspace.workspaceFolders[0].uri.toString() : null,
         capabilities: {},
     }).then((result) => {
+        logLine('initialize succeeded');
         client.send('initialized', {});
         // sync already-open documents
         for (const doc of vscode.workspace.textDocuments) {
             maybeOpenDocument(doc);
         }
-        const openDisposable = vscode.workspace.onDidOpenTextDocument((doc) => maybeOpenDocument(doc));
+        const openDisposable = vscode.workspace.onDidOpenTextDocument((doc) => { logLine('didOpen: ' + doc.uri.toString()); maybeOpenDocument(doc); });
         const changeDisposable = vscode.workspace.onDidChangeTextDocument((e) => {
             if (e.document && openedDocs.has(e.document.uri.toString())) {
                 client.send('textDocument/didChange', {
@@ -240,7 +257,9 @@ function positionParams(doc, pos, extra) {
 }
 
 function provideHover(doc, pos) {
+    logLine('provideHover @ ' + pos.line + ':' + pos.character);
     return client.request('textDocument/hover', positionParams(doc, pos)).then((result) => {
+        logLine('hover result: ' + JSON.stringify(result));
         if (!result || !result.contents) return null;
         const contents = typeof result.contents === 'string' ? [result.contents] :
             Array.isArray(result.contents) ? result.contents :
@@ -254,21 +273,27 @@ function provideHover(doc, pos) {
 }
 
 function provideDefinition(doc, pos) {
+    logLine('provideDefinition @ ' + pos.line + ':' + pos.character);
     return client.request('textDocument/definition', positionParams(doc, pos)).then((result) => {
+        logLine('definition result: ' + JSON.stringify(result));
         if (!result) return [];
         return toLocations(result);
     });
 }
 
 function provideReferences(doc, pos, opts) {
+    logLine('provideReferences @ ' + pos.line + ':' + pos.character);
     return client.request('textDocument/references', positionParams(doc, pos, { context: { includeDeclaration: opts.includeDeclaration } })).then((result) => {
+        logLine('references result count: ' + (Array.isArray(result) ? result.length : 'null'));
         if (!result) return [];
         return toLocations(result);
     });
 }
 
 function provideDocumentSymbols(doc) {
+    logLine('provideDocumentSymbols');
     return client.request('textDocument/documentSymbol', positionParams(doc)).then((result) => {
+        logLine('documentSymbol result count: ' + (result ? result.length : 'null'));
         if (!result) return [];
         return result.map(toSymbol).filter((s) => s);
     });
@@ -308,6 +333,8 @@ function toSymbol(sym) {
 
 function activate(context) {
     context_ = context;
+    initLog(context);
+    logLine('extension activated');
     context.subscriptions.push(
         vscode.languages.registerHoverProvider(
             [{ scheme: 'file', language: 'systemverilog' }, { scheme: 'file', language: 'verilog' }],
