@@ -1155,6 +1155,21 @@ endmodule
 
 ## Next Steps
 
+- LSP autocomplete (textDocument/completion) → 実装完了 (ビルド成功、テスト 36/36 合格、publish 更新、コミット済み)
+  - 背景: LSP は diagnostics push 実装済みだったが autocomplete 未実装 (plugin エディタ側の CompletionContext 部分parse 機構が LSP に未接続)
+  - 実装1 (CodeEditor2VerilogPlugin `fef7aeb`): `CoreBridge/CompletionAdapter.cs` 新設。既存 `VerilogCommon.AutoComplete.GetAutoCompleteItems` (CompletionContext 部分parse) を UI フリーで駆動し、AutoCompleteItems を LSP CompletionItemKind (3=Function/Task, 6=Variable/DataObject, 9=Module/NameSpace, 14=Keyword) にマップした (text, kind, detail) エントリへ変換。重複排除
+    - UI なしホスト対応: `file.CodeDocument` が未生成 (FileCheckAsync 未実行) の場合、protected `CreateCodeDocument` を反射で呼び出し、`CopyTextOnlyFrom(parsedDocument.CodeDocument)` でテキストを投入 (CompletionContext 部分parse は file.CodeDocument からテキストを読むため必須)
+  - 実装2 (SystemVerilogLanguageServer `7e121b7`):
+    - `InMemoryFile.GetCompletionItems(index)` 新設 (EnsureBuilt + `_parsedDocument` + `_verilogFile` を渡して adapter 呼び出し)、`InMemoryProject.GetCompletionItems(file, index)` 転送
+    - `LspHandler` に `textDocument/completion` handler 追加 (position は行末 clamp のみで word 後退補正なし → 候補語プレフィックスを保持)。`CompletionList/CompletionItem/CompletionCapability` DTO 新設、`ServerCapabilities.completionProvider` 宣言 (triggerCharacters: `.` / `` ` `` / `$`)
+  - 実装3 (vscode-extension `70833c1`): `registerCompletionItemProvider` 追加 (systemverilog/verilog 両言語、trigger chars は server と同一)、CompletionItemKind 数値 → vscode.CompletionItemKind 変換
+  - テスト (SystemVerilogLanguageServer.Tests `43c9e1d`): `ParserBackedAdapterTests.InMemoryCore_CompletionFromRealParser` 追加 (assign 文中 caret で部分parse が具体候補を返すことを検証。module body 直下 caret は Module の EOF 分岐が keyword 列挙を返す挙動)。36/36 合格
+  - publish 更新済み (`dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish`)
+  - 全体ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - メインコミット: `70833c1` (extension.js) / `f1b28fc` (submodule pointer 更新)
+  - Next: ユーザ側で Reload Window 後の入力補完動作確認 (キーワード / DataObject / member `.補完` / マクロ `` ` `` / system task `$` 等)
+  - 注意: caret 位置による候補は既存 CompletionContext の部分parse 分岐に依存 (statement 内は expression 候補、module body は keyword 列挙等)。未対応 documentRegion では AppendAll フォールバック (`AutoComplete.GetAutoCompleteItems` 内)
+- (旧) LSP autocomplete 未実装の分析 (参考): LspHandler に `textDocument/completion` ハンドラなし・`CompletionItem` DTO なし・extension にも provider なし → 上記で解消
 - LSP references の本物 parser 由来化 + didOpen/didChange 時の先行 parse → 実装完了 (ビルド成功、テスト 35/35 合格、コミット済み)
   - 実装1 (SystemVerilogLanguageServer `c319ff2`): `InMemoryFile.BuildSymbolsFromParsedDocument` に references 収集を追加。`AppendReferences` (building block tree 再帰走査 + 訪問済み HashSet で循環防御) → `DataObject.DefinedReference` (宣言位置) / `UsedReferences` / `AssignedReferences` (use 位置) を `InMemoryElement` として `_allElements` / `_byName` に登録。struct/class object の member も再帰収集
   - 実装2 (同コミット): `InMemoryFile.ForceBuild()` を新設し、`HandleDidOpen` / `HandleDidChange` で `AddOrUpdateFile` 直後に先行 parse を実行 (初回 semantic tokens / hover / definition クエリが lightweight fallback にならないように解消)
