@@ -42,6 +42,7 @@
       }
     ],
     "configurationDefaults": {
+      "editor.semanticHighlighting.enabled": true,
       "editor.semanticTokenColorCustomizations": {
         "rules": {
           "keyword": "#569CD6",
