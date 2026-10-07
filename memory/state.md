@@ -1169,6 +1169,16 @@ endmodule
   - メインコミット: `70833c1` (extension.js) / `f1b28fc` (submodule pointer 更新)
   - Next: ユーザ側で Reload Window 後の入力補完動作確認 (キーワード / DataObject / member `.補完` / マクロ `` ` `` / system task `$` 等)
   - 注意: caret 位置による候補は既存 CompletionContext の部分parse 分岐に依存 (statement 内は expression 候補、module body は keyword 列挙等)。未対応 documentRegion では AppendAll フォールバック (`AutoComplete.GetAutoCompleteItems` 内)
+- LSP diagnostics (エラーマーカー) が表示されない問題 → 根本原因修正完了 (ビルド成功、テスト 37/37 合格、publish 更新、コミット済み)
+  - ユーザ報告「エラーメッセージ等が表示されてない。コード中にアンダーラインとかのマーカーをいれられない？」
+  - 根本原因: `InMemoryFile.SetDiagnostics` に呼び出し元が存在せず、本物 parser の `ParsedDocument.Messages` が LSP diagnostics に一切反映されていなかった (publishDiagnostics は常に空リストを push → VS Code 側に波線 / Problems パネル表示なし)
+  - 修正 (SystemVerilogLanguageServer `47e6aec`): `BuildSymbols` 内で parser Messages を収集する `CollectDiagnostics` を追加し `SetDiagnostics` に接続。メッセージ種別 → severity 変換 (Error/Warning/Notice→Information/Hint)、`DiagnosticCodeMap.FromMessage` で code 付与、`Index < 0` のメッセージは skip、`Length <= 0` は 1 に補正。`InMemoryDiagnostic` 実装クラス新設。didOpen/didChange → ForceBuild → PushDiagnostics 経路で VS Code の波線 + Problems パネル表示が有効化
+  - 補助 (CodeEditor2VerilogPlugin `910bf37`): `DiagnosticCodeMap` を internal → public 化 (LSP から参照)
+  - テスト (SystemVerilogLanguageServer.Tests `5072297`): `InMemoryCore_DiagnosticsFromRealParser` 追加 (未宣言識別子で diagnostic 1 件以上を検証)。37/37 合格
+  - publish 更新済み、全体ビルド 0 errors
+  - メインコミット: `abb6594` (submodule pointer 更新)
+  - Next: ユーザ側で Reload Window 後の動作確認 (parse エラー位置に波線 (赤/黄) が付き、Problems パネルにメッセージが表示されること)。未解決 identifier (dst 等) の "unfound object" エラーがアンダーライン表示されるはず
+  - 注意: publish exe 更新後、VS Code 側で LSP サーバ再起動が必要 (旧サーバプロセスが DLL ロックを起こすため taskkill も併用)
 - (旧) LSP autocomplete 未実装の分析 (参考): LspHandler に `textDocument/completion` ハンドラなし・`CompletionItem` DTO なし・extension にも provider なし → 上記で解消
 - LSP references の本物 parser 由来化 + didOpen/didChange 時の先行 parse → 実装完了 (ビルド成功、テスト 35/35 合格、コミット済み)
   - 実装1 (SystemVerilogLanguageServer `c319ff2`): `InMemoryFile.BuildSymbolsFromParsedDocument` に references 収集を追加。`AppendReferences` (building block tree 再帰走査 + 訪問済み HashSet で循環防御) → `DataObject.DefinedReference` (宣言位置) / `UsedReferences` / `AssignedReferences` (use 位置) を `InMemoryElement` として `_allElements` / `_byName` に登録。struct/class object の member も再帰収集
