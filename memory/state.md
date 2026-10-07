@@ -1122,6 +1122,13 @@ endmodule
 
 ## Next Steps
 
+- TextMate でのカラーリングが優先され parse 結果が反映されない問題 → 修正完了 (ビルド成功、テスト 33/33 合格、コミット済み)
+  - ユーザ報告「カラーリングが pluginVerilog のものではなく textmate でのカラーリングになっている。parse 結果を反映した色になってない」
+  - 修正: package.json から `contributes.grammars` (TextMate grammar) を削除し semantic tokens のみに統一 (TextMate は lexical ベースで parse 結果を反映しない。`syntaxes/systemverilog.tmLanguage.json` は残置だが未使用)。semantic tokens は lightweight parser の宣言シンボル種別に基づくため parse 結果を反映
+  - 補助: semanticTokens provider に token 数ロギング追加 (extension 側 OutputChannel + server 側 stderr)
+  - テスト 33/33 合格、publish 更新済み
+  - コミット: SystemVerilogLanguageServer `6d8c252`、メイン `7b23458`
+  - Next: ユーザ側で Reload Window 後の色分け確認 (OutputChannel "SystemVerilog LSP" の `semanticTokens: N tokens` ログで動作確認可能)
 - VS Code extension に pluginVerilog の色付け (CodeDrawStyle) を LSP semantic tokens 経由で実装 → 実装完了 (ビルド成功、テスト 33/33 合格、コミット済み)
   - ユーザ指示「色分けは TextMate ではなく、pluginVerilog で行っている色付けを使って」に対応 (TextMate grammar 実装 de8a133 は残置、semantic tokens が優先適用される)
   - 対応1 (`Server/LightweightParser.cs`): `ParseResult` に `Tokens` / `AddToken` を追加 (TokenTypes enum: keyword/comment/string/number/macro/function/type/variable/property=net/parameter/register/identifier)。Parse メインループにコメント/文字列/数字 (sized literal 対応)/マクロ (`` `NAME``)/system task (`$display`) のトークン収集を組み込み、keyword 判定 (`IsKeywordWord` 新設、SystemVerilog 全 keyword) と宣言シンボル → 色トークン変換を追加
