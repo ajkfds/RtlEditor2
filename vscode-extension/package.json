@@ -54,8 +54,5 @@
   },
   "scripts": {
     "package": "vsce package"
-  },
-  "dependencies": {
-    "vscode-languageclient": "^9.0.1"
   }
 }
