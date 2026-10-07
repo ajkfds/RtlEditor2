@@ -138,6 +138,7 @@ function resolveServerCommand(context) {
 }
 
 let client = null;
+let initPromise = null;
 const openedDocs = new Map(); // uri -> open count
 
 function withClient(fn) {
@@ -149,6 +150,7 @@ function withClient(fn) {
 }
 
 function ensureClient() {
+    if (initPromise) return initPromise;
     if (client) return Promise.resolve(client);
 
     const server = resolveServerCommand(getContext());
@@ -183,7 +185,7 @@ function ensureClient() {
         collection.set(uri, diags);
     });
 
-    return client.request('initialize', {
+    initPromise = client.request('initialize', {
         processId: process.pid,
         rootUri: vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]
             ? vscode.workspace.workspaceFolders[0].uri.toString() : null,
@@ -217,8 +219,10 @@ function ensureClient() {
     }, (err) => {
         client.dispose();
         client = null;
+        initPromise = null;
         throw err;
     });
+    return initPromise;
 }
 
 let context_ = null;
@@ -342,8 +346,8 @@ function provideDocumentSemanticTokens(doc) {
         logLine('semanticTokens: ' + count + ' tokens');
         return builder.build();
     }, (err) => {
-        logLine('semanticTokens ERROR: ' + (err && err.message));
-        throw err;
+        logLine('semanticTokens request ERROR: ' + (err && err.message));
+        return new vscode.SemanticTokens(new Uint32Array(0));
     });
 }
 
