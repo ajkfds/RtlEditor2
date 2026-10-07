@@ -316,6 +316,11 @@ const tokenTypesByIndex = ['keyword', 'comment', 'string', 'number', 'macro',
     'function', 'type', 'variable', 'property', 'parameter', 'register', 'identifier'];
 
 function provideDocumentSemanticTokens(doc) {
+    logLine('provideDocumentSemanticTokens called: ' + doc.uri.toString());
+    if (!client) {
+        logLine('semanticTokens: client is null');
+        return new vscode.SemanticTokens(new Uint32Array(0));
+    }
     return client.request('textDocument/semanticTokens/full', positionParams(doc)).then((result) => {
         const builder = new vscode.SemanticTokensBuilder(
             new vscode.SemanticTokensLegend(tokenTypesByIndex, []));
@@ -400,17 +405,30 @@ function activate(context) {
             { provideReferences: (doc, pos, opts) => withClient(() => provideReferences(doc, pos, opts)) }
         )
     );
-    context.subscriptions.push(
-        vscode.languages.registerDocumentSemanticTokensProvider(
-            [{ scheme: 'file', language: 'systemverilog' }, { scheme: 'file', language: 'verilog' }],
-            { provideDocumentSemanticTokens: (doc) => withClient(() => provideDocumentSemanticTokens(doc)) },
-            new vscode.SemanticTokensLegend(
-                ['keyword', 'comment', 'string', 'number', 'macro',
-                 'function', 'type', 'variable', 'property', 'parameter', 'register', 'identifier'],
-                []
+    try {
+        const legend = new vscode.SemanticTokensLegend(
+            ['keyword', 'comment', 'string', 'number', 'macro',
+             'function', 'type', 'variable', 'property', 'parameter', 'register', 'identifier'],
+            []
+        );
+        context.subscriptions.push(
+            vscode.languages.registerDocumentSemanticTokensProvider(
+                { scheme: 'file', language: 'systemverilog' },
+                { provideDocumentSemanticTokens: (doc) => withClient(() => provideDocumentSemanticTokens(doc)) },
+                legend
             )
-        )
-    );
+        );
+        context.subscriptions.push(
+            vscode.languages.registerDocumentSemanticTokensProvider(
+                { scheme: 'file', language: 'verilog' },
+                { provideDocumentSemanticTokens: (doc) => withClient(() => provideDocumentSemanticTokens(doc)) },
+                legend
+            )
+        );
+        logLine('semantic tokens provider registered');
+    } catch (e) {
+        logLine('semantic tokens registration ERROR: ' + (e && e.message));
+    }
 
     // Eagerly start the LSP session as soon as a matching document is
     // (or becomes) open, so didOpen + publishDiagnostics work without
