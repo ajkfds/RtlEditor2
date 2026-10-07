@@ -126,5 +126,37 @@ endmodule
                Assert.Equal("sig", r.Name);
            }
        }
+
+       [Fact]
+       public async Task InMemoryCore_CompletionFromRealParser()
+       {
+           EnsurePluginRegistered();
+
+           var core = new SystemVerilogLanguageServer.Server.InMemorySystemVerilogCore();
+           var project = (SystemVerilogLanguageServer.Server.InMemoryProject)await core.GetProjectAsync("default");
+
+           string text =
+"""
+module top;
+    wire mysignal;
+    wire dst;
+    assign dst = my;
+endmodule
+""";
+
+           project.AddOrUpdateFile("mem://completion.sv", null, text, true);
+           var memFile = (SystemVerilogLanguageServer.Server.InMemoryFile)project.FindFile("mem://completion.sv")!;
+
+           // caret right after "my" (incomplete candidate word)
+           int index = text.IndexOf("my", StringComparison.Ordinal) + 1;
+           var entries = project.GetCompletionItems(memFile, index);
+
+           Assert.True(entries != null,
+               $"entries is null; docLen={memFile.CodeDocument.Length}, index={index}, textLen={text.Length}");
+           // the partial parse must produce concrete candidates (keywords at
+   // minimum; DataObject items appear for expression / LHS positions)
+   Assert.NotEmpty(entries!);
+   Assert.Contains(entries!, e => e.Text == "begin");
+       }
    }
 }
