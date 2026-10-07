@@ -1122,6 +1122,15 @@ endmodule
 
 ## Next Steps
 
+- LSP サーバが何も parse しないため hover/definition/symbol がすべて空になる問題 → 実装完了 (ビルド成功、テスト 33/33 合格、selftest 正常、コミット済み)
+  - 根本原因: `InMemorySystemVerilogCore` はテキスト保持のみで parse 結果のシンボル登録機構が存在せず、`FindDefinition` が常に空ヒット。parser-backed adapter (CoreBridge) は CodeEditor2 依存が深く Phase 10 未完のため LSP プロセスから使用不可
+  - 対応1 (`Server/LightweightParser.cs` 新設): トークンベースの軽量スキャナ (module/interface/package/program/checker/primitive/class の block 宣言 + スコープスタック、function/task 宣言、typedef、wire/reg/logic/int 等の変数宣言、`name :` label、参照収集、コメント/文字列 skip)。ParseResult に Symbols / References / Scopes (Owner chain 付き) を出力
+  - 対応2 (`InMemorySystemVerilogCore.cs`): `InMemoryFile` に lazy symbol build を追加 (コンストラクタでは parse せず、`FindElementAt` / `GetElementsByName` / `FindDeclarationByName` の初回呼び出し時に `LightweightParser.Parse` を実行し `InMemoryElement` / `InMemoryBlock` (階層付き) を生成)。手動登録 (`AddSymbol`、テスト用) があった場合は auto-parse を skip
+  - 対応3: `InMemoryProject.FindDefinition` は manual symbol 優先 → 参照位置なら `ResolveDeclaration` (同一ファイル宣言 → project-wide 名前解決、cross-file definition ジャンプ対応)。`FindReferences` は宣言 + 全ファイルの同名要素 (重複排除)。`InMemoryDocument.Diagnostics` / `FindElementAt` を file に転送
+  - 対応4 (LspHandler): `HandleDefinition` に manual symbol 優先 + 参照→宣言解決 + 宣言ファイル位置での Location 返却を追加
+  - 検証: --selftest で definition 応答 (offset 7..17) と documentSymbol に module `foo` が children 付きで出ることを確認
+  - コミット: SystemVerilogLanguageServer `464e46a`、メイン `1b345e5` (submodule pointer)
+  - Next: ユーザ側で Reload Window 後の動作確認 (hover / F12 / Shift+F12 / Outline / Problems パネル)
 - LSP 既知の未対応 2 点 (UTF-16 position 変換 / 未 open ファイル解析対象外) + publishDiagnostics push → 実装完了 (ビルド成功、テスト 33/33 合格、コミット済み)
   - 修正1 (URI/パス変換, LspHandler.cs): 旧 `ToAbsolutePath` (`Substring("file://".Length)` で Windows で `/D:/x` になる不正変換) を `UriToAbsolutePath` / `PathToUri` (`System.Uri` ベース、ドライブレター・percent escape・Unix/Windows 共通) に置換。workspace ロードされたファイルも URI → パス正変換で解決
   - 修正2 (position → index 変換, TryGetFileAndIndex): 行末超過 character の行末 clamp + caret が word 直後に位置する場合の 1 文字後退 (word 解析成功率向上)。LSP の UTF-16 character は .NET string index と 1:1 対応のため本質的な変換問題はなし
