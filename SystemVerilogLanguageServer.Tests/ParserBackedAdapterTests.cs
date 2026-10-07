@@ -83,12 +83,48 @@ endmodule
             Assert.NotNull(parsed);
             Assert.NotNull(parsed!.Root);
 
-            // drive the CoreBridge adapters
-            var fileAdapter = new pluginVerilog.CoreBridge.SystemVerilogFileAdapter(file);
-            var document = new pluginVerilog.CoreBridge.SystemVerilogDocumentAdapter(fileAdapter, parsed);
+           // drive the CoreBridge adapters
+           var fileAdapter = new pluginVerilog.CoreBridge.SystemVerilogFileAdapter(file);
+           var document = new pluginVerilog.CoreBridge.SystemVerilogDocumentAdapter(fileAdapter, parsed);
 
-            // documentSymbol: top module must appear as a top-level block.
-            Assert.Contains(document.Root.BuildingBlocks.Values, b => b.Name == "top");
-        }
-    }
+           // documentSymbol: top module must appear as a top-level block.
+           Assert.Contains(document.Root.BuildingBlocks.Values, b => b.Name == "top");
+       }
+
+       [Fact]
+       public async Task InMemoryCore_ReferencesFromRealParser()
+       {
+           EnsurePluginRegistered();
+
+           var core = new SystemVerilogLanguageServer.Server.InMemorySystemVerilogCore();
+           var project = (SystemVerilogLanguageServer.Server.InMemoryProject)await core.GetProjectAsync("default");
+
+           string text =
+"""
+module top;
+    wire sig;
+    wire dst;
+    assign dst = sig;
+    wire sink;
+    assign sink = sig;
+endmodule
+""";
+
+           project.AddOrUpdateFile("mem://top.sv", null, text, true);
+           var memFile = (SystemVerilogLanguageServer.Server.InMemoryFile)project.FindFile("mem://top.sv")!;
+
+           // find the declaration of "sig" (first occurrence in the text)
+           int sigIndex = text.IndexOf("sig", StringComparison.Ordinal);
+           var refs = await project.FindReferencesAsync(memFile, sigIndex);
+
+           // declaration + 2 use sites ("assign dst = sig", "assign sink = sig")
+           Assert.True(refs.Count >= 3, $"expected at least 3 references, got {refs.Count}");
+
+           // all locations should refer to the identifier "sig"
+           foreach (var r in refs)
+           {
+               Assert.Equal("sig", r.Name);
+           }
+       }
+   }
 }
