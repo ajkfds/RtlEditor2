@@ -2,6 +2,13 @@
 
 ## 未解決課題
 
+- module instance 階層 autocomplete のドット直後 member 候補修正 (3f569ef) の副作用で、ドットなし識別子入力時に instance/変数名候補が出なくなった問題 → 修正完了 (ビルド成功、コミット済み)
+  - 原因: 前回修正 (`3f569ef`) の `NamedElement != null` 分岐が `CandidateWord != ""` (識別子入力中、例 `inst0.mem|` 等 chain 継続中) でも early return して partial parse を skip。従来フロー (partial parse → 汎用 namespace 候補 → `AppendAll` フォールバック) が動かず instance/変数名候補が消えた
+  - 修正 (Verilog/CompletionContext.cs): early return 分岐を `NamedElement != null && CandidateWord == ""` (ドット直後のみ) に限定。識別子入力中は従来フロー (partial parse → appendNamedElements / AppendAll フォールバック → member 候補) に戻す。併せて Log 行をコメントアウト化 (ユーザの作業ツリー変更を含む)
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors / 565 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `ad6f420`、メイン `dfd439b` (submodule pointer 更新)
+  - Next: エディタ上で (1) `MODULEINSTANCE0.` 直後の member 候補表示 (2) ドットなし識別子入力時の instance/変数名候補 の両方が動くことを確認
+
 - module instance 階層 autocomplete で `MODULEINSTANCE0.` 直後 (ドット入力直後) に member 候補が出ず `.A` など1文字入力しないと出ない問題 → 修正完了 (ビルド成功、コミット済み)
   - 原因: `AutoComplete.GetAutoCompleteTarget` (AutoCompleteHandler.cs) はドット前の identifier chain から member target を解決して NamedElement に返すが、CompletionContext 側では NamedElement の member 候補 append が `AutoCompleteItems` が空のときの `AppendAll` フォールバック (AutoComplete.cs L90) に依存していた。ドット直後は CandidateWord == "" のため partial parse が append する汎用 namespace 候補がすべて AutoCompleteItems に入り、フォールバックが実行されず member 候補が表示されない。1文字入力すると CandidateWord フィルタで汎用候補が空になり AppendAll が走って初めて候補が出る
   - 修正 (CompletionContext.cs): コンストラクタの partial parse 分岐の前に `NamedElement != null` (階層 member access コンテキスト) の場合は `AppendSubElements(NamedElement)` を呼んで partial parse を skip する分岐を追加 (Verilog.Items.IBuildingBlockInstantiation / VirtualInterface / Variables.Object の変換は AppendSubElements 内で既存対応)
