@@ -2,6 +2,13 @@
 
 ## 未解決課題
 
+- module instance 階層 autocomplete で `MODULEINSTANCE0.` 直後 (ドット入力直後) に member 候補が出ず `.A` など1文字入力しないと出ない問題 → 修正完了 (ビルド成功、コミット済み)
+  - 原因: `AutoComplete.GetAutoCompleteTarget` (AutoCompleteHandler.cs) はドット前の identifier chain から member target を解決して NamedElement に返すが、CompletionContext 側では NamedElement の member 候補 append が `AutoCompleteItems` が空のときの `AppendAll` フォールバック (AutoComplete.cs L90) に依存していた。ドット直後は CandidateWord == "" のため partial parse が append する汎用 namespace 候補がすべて AutoCompleteItems に入り、フォールバックが実行されず member 候補が表示されない。1文字入力すると CandidateWord フィルタで汎用候補が空になり AppendAll が走って初めて候補が出る
+  - 修正 (CompletionContext.cs): コンストラクタの partial parse 分岐の前に `NamedElement != null` (階層 member access コンテキスト) の場合は `AppendSubElements(NamedElement)` を呼んで partial parse を skip する分岐を追加 (Verilog.Items.IBuildingBlockInstantiation / VirtualInterface / Variables.Object の変換は AppendSubElements 内で既存対応)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `3f569ef`
+  - Next: エディタ上で `MODULEINSTANCE0.` 直後の member 候補表示確認 (instance の port / 内部 signal が即座に出ること)。補足: RtlEditor2.sln 全体ビルドは稼働中の SystemVerilogLanguageServer プロセスによる DLL ロック (MSB3027) で失敗するが本修正と無関係 (taskkill/powershell がコマンド許可リスト外のためユーザ側で終了要)
+
 - class の type generics 対応 (`class Foo #(int W=8, type Int=int) extends Bar #(x,y,z);`) で "type" が parameter として認識されるエラー → 修正完了 (ビルド成功)
   - 原因: `Constants.ParseCreateTypeAssignmentsForPort` (Constants.cs) が呼び出し元 (Class.parseClassItems) から `type` keyword 未消費の word を受け取り、関数内ループの `General.IsIdentifier` (keyword 除外なし) が最初のトークン `type` を型パラメータ名 "type" として消費していた。`Int = int` が解析されずエラー
   - 修正 (Constants.cs): `ParseCreateTypeAssignmentsForPort` 冒頭で `word.Text == "type"` の場合 keyword 色付け + `MoveNext()` で消費してから list_of_type_assignments 解析を開始
