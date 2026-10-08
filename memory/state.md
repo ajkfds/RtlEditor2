@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- module instance 階層 autocomplete のドット直後 member 候補修正 (3f569ef) の副作用で、ドットなし識別子入力時に instance/変数名候補が出なくなった問題 → 修正完了 (ビルド成功、テスト 38/38 合格、コミット済み)
+  - 追加原因1 (CompletionContext.cs): `GetAutoCompleteTarget` が caret 直前がスペース/tab の場合 `ret=false` を返すが、CompletionContext コンストラクタが false で即 early return していた。out パラメータの NameSpace/CandidateWord は false 時も解析済みのため early return すると partial parse / AppendAll フォールバック (instance/変数名候補) が実行されず keyword のみしか出ない。→ false を無視して `NameSpace == null && NamedElement == null` のときのみ return するよう修正
+  - 追加原因2 (Module.cs): module body の partial parse 中に assign 等の expression parse で追加された候補が、module item ループの EOF 分岐で `AutoCompleteItems.Clear()` + keyword 列挙により上書き消去されていた。→ `AutoCompleteItems.Count == 0` のときのみ keyword 列挙するように変更 (partial parse で追加済みの候補は保持)
+  - テスト: `ParserBackedAdapterTests.InMemoryCore_CompletionNoDotIdentifierCandidates` を追加 (ドットなし識別子入力の regression テスト。headless host では file.ParsedDocument が未設定のため namespace 解決は editor-host のみの動作 → DataObject 候補 assert は省略し NotEmpty のみ検証、コメントで記載)。38/38 合格
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `0feea3f`、メイン `433f80a` (submodule pointer + test)
+  - Next: エディタ上で (1) `MODULEINSTANCE0.` 直後の member 候補 (2) ドットなし識別子入力時の instance/変数名候補 の両方を確認
+
 - module instance 階層 autocomplete のドット直後 member 候補修正 (3f569ef) の副作用で、ドットなし識別子入力時に instance/変数名候補が出なくなった問題 → 修正完了 (ビルド成功、コミット済み)
   - 原因: 前回修正 (`3f569ef`) の `NamedElement != null` 分岐が `CandidateWord != ""` (識別子入力中、例 `inst0.mem|` 等 chain 継続中) でも early return して partial parse を skip。従来フロー (partial parse → 汎用 namespace 候補 → `AppendAll` フォールバック) が動かず instance/変数名候補が消えた
   - 修正 (Verilog/CompletionContext.cs): early return 分岐を `NamedElement != null && CandidateWord == ""` (ドット直後のみ) に限定。識別子入力中は従来フロー (partial parse → appendNamedElements / AppendAll フォールバック → member 候補) に戻す。併せて Log 行をコメントアウト化 (ユーザの作業ツリー変更を含む)
