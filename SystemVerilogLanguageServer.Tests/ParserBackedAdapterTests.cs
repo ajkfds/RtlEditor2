@@ -161,8 +161,47 @@ endmodule
            Assert.Contains(entries!, e => e.Text == "begin");
        }
 
-       [Fact]
-       public void InMemoryCore_DiagnosticsFromRealParser()
+      [Fact]
+      public async Task InMemoryCore_CompletionNoDotIdentifierCandidates()
+     {
+         EnsurePluginRegistered();
+
+         var core = new SystemVerilogLanguageServer.Server.InMemorySystemVerilogCore();
+         var project = (SystemVerilogLanguageServer.Server.InMemoryProject)await core.GetProjectAsync("default");
+
+         // typing an identifier without a dot in the module body:
+         // instance / variable name candidates must appear (regression test for
+         // the member-access early-return introduced for "MODULE0 inst0.")
+         // note: no module instantiation here; ModuleInstantiation.ParseAsync calls
+         // Controller.AppendLog which NREs in headless hosts (separate known issue)
+         string text =
+"""
+module top;
+    wire mysignal;
+    wire dst;
+    assign dst = mysi;
+endmodule
+""";
+
+         project.AddOrUpdateFile("mem://nodot.sv", null, text, true);
+         var memFile = (SystemVerilogLanguageServer.Server.InMemoryFile)project.FindFile("mem://nodot.sv")!;
+
+         // caret after "mysi" (incomplete candidate word)
+         int index = text.IndexOf("mysi", StringComparison.Ordinal) + "mysi".Length;
+         var entries = project.GetCompletionItems(memFile, index);
+
+         Assert.True(entries != null, $"entries is null; docLen={memFile.CodeDocument.Length}, index={index}");
+        // note: the "mysignal" DataObject candidate is not asserted here because in
+        // headless hosts file.ParsedDocument (used by GetAutoCompleteTarget's
+        // namespace lookup) is not populated by ParseEngine; namespace resolution
+        // is an editor-host behavior. Editor-side verification of the regression
+        // fix (Module.cs Clear + CompletionContext GetAutoCompleteTarget ret=false)
+        // is done manually on the running editor.
+        Assert.NotEmpty(entries!);
+     }
+
+     [Fact]
+     public void InMemoryCore_DiagnosticsFromRealParser()
        {
            EnsurePluginRegistered();
 
