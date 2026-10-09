@@ -39,7 +39,8 @@ namespace SystemVerilogLanguageServer.Tests
             {
                 Name = Path.GetFileName(relativePath),
                 Project = project,
-                RelativePath = relativePath
+                RelativePath = relativePath,
+                SystemVerilog = true
             };
         }
 
