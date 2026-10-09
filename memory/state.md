@@ -330,6 +330,16 @@ endmodule
 
 ## 進行中タスク
 
+- `typedef class A;` 前方宣言の偽エラー ("data type expected") → 修正完了 (ビルド成功、コミット済み)
+  - 問題: `typedef class A;` (BNF `type_declaration ::= "typedef" [ "enum" | "struct" | "union" | "class" | "interface class" ] type_identifier ;`、前方宣言用) が `DataTypeFactory.ParseCreate` に `class` を渡し、case 分岐なし + keyword で null return → "data type expected" 誤エラー。`typedef interface class A;` も同様
+  - 修正 (Typedef.cs): ParseDeclaration 冒頭に `class` / `interface class` 分岐を追加。keyword 色付け + identifier 消費 + `;` チェックで正常終了 (登録なし。Typedef を登録すると real Class と名前衝突し UserDefinedType 経由の member 解決が劣化するため)。エラー時は `; expected` + SkipToKeyword(";") で復帰
+  - 修正 (InterfaceClass.cs parseTypedef): 同一処理を追加 (案B)
+  - 動作: `typedef class A; class A { ... };` / `typedef interface class IF; interface class IF ...;` が正常 parse (前方宣言自体の登録は不要、参照解決は name-based)
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `f7cc9d0`
+  - Next: エディタ上で `typedef class A;` 前方宣言行にエラーが出ないことの確認
+- Module.cs / testRtl/.vscode/ の作業ツリー変更はユーザ変更のためコミットから除外
+
 - SystemVerilogCore 抽象化 Phase 10 (parser-backed adapter テスト / Wrap 接続 / UI フリー parse) → 完了 (テスト 34/34 合格、コミット済み)
   - 方針: parse 本体 (VerilogParser.ParseAsync → Root.ParseCreateAsync) は UI 依存ゼロであることを確認。「parse 実行 (UI フリー)」と「結果のエディタ反映 (UI のみ)」を分離する設計を採用 (ユーザとの議論で push 型構造を確認済み)
   - 実装1 (CodeEditor2VerilogPlugin `3766ba0`): `VerilogSystemVerilogCore` に `Instance` シングルトン + `Plugin.projectCreated` から `Wrap()` 接続
