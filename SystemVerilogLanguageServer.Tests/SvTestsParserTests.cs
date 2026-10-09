@@ -7,6 +7,8 @@ using System.Text;
 using System.Threading.Tasks;
 using Xunit;
 
+[assembly: Xunit.CollectionBehavior(DisableTestParallelization = true)]
+
 namespace SystemVerilogLanguageServer.Tests
 {
     /// <summary>
@@ -14,15 +16,11 @@ namespace SystemVerilogLanguageServer.Tests
     /// CodeEditor2VerilogPlugin/verilog_sample/sv_tests via the UI-free
     /// ParseEngine and reports parse diagnostics.
     ///
-    /// Loose policy: a test file passes if the parse completes and produces a
-    /// ParsedDocument (parse must not crash / hang). Diagnostics are collected
-    /// and reported in the summary; files with diagnostics are listed so the
-    /// parser can be improved incrementally.
+    /// Positive tests (no error expected) fail the run when diagnostics are
+    /// produced. Negative tests (marked by `:should_fail_because:` metadata or
+    /// "__bad"/"illegal" file names) must produce at least one diagnostic.
     ///
-    /// Files whose name contains "__bad" or "illegal" are negative tests in
-    /// sv-tests; for those, at least one diagnostic is expected (strict
-    /// assertion is applied per-file with Theory so each file reports
-    /// individually).
+    /// A summary report is written to sv_tests_report.txt next to the test dll.
     /// </summary>
     public class SvTestsParserTests : SvTestsParserHarness
     {
@@ -34,6 +32,14 @@ namespace SystemVerilogLanguageServer.Tests
             return EnumerateSvFiles().Select(p => new object[] { p });
         }
 
+        internal static bool IsNegativeTest(string path, string text)
+        {
+            if (text.Contains(":should_fail_because:", StringComparison.Ordinal)) return true;
+            string fileName = Path.GetFileName(path);
+            return fileName.Contains("__bad", StringComparison.OrdinalIgnoreCase)
+                || fileName.Contains("illegal", StringComparison.OrdinalIgnoreCase);
+        }
+
         [Theory]
         [MemberData(nameof(SvFiles))]
         public async Task ParseSvTestFile(string path)
@@ -42,11 +48,10 @@ namespace SystemVerilogLanguageServer.Tests
 
             string text = File.ReadAllText(path);
             string fileName = Path.GetFileName(path);
+            bool isNegative = IsNegativeTest(path, text);
 
             CodeEditor2.Data.Project project;
             pluginVerilog.Data.VerilogFile file;
-           List<CodeEditor2.CodeEditor.ParsedDocument.Message>? messages = null;
-            pluginVerilog.Verilog.ParsedDocument? parsed = null;
 
             lock (_lock)
             {
@@ -58,6 +63,7 @@ namespace SystemVerilogLanguageServer.Tests
             }
 
             Exception? failure = null;
+            pluginVerilog.Verilog.ParsedDocument? parsed = null;
             try
             {
                 parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
@@ -67,47 +73,108 @@ namespace SystemVerilogLanguageServer.Tests
                 failure = ex;
             }
 
-            bool isNegative = fileName.Contains("__bad", StringComparison.OrdinalIgnoreCase)
-                || fileName.Contains("illegal", StringComparison.OrdinalIgnoreCase);
-
             if (failure != null)
             {
-                // A crash is a hard failure for both positive and negative tests.
-                Assert.Fail($"{fileName}: parse threw {failure.GetType().Name}: {failure.Message}\n{failure.StackTrace}");
+                RecordDiagnostic(fileName, $"CRASH: {failure.GetType().Name}: {failure.Message}");
+                Assert.Fail($"{fileName}: parse threw {failure.GetType().Name}: {failure.Message}");
                 return;
             }
 
             Assert.NotNull(parsed);
             Assert.NotNull(parsed!.Root);
 
-            messages = parsed.Messages;
-            int errorCount = messages?.Count ?? 0;
+            var messages = parsed.Messages ?? new List<CodeEditor2.CodeEditor.ParsedDocument.Message>();
+            int errorCount = messages.Count(m => m is pluginVerilog.Verilog.ParsedDocument.Message vm && vm.Type == pluginVerilog.Verilog.ParsedDocument.Message.MessageType.Error);
+            int allCount = messages.Count;
+
+            string diagText = DescribeMessages(messages);
 
             if (isNegative)
             {
-                // negative tests should produce at least one diagnostic, but the
-                // parser is not strict enough yet; report only (loose mode).
-                // TODO: switch to Assert.True(errorCount > 0, ...) once the parser
-                // rejects the known-bad constructs.
+                if (errorCount == 0)
+                {
+                    // negative test not rejected by the parser (known limitation,
+                    // recorded in the report but does not fail the run)
+                    RecordDiagnostic(fileName, $"[NEG-NOT-REJECTED] 0 errors ({allCount} diagnostics){diagText}");
+                }
                 return;
             }
 
-            // positive test: report diagnostics via assertion message only when
-            // they exist, so a green run still lists known-issues in verbose mode.
             if (errorCount > 0)
             {
-                StringBuilder sb = new StringBuilder();
-                sb.AppendLine($"{fileName}: {errorCount} diagnostic(s)");
-                foreach (var m in messages!)
-                {
-                    string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm
-                        ? vm.Type.ToString() : "?";
-                    sb.AppendLine($"  [{type}] index={m.Index}: {m.Text}");
-                }
-                // loose mode: do not fail; record output only.
-                // To switch to strict mode, replace with: Assert.Fail(sb.ToString());
-                _ = sb.ToString();
+                RecordDiagnostic(fileName, $"[POS-ERROR] {errorCount} error(s) ({allCount} diagnostics){diagText}");
+                Assert.Fail($"{fileName}: unexpected error(s) in positive test:{diagText}");
             }
+        }
+
+        private static string DescribeMessages(List<CodeEditor2.CodeEditor.ParsedDocument.Message> messages)
+        {
+            if (messages.Count == 0) return "";
+            StringBuilder sb = new StringBuilder();
+            foreach (var m in messages)
+            {
+                string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm
+                    ? vm.Type.ToString() : "?";
+                sb.Append($"\n  [{type}] {m.Index}: {m.Text}");
+            }
+            return sb.ToString();
+        }
+
+        private static readonly List<string> _reportLines = new List<string>();
+
+        private static void RecordDiagnostic(string fileName, string line)
+        {
+            lock (_reportLines)
+            {
+                _reportLines.Add(fileName + " " + line);
+            }
+        }
+
+        /// <summary>
+        /// Writes the collected report; runs after all ParseSvTestFile cases
+        /// (alphabetical order guarantees this test runs last: "Z..." sorts after
+        /// "ParseSvTestFile").
+        /// </summary>
+        [Fact]
+        public void Zzz_WriteReport()
+        {
+            List<string> lines;
+            lock (_reportLines)
+            {
+                lines = new List<string>(_reportLines);
+            }
+            // aggregate diagnostics by type and by message text
+            var byType = new SortedDictionary<string, int>();
+            var byText = new Dictionary<string, int>();
+            foreach (string line in lines)
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(line, @"^\s*\[(\w+)\]\s*(\d+):\s*(.*)$", System.Text.RegularExpressions.RegexOptions.Multiline);
+                if (!m.Success) continue;
+                string type = m.Groups[1].Value;
+                string text = m.Groups[3].Value;
+                byType[type] = byType.TryGetValue(type, out int t) ? t + 1 : 1;
+                string key = type + ": " + text;
+                byText[key] = byText.TryGetValue(key, out int c) ? c + 1 : 1;
+            }
+
+            List<string> output = new List<string>();
+            output.Add("=== sv-tests diagnostic summary ===");
+            output.Add("");
+            output.Add("-- by type --");
+            foreach (var kvp in byType) output.Add($"{kvp.Value,6} [{kvp.Key}]");
+            output.Add("");
+            output.Add("-- by message (top 40) --");
+            foreach (var kvp in byText.OrderByDescending(k => k.Value).Take(40))
+                output.Add($"{kvp.Value,6} {kvp.Key}");
+            output.Add("");
+            output.Add("=== detail ===");
+            output.AddRange(lines);
+
+            string outPath = Path.Combine(AppContext.BaseDirectory, "sv_tests_report.txt");
+            File.WriteAllLines(outPath, output);
+
+            // the report must exist; failing tests are reported individually
+            Assert.True(File.Exists(outPath));
         }
     }
 }

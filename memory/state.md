@@ -3,6 +3,15 @@
 ## 未解決課題
 
 - sv-tests parser harness 新設 (`CodeEditor2VerilogPlugin/verilog_sample/sv_tests` 1033 ファイルを ParseEngine 経由で parse) → 実装完了 (テスト 1033/1033 合格、コミット済み)
+  - diagnostic 集計レポート対応 → 実装完了 (SvTestsParserTests.cs 改修、コミット済み)
+    - 負荷前のビルドエラー修正: ArrayMethods.cs の `namedElements.Contains(name)` → `ContainsKey(name)` 3箇所 (NamedElements に Contains は存在しない)
+    - レポート改修: 詳細行にファイル名を前置、メッセージ全件記録 (10件打ち切り廃止)、レポート先頭にサマリ (種別別件数 + メッセージ別 top40、RegexOptions.Multiline) を追加、テスト並列化無効化 (CollectionBehavior.DisableTestParallelization、並列時はサマリが欠落するため)
+    - 現状結果: 673 合格 / 361 失敗 (1034 中)。diagnostic 総数 343 Error / 20 Warning / 8 Notice
+    - 主要 Error 内訳: file not found 107 (include 相対パス解決) / unfound object 71 / undefined function 21 / "; expected" 21 / unfound module 12 / include errors 11 / virtual interface type required 8 / illegal module item 7 / illegal method prototype 6 / unsupported compiler directive 6 / 他
+    - テスト失敗の主因は (1) 単一ファイル実行のため include/import/package の cross-file 未解決 ("file not found") (2) randomize/constraint/randsequence 等の文法未対応 (3) UVM マクロ未対応 ("unsupported macro call")
+    - Next: unfound object / undefined function 群の原因分類 (cross-file 未解決 vs 文法未対応) → 優先度に応じ parser 改善。include 相対パス解決 (sv_tests 内 `#include` の file not found) の対応も候補
+    - 注意: レポートは `SystemVerilogLanguageServer.Tests/bin/Debug/net10.0/sv_tests_report.txt`。detail の unsorted 件数はサマリと一致 (テスト並列無効化後)
+  - Next: sv-tests の diagnostic 集計レポート出力 (テスト実行時に失敗ファイル一覧を stdout へ) → strict モードへの段階的移行 / parser 未対応文法 (extern declaration 群等) の修正は sv-tests 結果を参考に優先付け
   - 新規: `SystemVerilogLanguageServer.Tests/SvTestsParserHarness.cs` (sv_tests root 探索 + .sv 列挙) / `SvTestsParserTests.cs` (Theory で全ファイル parse、crash/hang を hard fail、diagnostic は loose 記録のみ)
   - 修正1 (CodeEditor2 `70ace34`): `Controller.AppendLog` に `Global.logView == null` ガード追加 (headless host で `ModuleInstantiation.ParseAsync` の "unfound module" log 出力が NRE になる問題、89/1033 失敗の主因)
   - loose モード: positive test は parse 完了 (ParsedDocument + Root 生成) のみ検証、diagnostic 件数は記録のみ (strict 化は parser 改善後の TODO)
