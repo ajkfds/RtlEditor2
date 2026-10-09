@@ -2,7 +2,9 @@
 
 ## 未解決課題
 
-- module instance 階層 autocomplete のドット直後 member 候補修正 (3f569ef) の副作用で、ドットなし識別子入力時に instance/変数名候補が出なくなった問題 → 修正完了 (ビルド成功、テスト 38/38 合格、コミット済み)
+- module instance 階層 autocomplete のドット直後 member 候補修正 (3f569ef) の副作用で、ドットなし識別子入力時に instance/変数名候補が出なくなった問題 → 修正完了 + 動作確認完了 (ビルド成功、テスト 38/38 合格、コミット済み)
+  - ユーザ確認完了: (1) `MODULEINSTANCE0.` 直後の member 候補 (2) ドットなし識別子入力時の instance/変数名候補 の両方問題なし
+  - unpack_stream_pad (`{<<{a,b,c}}`) の parse 動作もユーザ確認完了 (問題なし)
   - 追加原因1 (CompletionContext.cs): `GetAutoCompleteTarget` が caret 直前がスペース/tab の場合 `ret=false` を返すが、CompletionContext コンストラクタが false で即 early return していた。out パラメータの NameSpace/CandidateWord は false 時も解析済みのため early return すると partial parse / AppendAll フォールバック (instance/変数名候補) が実行されず keyword のみしか出ない。→ false を無視して `NameSpace == null && NamedElement == null` のときのみ return するよう修正
   - 追加原因2 (Module.cs): module body の partial parse 中に assign 等の expression parse で追加された候補が、module item ループの EOF 分岐で `AutoCompleteItems.Clear()` + keyword 列挙により上書き消去されていた。→ `AutoCompleteItems.Count == 0` のときのみ keyword 列挙するように変更 (partial parse で追加済みの候補は保持)
   - テスト: `ParserBackedAdapterTests.InMemoryCore_CompletionNoDotIdentifierCandidates` を追加 (ドットなし識別子入力の regression テスト。headless host では file.ParsedDocument が未設定のため namespace 解決は editor-host のみの動作 → DataObject 候補 assert は省略し NotEmpty のみ検証、コメントで記載)。38/38 合格
