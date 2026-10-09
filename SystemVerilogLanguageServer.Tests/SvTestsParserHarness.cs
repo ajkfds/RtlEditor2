@@ -64,6 +64,22 @@ namespace SystemVerilogLanguageServer.Tests
         }
 
         /// <summary>
+        /// Returns true when the test depends on UVM (uvm_pkg / uvm_macros.svh),
+        /// which is not yet supported. These tests are skipped until the
+        /// UVM package and macros are provided.
+        /// </summary>
+        internal static bool IsUvmTest(string path, string text)
+        {
+            if (text.Contains("uvm_pkg", StringComparison.Ordinal)) return true;
+            if (text.Contains("uvm_macros.svh", StringComparison.Ordinal)) return true;
+            string relative = Path.GetFullPath(path);
+            string uvmDir = Path.Combine(FindSvTestsRoot(), "uvm");
+            if (relative.StartsWith(Path.GetFullPath(uvmDir), StringComparison.OrdinalIgnoreCase)) return true;
+            if (Path.GetFileName(path).IndexOf("uvm", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
+
+        /// <summary>
         /// Enumerates every .sv test file under the sv_tests root.
         /// </summary>
         internal static List<string> EnumerateSvFiles()

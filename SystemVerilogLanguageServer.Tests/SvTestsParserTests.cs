@@ -48,6 +48,14 @@ namespace SystemVerilogLanguageServer.Tests
 
             string text = File.ReadAllText(path);
             string fileName = Path.GetFileName(path);
+
+            // UVM-dependent tests are excluded until uvm_pkg / uvm_macros.svh are provided
+            if (IsUvmTest(path, text))
+            {
+                RecordDiagnostic(fileName, "[UVM-SKIPPED]");
+                return;
+            }
+
             bool isNegative = IsNegativeTest(path, text);
 
             CodeEditor2.Data.Project project;
