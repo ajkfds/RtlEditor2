@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- sv-tests parser harness 新設 (`CodeEditor2VerilogPlugin/verilog_sample/sv_tests` 1033 ファイルを ParseEngine 経由で parse) → 実装完了 (テスト 1033/1033 合格、コミット済み)
+  - 新規: `SystemVerilogLanguageServer.Tests/SvTestsParserHarness.cs` (sv_tests root 探索 + .sv 列挙) / `SvTestsParserTests.cs` (Theory で全ファイル parse、crash/hang を hard fail、diagnostic は loose 記録のみ)
+  - 修正1 (CodeEditor2 `70ace34`): `Controller.AppendLog` に `Global.logView == null` ガード追加 (headless host で `ModuleInstantiation.ParseAsync` の "unfound module" log 出力が NRE になる問題、89/1033 失敗の主因)
+  - loose モード: positive test は parse 完了 (ParsedDocument + Root 生成) のみ検証、diagnostic 件数は記録のみ (strict 化は parser 改善後の TODO)
+  - negative test (`__bad` / `illegal` を含むファイル名) は diagnostic 期待だが現状 report のみ
+  - コミット: メイン `8da2492` (harness + CodeEditor2 submodule pointer)
+  - Next: sv-tests の diagnostic 集計レポート出力 (テスト実行時に失敗ファイル一覧を stdout へ) → strict モードへの段階的移行 / parser 未対応文法 (extern declaration 群等) の修正は sv-tests 結果を参考に優先付け
+
 - module instance 階層 autocomplete のドット直後 member 候補修正 (3f569ef) の副作用で、ドットなし識別子入力時に instance/変数名候補が出なくなった問題 → 修正完了 + 動作確認完了 (ビルド成功、テスト 38/38 合格、コミット済み)
   - ユーザ確認完了: (1) `MODULEINSTANCE0.` 直後の member 候補 (2) ドットなし識別子入力時の instance/変数名候補 の両方問題なし
   - unpack_stream_pad (`{<<{a,b,c}}`) の parse 動作もユーザ確認完了 (問題なし)
