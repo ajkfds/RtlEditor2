@@ -21,6 +21,13 @@
       - 分類F: constraint 内 cross-object member access (~4件)。`constraint c { aObj.v < v; }` が constraint block 式解析で未解決
       - 分類G: その他単発 (interconnect / 初期エラー連鎖等)
       - 対応優先度: A (ArrayMethods 接続確認) → B (new;) → D (Class::method) → C (組み込みクラス) → E/F
+    - 分類A 対応 → 実装完了 (ビルド成功、コミット済み)
+      - 修正1 (Verilog/Expressions/NameReference.cs): `searchElement` に `namedElement is DataObject` 分岐を追加 (queue/dynamic array/associative array の built-in method メンバー解決。従来は Variable / Net のみ対象で Queue 等が unfound object になっていた)
+      - 修正2 (Verilog/DataObjects/Arrays/DynamicArray.cs): size/delete を内蔵 inline 実装から `ArrayMethods.AddSizeOrNum / AddDelete / AppendArrayLocatorMethods` (section 7.12) に統一 + `NamedElements` を `public override` 化 (private new で隠蔽されており DataObject 経由の参照が空 NamedElements を返す問題、warning CS0114 解消)
+      - 結果: 805 合格 / 229 失敗 (1034 中)。unfound object 71→52、undefined function 21→3、Error diagnostic 243→207。queue/dynamic array の size/push/pop/delete/max/min/find 等のメソッド参照が解決されるようになった
+      - コミット: CodeEditor2VerilogPlugin `af6a3f7`、メイン `270abc3` (submodule pointer 更新)
+      - 残りの unfound object 52件: 分類B (new;) / C (process 等組み込みクラス) / D (Class::method out-of-block) / E (randsequence 引数) / F (constraint member access) / G (その他) に相当
+    - Next: 分類B (`= new;` 括弧なしコンストラクタ) 対応 → 分類D (Class::method out-of-block 定義) → 分類C (組み込みクラス)
     - Next: unfound object 分類A-D の parser 改善 → UVM (uvm_pkg + uvm_macros.svh) 導入後 IsUvmTest 除外解除して再集計 → strict モードへの段階的移行
     - 注意: レポートは `SystemVerilogLanguageServer.Tests/bin/Debug/net10.0/sv_tests_report.txt`。detail の unsorted 件数はサマリと一致 (テスト並列無効化後)
   - Next: sv-tests の diagnostic 集計レポート出力 (テスト実行時に失敗ファイル一覧を stdout へ) → strict モードへの段階的移行 / parser 未対応文法 (extern declaration 群等) の修正は sv-tests 結果を参考に優先付け
