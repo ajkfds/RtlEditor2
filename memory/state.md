@@ -9,7 +9,19 @@
     - 現状結果: 673 合格 / 361 失敗 (1034 中)。diagnostic 総数 343 Error / 20 Warning / 8 Notice
     - 主要 Error 内訳: file not found 107 (include 相対パス解決) / unfound object 71 / undefined function 21 / "; expected" 21 / unfound module 12 / include errors 11 / virtual interface type required 8 / illegal module item 7 / illegal method prototype 6 / unsupported compiler directive 6 / 他
     - テスト失敗の主因は (1) 単一ファイル実行のため include/import/package の cross-file 未解決 ("file not found") (2) randomize/constraint/randsequence 等の文法未対応 (3) UVM マクロ未対応 ("unsupported macro call")
-    - Next: unfound object / undefined function 群の原因分類 (cross-file 未解決 vs 文法未対応) → 優先度に応じ parser 改善。include 相対パス解決 (sv_tests 内 `#include` の file not found) の対応も候補
+    - UVM 依存テスト除外 → 実装完了 (コミット済み)
+      - `IsUvmTest(path, text)` helper を SvTestsParserHarness.cs に新設。除外条件: `uvm_pkg` を含む / `uvm_macros.svh` を含む / `sv_tests/uvm/` 配下 / ファイル名に "uvm" を含む。該当は `[UVM-SKIPPED]` をレポート記録して skip (UVM 導入後に解除)
+      - 結果: 773 合格 / 261 失敗 (1034 中)、Error diagnostic 343 → 243
+    - unfound object 71件の原因分類 → 分類完了 (state.md 記録)
+      - 分類A: 組み込み型メソッドのメンバー解決失敗 (~30件、最大グループ)。queue の `q.size` / `q.push_back()` / enum の `e.first()` 等。ArrayMethods.cs (新設コミット済み) の各 Add メソッドが Queue/DynamicArray/AssociativeArray/Enum 側から呼び出されているか接続未確認の可能性 → 工数小、最優先
+      - 分類B: `= new;` 括弧なしコンストラクタ代入 (~10件)。`test_cls test_obj = new;` が unfound object (8.7--constructor.sv 等)。parser の分岐追加
+      - 分類C: 組み込みクラス未実装 (~8件)。`process::self()` (9.7--process_cls_*.sv)、`ClassName::static_prop` (8.9/8.10) 等。process 等の組み込みクラス定義追加が必要
+      - 分類D: out-of-block method 定義 (~10件)。`function void test_cls::test_method(int val);` (8.24) の `Class::method` 本体定義形式が未実装 (extern prototype は実装済み)
+      - 分類E: randsequence production 引数 (~5件)。production `add(10)` 呼び出しが unfound object
+      - 分類F: constraint 内 cross-object member access (~4件)。`constraint c { aObj.v < v; }` が constraint block 式解析で未解決
+      - 分類G: その他単発 (interconnect / 初期エラー連鎖等)
+      - 対応優先度: A (ArrayMethods 接続確認) → B (new;) → D (Class::method) → C (組み込みクラス) → E/F
+    - Next: unfound object 分類A-D の parser 改善 → UVM (uvm_pkg + uvm_macros.svh) 導入後 IsUvmTest 除外解除して再集計 → strict モードへの段階的移行
     - 注意: レポートは `SystemVerilogLanguageServer.Tests/bin/Debug/net10.0/sv_tests_report.txt`。detail の unsorted 件数はサマリと一致 (テスト並列無効化後)
   - Next: sv-tests の diagnostic 集計レポート出力 (テスト実行時に失敗ファイル一覧を stdout へ) → strict モードへの段階的移行 / parser 未対応文法 (extern declaration 群等) の修正は sv-tests 結果を参考に優先付け
   - 新規: `SystemVerilogLanguageServer.Tests/SvTestsParserHarness.cs` (sv_tests root 探索 + .sv 列挙) / `SvTestsParserTests.cs` (Theory で全ファイル parse、crash/hang を hard fail、diagnostic は loose 記録のみ)
