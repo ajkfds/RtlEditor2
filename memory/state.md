@@ -40,7 +40,12 @@
       - 結果: sv-tests 815 合格 / 219 失敗 → 818 合格 / 216 失敗 (1034 中)。8.24--out_of_block_methods.sv が解消 (test_cls.test_method が class member として登録され、test_obj.test_method(9) 呼び出しも解決)。regression なし
       - 検証用 DebugConstructorParseTests.cs (SystemVerilogLanguageServer.Tests) に Debug_ParseOutOfBlockMethods ケースを追加 (一時解析用、コミットから除外)
       - コミット: CodeEditor2VerilogPlugin `ddf2d6f`、メイン (submodule pointer 更新)
-    - Next: 分類C (組み込みクラス: process 等) 対応
+    - 分類C 対応 → 実装完了 (ビルド成功、コミット済み)
+      - process 組み込みクラス (IEEE 1800-2017 section 9.7) 実装: ProcessType.cs 新設 (DataTypeEnum.Process + AppendBuiltinMethods static helper: self/status/await/kill/suspend/resume/srandom/get_randstate/set_randstate + FINISHED/RUNNING/WAITING/SUSPENDED/KILLED 定数を引数なし BuiltInMethod として登録) / Variables/Process.cs 新設 (遅延解決) / Expressions/ProcessClassReference.cs 新設 (process::self() / process::FINISHED static scope 解決、member+`(` は BuiltinMethodCall.ParseCreate を identifier 消費前に呼び出し、括弧なしは Constant=true の Primary) / DataTypeFactory に case "process" / DataObject.Create / Variable.Create に分岐 / Module・Checker の implicit 型 keyword リストに "process" 追加
+      - 追加修正 (Statements.cs): unnamed begin/fork 内の block_item_declaration (`automatic int k = i;`) 対応分岐を新設。宣言成功時は次 statement を連続解析 (ループ break 防止)。fork 内 process 生成パターンで必須
+      - 結果: sv-tests 818 → 819 合格 / 215 失敗。9.7--process_cls_self.sv 解消。残る process 関連エラーは job[i].await() 等 object member method 呼び出し (別課題)
+      - コミット: CodeEditor2VerilogPlugin `dae0328`、メイン (submodule pointer 更新)
+      - Next: 分類E (randsequence production 引数) / F (constraint member access) 対応
     - Next: unfound object 分類A-D の parser 改善 → UVM (uvm_pkg + uvm_macros.svh) 導入後 IsUvmTest 除外解除して再集計 → strict モードへの段階的移行
     - 注意: レポートは `SystemVerilogLanguageServer.Tests/bin/Debug/net10.0/sv_tests_report.txt`。detail の unsorted 件数はサマリと一致 (テスト並列無効化後)
   - Next: sv-tests の diagnostic 集計レポート出力 (テスト実行時に失敗ファイル一覧を stdout へ) → strict モードへの段階的移行 / parser 未対応文法 (extern declaration 群等) の修正は sv-tests 結果を参考に優先付け
