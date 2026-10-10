@@ -27,7 +27,14 @@
       - 結果: 805 合格 / 229 失敗 (1034 中)。unfound object 71→52、undefined function 21→3、Error diagnostic 243→207。queue/dynamic array の size/push/pop/delete/max/min/find 等のメソッド参照が解決されるようになった
       - コミット: CodeEditor2VerilogPlugin `af6a3f7`、メイン `270abc3` (submodule pointer 更新)
       - 残りの unfound object 52件: 分類B (new;) / C (process 等組み込みクラス) / D (Class::method out-of-block) / E (randsequence 引数) / F (constraint member access) / G (その他) に相当
-    - Next: 分類B (`= new;` 括弧なしコンストラクタ) 対応 → 分類D (Class::method out-of-block 定義) → 分類C (組み込みクラス)
+    - 分類B 対応 → 実装完了 (ビルド成功、コミット済み)
+      - 解析: `= new;` / `new(...)` 自体は Variable.ParseDeclaration (L360-404) で既に対応済み。実際のエラーは class member 参照 (`test_obj.a`) が "not defined here" / "unfound object" になる問題だった
+      - 原因: class 内変数宣言は prototype mode (word.Prototype) で parse され、Variable.ParseDeclaration の prototype 分岐 (L450付近) の新規登録経路で `variable.Defined = true` が設定されていなかった。class object (Variables.Object) 経由の member 参照 (`GetSourceClass()` → Class.NamedElements) で member が Defined=false と判定され誤エラー
+      - 修正 (CodeEditor2VerilogPlugin `a4c45b2`): prototype 分岐の新規登録時に `variable.Defined = true` を追加
+      - 結果: sv-tests 805 合格 / 229 失敗 → 815 合格 / 219 失敗 (1034 中)。8.7--constructor.sv 等が解消
+      - 調査用 DebugConstructorParseTests.cs (SystemVerilogLanguageServer.Tests) は一時解析用のためコミットから除外 (作業ツリーに残置、次回クリーンアップ候補)
+      - コミット: メイン `84754fe` (submodule pointer 更新)
+    - Next: 分類D (Class::method out-of-block 定義) 対応 → 分類C (組み込みクラス) 対応
     - Next: unfound object 分類A-D の parser 改善 → UVM (uvm_pkg + uvm_macros.svh) 導入後 IsUvmTest 除外解除して再集計 → strict モードへの段階的移行
     - 注意: レポートは `SystemVerilogLanguageServer.Tests/bin/Debug/net10.0/sv_tests_report.txt`。detail の unsorted 件数はサマリと一致 (テスト並列無効化後)
   - Next: sv-tests の diagnostic 集計レポート出力 (テスト実行時に失敗ファイル一覧を stdout へ) → strict モードへの段階的移行 / parser 未対応文法 (extern declaration 群等) の修正は sv-tests 結果を参考に優先付け
