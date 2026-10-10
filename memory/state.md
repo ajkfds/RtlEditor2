@@ -34,7 +34,13 @@
       - 結果: sv-tests 805 合格 / 229 失敗 → 815 合格 / 219 失敗 (1034 中)。8.7--constructor.sv 等が解消
       - 調査用 DebugConstructorParseTests.cs (SystemVerilogLanguageServer.Tests) は一時解析用のためコミットから除外 (作業ツリーに残置、次回クリーンアップ候補)
       - コミット: メイン `84754fe` (submodule pointer 更新)
-    - Next: 分類D (Class::method out-of-block 定義) 対応 → 分類C (組み込みクラス) 対応
+    - 分類D 対応 → 実装完了 (ビルド成功、コミット済み)
+      - 修正1 (Verilog/Function.cs): Function.Parse に class_scope 分岐を追加 (BNF: function_data_type_or_implicit [class_scope] function_identifier)。lifetime + 戻り値型 (void 等) 解析後、identifier の NextText が "::" の場合に class identifier + "::" を消費し、class をローカル nameSpace → UnitNameSpace の順で解決 (GetNamedElementUpward / word.ProjectProperty.UnitNameSpace.Get)。解決成功時は以降の parse nameSpace を該当 Class に差し替え (Class は BuildingBlock : NameSpace なので既存の Function 登録・置換ロジックがそのまま class の NamedElements に作用。extern prototype と本体定義の統合は既存の NamedElements.Replace / ContainsFunction 経路で動作)
+      - 修正2 (Verilog/Task_.cs): Task_.Parse に同一 class_scope 分岐を追加 (BNF: task_body_declaration ::= [class_scope] task_identifier。lifetime 後 identifier 直前が BNF 上正しい位置)
+      - 結果: sv-tests 815 合格 / 219 失敗 → 818 合格 / 216 失敗 (1034 中)。8.24--out_of_block_methods.sv が解消 (test_cls.test_method が class member として登録され、test_obj.test_method(9) 呼び出しも解決)。regression なし
+      - 検証用 DebugConstructorParseTests.cs (SystemVerilogLanguageServer.Tests) に Debug_ParseOutOfBlockMethods ケースを追加 (一時解析用、コミットから除外)
+      - コミット: CodeEditor2VerilogPlugin `ddf2d6f`、メイン (submodule pointer 更新)
+    - Next: 分類C (組み込みクラス: process 等) 対応
     - Next: unfound object 分類A-D の parser 改善 → UVM (uvm_pkg + uvm_macros.svh) 導入後 IsUvmTest 除外解除して再集計 → strict モードへの段階的移行
     - 注意: レポートは `SystemVerilogLanguageServer.Tests/bin/Debug/net10.0/sv_tests_report.txt`。detail の unsorted 件数はサマリと一致 (テスト並列無効化後)
   - Next: sv-tests の diagnostic 集計レポート出力 (テスト実行時に失敗ファイル一覧を stdout へ) → strict モードへの段階的移行 / parser 未対応文法 (extern declaration 群等) の修正は sv-tests 結果を参考に優先付け
