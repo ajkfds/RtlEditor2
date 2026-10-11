@@ -2,6 +2,14 @@
 
 ## 未解決課題
 
+- scr1_memory_tb_ahb.sv の parse が重く UI スレッドを長時間ロックする問題 → 根本原因修正完了 (ビルド成功、コミット済み)
+  - 実測 (DebugPerfScr1Tests.cs 新設、SystemVerilogLanguageServer.Tests): scr1_memory_tb_ahb.sv 単独 parse は約300ms / diagnostic 139件 (include 未解決 6 + unfound object 約60 + bitwidth/sync mismatch + undriven/unused notice)。マクロ依存の静的未解決エラーが多数残るファイル
+  - 根本原因 (ParseHierarchy.parseDownwardAsync): `ErrorCount != 0` で needReparse=true としていたため、再 parse しても解消しない静的未解決エラー (マクロ依存・include 未解決) を持つファイルが毎回 reparseTargetFiles に push され、parseUpwardAsync (上位定義再 parse) → instance 階層全体 (scr1 は数十 module) の再 enqueue が毎回全コース実行。各 parse 約300ms × 数十回 + 各 AcceptParsedDocumentAsync → UpdateAsync → Updater.UpdateAsync での大量の Dispatcher.UIThread.Invoke 同期呼び出しが UI スレッドに積まれ、UI が長時間ロック
+  - 修正 (CodeEditor2VerilogPlugin `70f24ad`): needReparse 判定を `ReparseRequested` フラグのみに変更 (ErrorCount 判定を削除、経緯コメント追加)。cross-file 解決で再 parse が本当に必要な場合のみ再 parse が走る
+  - 検証: RtlEditor2.Desktop.csproj ビルド成功 (0 errors)。LSP テストの InMemoryCore_CompletionFromRealParser は stash 切り分けにより既存の無関係な失敗と確認 (ParseHierarchy は LSP/テスト経路に非関与)
+  - コミット: CodeEditor2VerilogPlugin `70f24ad`、メイン `bcc98f3` (submodule pointer 更新)
+  - 残課題 (対応候補): (1) DebugPerfScr1Tests.cs は一時計測用のためコミットから除外候補 (作業ツリーに残置) (2) 既存の InMemoryCore_CompletionFromRealParser 失敗の修正 (module body 直下の keyword 列挙で "begin" が返らない、A1 CaseStatement 分岐の挙動変化に由来) (3) scr1 のマクロ依存未解決 (unfound object 等) 自体の parser 改善 (include 連鎖で `SCR1_*` macro が未展開)
+  - Next: エディタ上で scr1_memory_tb_ahb.sv を開いたときの parse 停止回数・UI 応答性の確認
 - sv-tests parser harness 新設 (`CodeEditor2VerilogPlugin/verilog_sample/sv_tests` 1033 ファイルを ParseEngine 経由で parse) → 実装完了 (テスト 1033/1033 合格、コミット済み)
   - diagnostic 集計レポート対応 → 実装完了 (SvTestsParserTests.cs 改修、コミット済み)
     - 負荷前のビルドエラー修正: ArrayMethods.cs の `namedElements.Contains(name)` → `ContainsKey(name)` 3箇所 (NamedElements に Contains は存在しない)
