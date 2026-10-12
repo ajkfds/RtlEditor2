@@ -2,6 +2,17 @@
 
 ## 未解決課題
 
+- sv-tests unfound object 分類E (randsequence production 引数) 対応 → 実装完了 (ビルド成功、コミット済み)
+  - 対象テスト: 18.17.5--interleaving-productions-rand-join_0 / 18.17.7--value-passing-between-productions_0 等 (production 宣言・呼び出しを含む randsequence)
+  - 原因: `RandsequenceStatement.ParseCreate` (Verilog/Statements/RandsequenceStatement.cs) が (1) production 宣言の戻り値型 (`void add(...)`) / 仮引数リスト (`(int y)`) 未対応 (2) production を NamedElements に登録しないため `add(10)` 呼び出しが unfound object / undefined function (3) 前方参照 (`main : first second;` の後に `first : ...;`) が解決不能 (4) production body の `{ ... }` statement block を解析しない
+  - 修正1 (production 登録機構): `registerProduction` helper を新設。production を `Verilog.Function` として生成 (Name=production名, Project/DefinitionReference 設定 — Function.Create は NamedItem.Project を設定しないため NRE が発生する問題を対処) し nameSpace.NamedElements に登録 → production 呼び出しが既存の function call 解決経路で動作。ReturnType/IsVoid を Production クラスに記録 (非 void の場合は ReturnVariable に DataType を設定)
+  - 修正2 (仮引数対応): production identifier の直後 `(` で `Port.ParseTfPortItems(word, nameSpace, prodFunc)` を呼び出し、仮引数を production の Function namespace に登録。production body 解析時は `NameSpace productionBodyNameSpace = prodFunc ?? nameSpace` を使用し、`{ x = x + y; }` 内の仮引数 `y` が解決される
+  - 修正3 (前方参照の事前登録): `preRegisterProductions` helper を新設。randsequence 冒頭で Clone probe により production 本体を事前走査し、production identifier (`identifier ":"` / `typeKeyword identifier (` 形式) を先に NamedElements に登録 → `main : first second;` の前方参照が単一 parse pass で解決
+  - 修正4 (production body の `{ ... }` block と production 参照): ParseProductionItem の rand select ループ冒頭に (1) `{` 分岐 (内部を Statements.ParseCreateStatementOrNull で statement 解析) (2) identifier 分岐 (NextText が item 終端トークンの場合 production 参照として identifier 消費、`(` 続く場合は引数を Expression.ParseCreate で消費 — 仮引数未解析時の port チェックを回避)
+  - 結果: sv-tests 819 → 825 合格 / 215 → 209 失敗 (+6)。18.17 系の production 宣言/呼び出し/仮引数参照が解決。残る randsequence エラーは randcase 重み / break/return abort / repeat production など高度な文法 (後続課題)
+  - 検証用 DebugConstructorParseTests.cs に Debug_ParseRandsequenceMinimal / Debug_ParseRandsequenceSimple を追加 (一時解析用、コミットから除外)
+  - コミット: CodeEditor2VerilogPlugin `cf4fcec`
+  - Next: randsequence 残課題 (randcase 重み・break/return・repeat production) / 分類C残 (ClassName::static_prop 等) / F (constraint member access)
 - sv-tests A-2 (virtual interface type required 15件) 対応 → 実装完了 (ビルド成功、コミット済み)
   - 原因: `ClassItem.Parse` (Verilog/Items/ClassItem.cs) が最初に `Variable.ParseDeclaration` を呼ぶため、class 内の `virtual function` / `virtual task` (method_qualifier) の `virtual` が変数宣言の virtual interface 修飾子として誤消費され、`function` / `task` が型名として DataTypeFactory に渡り解決失敗 → "virtual interface type required" エラー
   - 修正: `ClassItem.Parse` 冒頭に `word.Text == "virtual" && (word.NextText == "function" || word.NextText == "task")` 分岐を新設。keyword 色付け + `virtual` 消費後に `Function.ParseFunctionOrConstructor` / `Task_.Parse` に委譲 (method_qualifier ::= [ "pure" ] "virtual" 対応、"pure virtual" は既存 MethodPrototype 経路のまま)
