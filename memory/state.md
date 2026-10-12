@@ -2,6 +2,13 @@
 
 ## 未解決課題
 
+- sv-tests A-2 (virtual interface type required 15件) 対応 → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `ClassItem.Parse` (Verilog/Items/ClassItem.cs) が最初に `Variable.ParseDeclaration` を呼ぶため、class 内の `virtual function` / `virtual task` (method_qualifier) の `virtual` が変数宣言の virtual interface 修飾子として誤消費され、`function` / `task` が型名として DataTypeFactory に渡り解決失敗 → "virtual interface type required" エラー
+  - 修正: `ClassItem.Parse` 冒頭に `word.Text == "virtual" && (word.NextText == "function" || word.NextText == "task")` 分岐を新設。keyword 色付け + `virtual` 消費後に `Function.ParseFunctionOrConstructor` / `Task_.Parse` に委譲 (method_qualifier ::= [ "pure" ] "virtual" 対応、"pure virtual" は既存 MethodPrototype 経路のまま)
+  - 結果: sv-tests 773 → 825 合格 / 261 → 209 失敗 (+52)。8.20--virtual_method / 8.21--abstract_class / 8.22--dynamic_method_lookup / 8.26系 / class_test_4 / class_member_test_26 / 18.5.2--pure-constraint 等
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で class 内 `virtual function/task` 宣言の parse・autocomplete 確認
+
 - ParseHierarchy の parse 実行中に次の parse が投入されても実行中 parse が停止しないよう修正 → 実装完了 (ビルド成功、コミット済み)
   - 問題: `ParseHierarchy.ParseAsync` (2引数版) が static 単一 `cts` を使用しており、新しい parse 要求 (PostParseAsync 含む) が来ると実行中の parse を問答無用でキャンセルしていた。SimulationSetup.CreateAsync の hierarchy parse が他の parse 投入で中断され、setup 生成が不安定になる
   - 修正 (Tool/ParseHierarchy.cs):
