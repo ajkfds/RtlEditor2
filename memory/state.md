@@ -17,6 +17,11 @@
     - NavigatePanel の5ファイル (VerilogFileNode / VerilogModuleInstanceNode / InterfaceInstanceNode / ImportedPackageNode / NavigatePanelMenu) を共通キー "NavigatePanel" に変更: ノードを連続クリックすると前の hierarchy parse がキャンセルされる
   - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
   - Next: エディタ上で (1) NavigatePanel の別ノード連続クリックで前の parse が止まること (2) simulation 実行中の別 parse 投入で simulation の hierarchy parse が止まらないこと の両方を確認
+  - 追加修正: hierarchy parse 探索中に Version が最新でない (parse 後に編集された) ファイルを skip しないよう修正
+    - 問題: `parseDownwardAsync` の doParse 判定は `ReparseRequested` のみ。`CheckDirty()` (CodeDocument.Version と ParsedDocument.Version の比較) は `CreateDocumentParser()` 冒頭でのみ呼ばれるため、parse 完了後に編集されたファイルは hierarchy run 内で検出されず skip されていた
+    - 修正 (Tool/ParseHierarchy.cs): parseDownwardAsync 冒頭 (doParse 判定前) に `verilogFile.CheckDirty()` を追加。Version 不一致時に ReparseRequested=true が立って doParse 対象になる。parse 実行中の編集は既存の AcceptParsedDocumentAsync の Version チェックで対応 (意図的に次回 pass で再 parse、run 中の追従は不要とユーザ確認済み)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で hierarchy parse 中に探索済みファイルを編集 → 次の hierarchy parse でそのファイルが再 parse されることの確認
 
 - scr1_memory_tb_ahb.sv の parse が重く UI スレッドを長時間ロックする問題 → 根本原因修正完了 (ビルド成功、コミット済み)
   - 実測 (DebugPerfScr1Tests.cs 新設、SystemVerilogLanguageServer.Tests): scr1_memory_tb_ahb.sv 単独 parse は約300ms / diagnostic 139件 (include 未解決 6 + unfound object 約60 + bitwidth/sync mismatch + undriven/unused notice)。マクロ依存の静的未解決エラーが多数残るファイル
