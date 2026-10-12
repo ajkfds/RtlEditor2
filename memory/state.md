@@ -2,6 +2,16 @@
 
 ## 未解決課題
 
+- ParseHierarchy の parse 実行中に次の parse が投入されても実行中 parse が停止しないよう修正 → 実装完了 (ビルド成功、コミット済み)
+  - 問題: `ParseHierarchy.ParseAsync` (2引数版) が static 単一 `cts` を使用しており、新しい parse 要求 (PostParseAsync 含む) が来ると実行中の parse を問答無用でキャンセルしていた。SimulationSetup.CreateAsync の hierarchy parse が他の parse 投入で中断され、setup 生成が不安定になる
+  - 修正 (Tool/ParseHierarchy.cs):
+    - static 単一 `cts` を `ConcurrentDictionary<string, CancellationTokenSource> runningParses` (key: textFile.Key) に変更。同一ファイルの再要求の場合のみ前回 parse をキャンセル、異なるファイルの parse は並行実行を許可
+    - 異なるファイル間の hierarchy parse は同一の共有依存ファイル (DefinitionNameSpace / UnitNameSpace 登録ファイル) を触るため `SemaphoreSlim(1,1)` で直列化。実行中 parse は止めず、後続 parse は完了を待機
+    - dictionary から自身のエントリを削除する際は KeyValuePair 経由で compare-and-remove (自分の登録のみ削除、後続要求が上書きしたエントリを誤削除しない)
+  - 3引数版 `ParseAsync(textFile, parseMode, cts)` (外部 CTS 指定) の直接呼び出し元は存在しないことを確認 (search 結果)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で simulation 実行中に別ファイル編集→parse 投入しても simulation の hierarchy parse が止まらないことの確認
+
 - scr1_memory_tb_ahb.sv の parse が重く UI スレッドを長時間ロックする問題 → 根本原因修正完了 (ビルド成功、コミット済み)
   - 実測 (DebugPerfScr1Tests.cs 新設、SystemVerilogLanguageServer.Tests): scr1_memory_tb_ahb.sv 単独 parse は約300ms / diagnostic 139件 (include 未解決 6 + unfound object 約60 + bitwidth/sync mismatch + undriven/unused notice)。マクロ依存の静的未解決エラーが多数残るファイル
   - 根本原因 (ParseHierarchy.parseDownwardAsync): `ErrorCount != 0` で needReparse=true としていたため、再 parse しても解消しない静的未解決エラー (マクロ依存・include 未解決) を持つファイルが毎回 reparseTargetFiles に push され、parseUpwardAsync (上位定義再 parse) → instance 階層全体 (scr1 は数十 module) の再 enqueue が毎回全コース実行。各 parse 約300ms × 数十回 + 各 AcceptParsedDocumentAsync → UpdateAsync → Updater.UpdateAsync での大量の Dispatcher.UIThread.Invoke 同期呼び出しが UI スレッドに積まれ、UI が長時間ロック
