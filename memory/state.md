@@ -11,6 +11,12 @@
   - 3引数版 `ParseAsync(textFile, parseMode, cts)` (外部 CTS 指定) の直接呼び出し元は存在しないことを確認 (search 結果)
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
   - Next: エディタ上で simulation 実行中に別ファイル編集→parse 投入しても simulation の hierarchy parse が止まらないことの確認
+  - 追加修正: NavigatePanel ノードクリックでは「次をクリックしたら前の parse を止める」挙動が必要 → cancelKey 機構を追加
+    - `PostParseAsync(textFile, parseMode, cancelKey)` / `ParseAsync(textFile, parseMode, cancelKey)` オーバーロードを新設。同一 cancelKey の実行中 parse のみキャンセル、異なる key は並行実行
+    - default (cancelKey = textFile.Key) は従来挙動 (SimulationSetup などファイル単位キャンセル)
+    - NavigatePanel の5ファイル (VerilogFileNode / VerilogModuleInstanceNode / InterfaceInstanceNode / ImportedPackageNode / NavigatePanelMenu) を共通キー "NavigatePanel" に変更: ノードを連続クリックすると前の hierarchy parse がキャンセルされる
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で (1) NavigatePanel の別ノード連続クリックで前の parse が止まること (2) simulation 実行中の別 parse 投入で simulation の hierarchy parse が止まらないこと の両方を確認
 
 - scr1_memory_tb_ahb.sv の parse が重く UI スレッドを長時間ロックする問題 → 根本原因修正完了 (ビルド成功、コミット済み)
   - 実測 (DebugPerfScr1Tests.cs 新設、SystemVerilogLanguageServer.Tests): scr1_memory_tb_ahb.sv 単独 parse は約300ms / diagnostic 139件 (include 未解決 6 + unfound object 約60 + bitwidth/sync mismatch + undriven/unused notice)。マクロ依存の静的未解決エラーが多数残るファイル
