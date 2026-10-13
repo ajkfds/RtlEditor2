@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!--If you are willing to use Windows/MacOS native APIs you will need to create 3 projects.
@@ -35,6 +35,7 @@
     <ProjectReference Include="..\CodeEditor2AiPlugin\CodeEditor2AiPlugin\CodeEditor2AiPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2IcarusVerilogPlugin\CodeEditor2IcarusVerilogPlugin\CodeEditor2IcarusVerilogPlugin.csproj" />
+    <ProjectReference Include="..\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin.csproj" />
     <ProjectReference Include="..\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.csproj" />

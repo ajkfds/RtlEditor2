@@ -33,9 +33,15 @@ class Program
             Global.Plugins.Add(plugin.Id, plugin);
         }
         {
+            var plugin = new pluginLiveMarkdown.Plugin();
+            Global.Plugins.Add(plugin.Id, plugin);
+        }
+        {
             var plugin = new pluginVerilog.Plugin();
             Global.Plugins.Add(plugin.Id, plugin);
         }
+
+        Global.AutoAcceptLLMCommandExecution = true;
 
         // Windows
 
