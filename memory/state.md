@@ -442,6 +442,9 @@ endmodule
   - ノード側 `UpdateVisual` は非 UI スレッドから `Dispatcher.UIThread.Invoke` でマーシャリングされるため background parse スレッドからも安全
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
   - コミット: CodeEditor2VerilogPlugin `064bfff`、メイン (submodule pointer 更新)
+  - 追加修正 (ユーザ指示): `NavigatePanelNode.UpdateVisual()` を UI スレッドへ `Dispatcher.UIThread.Post` による遅延実行に変更 (ノード側の `Dispatcher.UIThread.Invoke` 同期待ちで background parse スレッドが UI スレッドをブロックしないよう回避)。`Global.UIThread` は `Thread` 型で `Post` を持たないため `Dispatcher.UIThread.Post` を使用、InterfaceInstance.cs に `using Avalonia.Threading;` 追加
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `2f09648`、メイン (submodule pointer 更新)
   - Next: エディタ上で階層 parse 後に instance node のアイコンバッジが即座に変化することの確認
 
 - SystemVerilog parameter/localparam 初期化の assignment pattern (`parameter pixel_t p = '{...};`) が右辺でエラー → 修正完了 (ビルド成功、テスト合格、コミット済み)
