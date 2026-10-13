@@ -447,6 +447,19 @@ endmodule
 
 ## 進行中タスク
 
+- 外部変更 conflict ダイアログが mainWindow の前面に出ない / 中央以外の場所に出る問題 → 修正完了 (ビルド成功、コミット済み)
+  - 対象: `Controller.ShowDialogAsync` / `TextFile.FileCheckBackgroundAsync` の conflict ダイアログ
+  - 原因1 (位置ずれ): `ShowDialogAsync` の中央配置計算が `mainWindow.Position` (デバイスピクセル) と `Bounds/Width` (DIP) の混在計算で、DPI 100% 以外や最大化時にずれる。画面外に出ると OS が強制再配置し「別の場所に出る」
+  - 原因2 (前面に出ない): conflict はファイル毎の background タスクから検出されるため複数の YesNoWindow が同時に ShowDialog され、後発分は activation 待ちで mainWindow 前面に出ず背後に表示される
+  - 原因3 (頻発): `InvokeAsync(async () => { ... await ShowDialogAsync ... })` は `Func<Task>` として await されるが回答待ち中も次の conflict チェックが並行で走りダイアログ多重が加速
+  - 修正1 (Controller.cs): `ShowDialogAsync` に `dialogShowSemaphore` 直列化を追加 (同時多重 modal の activation 待ちを解消)。DPI スケール (`RenderScaling`) を反映した PixelPoint 計算に修正。最大化時は `WindowStartupLocation.CenterOwner` を使用
+  - 修正2 (Controller.cs): `ShowDialogYesNoAsync(title, caption)` helper を新設 (非UIスレッドからも回答完了まで正しく待機)
+  - 修正3 (TextFile.cs): conflict ダイアログを `ShowDialogYesNoAsync` 経由に変更し、回答 (`keepCurrent`) を正しく待ってから `currentFileHash/Version/Text` を更新
+  - 補足: Avalonia の `Dispatcher.UIThread.InvokeAsync(Func<Task>)` は内部完了まで await 済みのため二重 await 不要 (CS4008 で確認)
+  - ビルド成功 (CodeEditor2.csproj, 0 errors)
+  - コミット: CodeEditor2 `7fbf21e`
+  - Next: エディタ上で外部ファイル変更 (複数ファイル同時) 時の conflict ダイアログ位置・前面表示の確認
+
 - VerilogModuleInstance の階層 parse 後に NavigateNode のアイコン (error/warning バッジ) が変化しない問題 → 修正完了 (ビルド成功、コミット済み)
   - 原因: `VerilogHeaderInstance.AcceptParsedDocumentAsync` (L348-350) は parse 受け入れ後に `NavigatePanelNode.UpdateVisual()` を呼ぶが、`VerilogModuleInstance.AcceptParsedDocumentAsync` は `await UpdateAsync()` で終わっておりノード再描画が行われない。ParseHierarchy で深く parse してもアイコンは変化せず、ノード選択時 (`OnSelected` → `UpdateVisual()`) に初めて更新されていた
   - 修正: `VerilogModuleInstance.AcceptParsedDocumentAsync` 末尾に `NavigatePanelNode.UpdateVisual()` を追加 (`CodeEditor2.Global.UIThread != null` ガード付き、UI-less ホスト防御)。`InterfaceInstance.AcceptParsedDocumentAsync` の editor-dependent update ブロックにも同一追加
