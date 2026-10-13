@@ -1,4 +1,7 @@
-# 作業状態 (State)
+
+---
+
+- `typedef class A;` 前方宣言の偽エラー ("data type expected") → 修正完了 (ビルド成功、コミット済み)---# 作業状態 (State)
 
 ## 未解決課題
 
@@ -433,6 +436,17 @@ endmodule
 
 ## 進行中タスク
 
+- SystemVerilog parameter/localparam 初期化の assignment pattern (`parameter pixel_t p = '{...};`) が右辺でエラー → 修正完了 (ビルド成功、テスト合格、コミット済み)
+  - 問題: `pixel_t my_pixel = '{8'hFF, ...};` (変数宣言) は正常 parse されるが、`parameter pixel_t my_pixel1 = '{8'hFF, 8'h80, 8'h00};` / `parameter pixel_t my_pixel2 = '{r: 8'hFF, g: 8'h80, b: 8'h00};` は右辺で "illegal cast" + "; expected" エラー
+  - 原因: `'{` の先頭 `'` は WordPointer charClass 7 (quote) → WordType.Number として次の `{` (operator) で区切られた単独トークンになる。変数宣言経路 (Variable.ParseDeclaration L412) は `word.Text == "'" && word.NextText == "{"` を Expression に渡す前に直接 DataObjects.AssignmentPattern.ParseCreate に委譲するが、parameter 経路 (Constants.ParseCreateDeclaration L566) は `Expressions.Expression.ParseCreate` に委譲するため `'` トークンが Primary.parseCreate → Number.ParseCreateNumberOrCast に到達。単独 `'` (apostropheIndex + 1 == word.Length) は cast (`8'`) と同一形態と誤判定され Cast.ParseCreate(word, nameSpace, number) に落ち、次の `{` で "illegal cast" → 後続要素未解析で "; expected"
+  - 修正1 (Verilog/Expressions/Number.cs): ParseCreateNumberOrCast の apostrophe 終端ケース (apostropheIndex + 1 == word.Length) に `word.NextText == "{"` 分岐を新設。`'` を消費して DataObjects.AssignmentPattern.ParseCreate に委譲し、AssignmentPatternPrimary でラップして返す (Reference は `'` 開始位置〜 `}` 終了位置)
+  - 修正2 (Verilog/Expressions/Cast.cs): AssignmentPatternPrimary に要素式からの Constant 計算を追加 (WithKey は全 KeyExpression.Expression、WithoutKey は全 Expression が Constant のとき Constant=true)。parameter 初期化の "should be constant" チェック (`Constants.ParseCreateDeclaration` L568) が誤エラーにならないように対応
+  - 検証: Debug_ParseStructInitParameter (DebugConstructorParseTests.cs に一時追加、コミットから除外) で parameter × 2 形式 + localparam が Parameter/Localparam として NamedElements 登録、エラー 0。既存 Debug_ParseStructInit / Debug_ParseStructInitTypePrefix (pixel_t'{...} / int'{...}) も regression なし
+  - sv-tests 全体: 837 合格 / 197 失敗 → **839 合格 / 195 失敗** (+2 合格、regression なし)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `7ade089`、メイン (submodule pointer 更新)
+  - Next: エディタ上で `parameter pixel_t my_pixel = '{r: 8'hFF, g: 8'h80, b: 8'h00};` の parse・hover 確認。備考: Expressions/AssignmentPattern.cs (Primary派生・未使用経路) と DataObjects/AssignmentPattern.cs (Expression派生・実使用) の2実装が併存。今回対応は DataObjects 側のみ。Expressions 側は parseCreate の位置進行チェックで最初の要素のみ解析する実装上の問題があるが、現行の呼び出し元が存在しないため対応は見送り
+
 - SystemVerilog struct 初期化構文の対応状況確認 → 調査完了 + 1件修正 (ビルド成功、コミット済み)
   - 結論: 主要構文はすべて対応済み。`'{"` の解析は Verilog/DataObjects/AssignmentPattern.cs (AssignmentPatternWithKey = 名前指定/default / AssignmentPatternWithoutKey = 位置指定/repetition) が本体
   - 対応確認済み (デバッグテスト Debug_ParseStructInit / Debug_ParseStructInitTypePrefix、エラー 0):
@@ -448,19 +462,30 @@ endmodule
   - コミット: CodeEditor2VerilogPlugin `c6ad674`。DebugConstructorParseTests.cs へのデバッグテスト追加は一時解析用のためコミットから除外 (従来方針)
   - Next: エディタ上で `pixel_t my_pixel = '{r: 8'hFF, default: 8'h00};` 等の parse・hover 確認
 
-- sv-tests randsequence 残課題 (randcase 重み・break/return・repeat production) → 実装中 (未コミット、ビルド/テスト検証の途中でユーザ指示により中断)
+- sv-tests randsequence 残課題 (randcase 重み・break/return・repeat production) → 実装完了 (ビルド成功、テスト合格、コミット済み)
   - 背景: sv-tests 825 合格 / 209 失敗。randsequence の残課題として randcase 重み / break/return abort / repeat production が未対応だった
-  - 変更ファイル: CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Statements/RandsequenceStatement.cs (未コミット)
-  - 調査方法: SystemVerilogLanguageServer.Tests/DebugConstructorParseTests.cs に randsequence 系デバッグテストを追加 (Debug_ParseRandsequenceWeights / Debug_ParseRandsequenceBreakReturn / Debug_ParseRandsequenceRepeat / Debug_ParseRandsequenceNoBlock / Debug_ParseRandsequenceProdCall / Debug_ParseBraceBlockOnly / Debug_ParseBraceBlockInFunction / Debug_ParseBeginBlockInFunction / Debug_ParsePlainFunctionStatement)。レポート出力先: SystemVerilogLanguageServer.Tests/bin/Debug/net10.0/debug_ctor_report.txt
-  - 根本原因の特定: state.md 旧記録の「18.17 系合格」は誤りで、実コードでは sv-tests 18.17 系の production item 解析が根本的に破綻していた (randsequence simple/weights/break/return/repeat/prod call すべてエラー連鎖)
-  - 修正1 (production 本体境界の検出): production item ループ冒頭に「次の production 宣言開始」判定を追加。`void identifier` / 型keyword+identifier / identifier+":" (Clone probe で直後が "=" でない = `:=` weight でない場合) を検出して break。これにより `main : first;` の後の `first : ...` が内側 item ループで production 参照として誤吸収されなくなり、"illegal statement" の連鎖が解消
-  - 修正2 (randselect weight `:=` 対応): RandSelectItem weight 解析で `:` 消費後に直後が `=` の場合追加消費 (トークナイザは `:=` を1トークン化しないため `:` + `=` に分割される)。weight 式 null 時は 1 トークン消費で復帰。`Expression.ParseCreate` 失敗時の null return による production 全体中断をやめ、1トークン消費 + continue のエラー復帰に変更
-  - 修正3 (randselect 区切り `|` 対応): randselect list の区切りに `|` (18.17.1: `main : first := 1 | second := 0;`) を追加対応 (`,` 以外に)
-  - 修正4 (repeat production): ParseProductionItem に `repeat` 分岐を追加 (`repeat ( expression ) production_item` の repeat + 括弧式を消費し、後続の production item は既存ループが解析)
-  - 修正5 (preRegisterProductions 拡張): production 呼び出し `first : add(10);` の `add` (prev=":" / next="(") も production として事前登録するよう検出条件を拡張 (prev == ":" || prev == ";" を追加。既存は prev==void/型keyword のみ)
-  - デバッグテスト結果 (修正5適用後の最終実行): randsequence weights / no block / simple / repeat = エラー0 (合格)。randsequence minimal / prod call = 残エラーあり (`unfound object` index=104/142/158 + `illegal argument` index=113 + `endfunction expected` index=180)。production 宣言 `void add(int y) : { x = x + y; };` の body 解析が未解決で、Port.ParseTfPortItems 経由の仮引数登録や prodFunc namespace の解決経路の精査が未完了
-  - Next: (1) randsequence minimal/prod call の残エラー解消 (production 宣言 body 内の `{ x = x + y; }` で `x`/`y` が解決されない原因の精査。registerProduction の Function namespace 登録タイミング・ParseTfPortItems の nameSpace 引数を確認) (2) sv-tests 全体再実行 (SvTestsParserTests) で 18.17 系 + regression 確認 (現時点で 209 失敗) (3) dotnet build でビルド確認 (4) コミット (5) state.md 更新 (6) DebugConstructorParseTests.cs の randsequence デバッグテストは一時解析用のためコミットから除外 (既存の方針に従う)
-  - 注意: 作業ツリーにユーザ変更 (CodeEditor2VerilogPlugin/CoreBridge/ParseEngine.cs / Verilog/DataObjects/Arrays/Queue.cs / Verilog/DataObjects/Variables/Object.cs / .gitignore) が残置しているため、コミットは RandsequenceStatement.cs のパス指定で行うこと (state.md メモの従来方針)
+  - 変更ファイル: CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Statements/RandsequenceStatement.cs (前回セッションで修正1〜5適用済み、今回修正6〜8追加)
+  - 前回セッションの修正 (state.md 記録から引き継ぎ):
+    - 修正1 (production 本体境界の検出): production item ループ冒頭に「次の production 宣言開始」判定 (`void identifier` / 型keyword+identifier / identifier+":" で Clone probe が `=` でない) を追加して break
+    - 修正2 (randselect weight `:=` 対応): `:` 消費後に直後が `=` の場合追加消費。weight 式 null 時は 1 トークン消費 + continue のエラー復帰
+    - 修正3 (randselect 区切り `|` 対応): randselect list の区切りに `|` を追加対応
+    - 修正4 (repeat production): ParseProductionItem に `repeat` 分岐を追加 (repeat + 括弧式を消費)
+    - 修正5 (preRegisterProductions 拡張): production 呼び出しの identifier (prev=":" / next="(") も事前登録
+  - 今回の追加修正:
+    - 修正6 (production call 引数の `(` 消費): ParseProductionItem の production call 分岐で、identifier 消費後 `(` を消費せずに引数ループに入っていたため `Expression.ParseCreate` が `(` から解析して破綻していた (エラー "illegal argument" / "unfound object")。`word.MoveNext()` を identifier + `(` の2回に修正
+    - 修正7 (production body の `{}` block 後の break): `{ statement block }` 解析後に break せず continue していたため、次 production header (`second :`) の identifier が production 参照として誤吸収され、`:` でループを抜けて ParseCreate 側が `: second` を production label として誤消費していた。`{}` block 解析後に break するよう修正
+    - 修正8 (production 参照の `:` 除外): production 参照判定条件から `word.NextText == ":"` を除外 (identifier + `:` は次 production header)。randselect weight `:=` は既存の `:=` 分岐が処理するため影響なし
+    - 修正9 (randselect 式を Primary レベルで解析): `selectItem.Expression` / `selectItem.Weight` を `Expression.ParseCreate` から `Expressions.Primary.ParseCreate` に変更。Expression レベルでは次 randselect の `|` 区切りが二項 OR 演算子として式に取り込まれるため (`main : first := 1 | second := 0;` で weight が `1 | second` まで消費され破綻)、Primary レベルで解析して `|` を区切りとして残す
+    - 修正10 (production body の `endcase` 停止): ParseProductionBody の停止条件に `endcase` を追加。case production item body が `endcase` を超えて後続 production 宣言 (`zero : { x = 0; };` 等) を誤吸収し続け、識別子 + `:` + `{}` の連鎖で無限ループしていた (sv-tests 全体実行がフリーズする問題の根本原因)
+  - 検証:
+    - randsequence デバッグテスト 18/18 合格 (minimal / weights / no block / simple / break-return / repeat / prod call / void prod args / void prod no args / bisect1-7 / weights light / simple2 / RealFiles)
+    - `Debug_ParseRandsequenceRealFiles`: sv-tests chapter-18 の 18.17系実ファイル 15件すべて parse 完了 (無限ループ解消確認。`_fail` ファイルのエラーは negative test として期待通り)
+    - sv-tests 全体: 825 合格 / 209 失敗 → **837 合格 / 197 失敗** (1034 中、+12 合格)。18.17系 randsequence がすべて合格。残り失敗はマクロ/include 未解決・constraint・mailbox 等の randsequence 以外の既知課題 (regression なし)
+    - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `94656f0`、メイン `c82719b` (submodule pointer 更新)
+  - 注意: DebugConstructorParseTests.cs の randsequence デバッグテスト (bisect1-7 含む) は一時解析用のためコミットから除外 (既存の方針)。作業ツリーのユーザ変更 (CodeEditor2VerilogPlugin/CoreBridge/ParseEngine.cs / Verilog/DataObjects/Arrays/Queue.cs / Verilog/DataObjects/Variables/Object.cs / .gitignore) もコミットから除外
+
+  ---
 - `typedef class A;` 前方宣言の偽エラー ("data type expected") → 修正完了 (ビルド成功、コミット済み)
   - 問題: `typedef class A;` (BNF `type_declaration ::= "typedef" [ "enum" | "struct" | "union" | "class" | "interface class" ] type_identifier ;`、前方宣言用) が `DataTypeFactory.ParseCreate` に `class` を渡し、case 分岐なし + keyword で null return → "data type expected" 誤エラー。`typedef interface class A;` も同様
   - 修正 (Typedef.cs): ParseDeclaration 冒頭に `class` / `interface class` 分岐を追加。keyword 色付け + identifier 消費 + `;` チェックで正常終了 (登録なし。Typedef を登録すると real Class と名前衝突し UserDefinedType 経由の member 解決が劣化するため)。エラー時は `; expected` + SkipToKeyword(";") で復帰
