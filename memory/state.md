@@ -436,6 +436,14 @@ endmodule
 
 ## 進行中タスク
 
+- VerilogModuleInstance の階層 parse 後に NavigateNode のアイコン (error/warning バッジ) が変化しない問題 → 修正完了 (ビルド成功、コミット済み)
+  - 原因: `VerilogHeaderInstance.AcceptParsedDocumentAsync` (L348-350) は parse 受け入れ後に `NavigatePanelNode.UpdateVisual()` を呼ぶが、`VerilogModuleInstance.AcceptParsedDocumentAsync` は `await UpdateAsync()` で終わっておりノード再描画が行われない。ParseHierarchy で深く parse してもアイコンは変化せず、ノード選択時 (`OnSelected` → `UpdateVisual()`) に初めて更新されていた
+  - 修正: `VerilogModuleInstance.AcceptParsedDocumentAsync` 末尾に `NavigatePanelNode.UpdateVisual()` を追加 (`CodeEditor2.Global.UIThread != null` ガード付き、UI-less ホスト防御)。`InterfaceInstance.AcceptParsedDocumentAsync` の editor-dependent update ブロックにも同一追加
+  - ノード側 `UpdateVisual` は非 UI スレッドから `Dispatcher.UIThread.Invoke` でマーシャリングされるため background parse スレッドからも安全
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `064bfff`、メイン (submodule pointer 更新)
+  - Next: エディタ上で階層 parse 後に instance node のアイコンバッジが即座に変化することの確認
+
 - SystemVerilog parameter/localparam 初期化の assignment pattern (`parameter pixel_t p = '{...};`) が右辺でエラー → 修正完了 (ビルド成功、テスト合格、コミット済み)
   - 問題: `pixel_t my_pixel = '{8'hFF, ...};` (変数宣言) は正常 parse されるが、`parameter pixel_t my_pixel1 = '{8'hFF, 8'h80, 8'h00};` / `parameter pixel_t my_pixel2 = '{r: 8'hFF, g: 8'h80, b: 8'h00};` は右辺で "illegal cast" + "; expected" エラー
   - 原因: `'{` の先頭 `'` は WordPointer charClass 7 (quote) → WordType.Number として次の `{` (operator) で区切られた単独トークンになる。変数宣言経路 (Variable.ParseDeclaration L412) は `word.Text == "'" && word.NextText == "{"` を Expression に渡す前に直接 DataObjects.AssignmentPattern.ParseCreate に委譲するが、parameter 経路 (Constants.ParseCreateDeclaration L566) は `Expressions.Expression.ParseCreate` に委譲するため `'` トークンが Primary.parseCreate → Number.ParseCreateNumberOrCast に到達。単独 `'` (apostropheIndex + 1 == word.Length) は cast (`8'`) と同一形態と誤判定され Cast.ParseCreate(word, nameSpace, number) に落ち、次の `{` で "illegal cast" → 後続要素未解析で "; expected"
