@@ -3,6 +3,24 @@
 
 ## 未解決課題
 
+- sv-tests interface class / class 前方宣言・package scope 解決対応 → 実装完了 (ビルド成功、コミット済み)
+  - 対象テスト: class_test_7 (`extends Package::Bar`) / class_test_26 (`implements Bar#(N)`) / class_test_29 (`implements Pkg::Bar, Baz`) / iface_class_test_2 (`interface class base_ic #(int N = 8, type T = string)`) / 8.27--forward_declaration (`typedef class C2;` + 同一 module 内相互参照)
+  - 修正1 (Root.cs): root level の `interface class` 宣言を `InterfaceClass.ParseDeclaration` に dispatch (従来は通常 interface として parse され崩壊)
+  - 修正2 (InterfaceClass.cs): parameter port list に `type` keyword 分岐を追加 (Class.cs と同一パターン) + コンストラクタ public 化
+  - 修正3 (Class.cs):
+    - `extends Package::Bar` の package_scope 解決を package file の parsed `Root.NamedElements` 参照に修正 + 同一ファイル内 package を `Root.BuildingBlocks` から解決するフォールバック追加
+    - `implements` の interface_class_type 解決を package scope (`Pkg::Bar`) / ローカル / cross-file (DefinitionNameSpace / UnitNameSpace / SearchBuildingBlockUpward) に拡張
+    - コンストラクタ public 化
+  - 修正4 (DataTypeFactory.cs): class/interface class 識別子が既存経路で解決できない場合、同一ファイルの `Root.BuildingBlocks` (および各 building block の NamedElements 内 class) から解決するフォールバックを追加 (class Parent chain が enclosing module に届かない問題の対処、2-pass parse で前方参照も解決)
+  - 結果: 上記5テストの parser エラー 0 (class_test_7/26/29, iface_class_test_2 完全解決)。`8.27--forward_declaration` の `C1 c;` (逆方向の相互参照) は1件残留
+  - 検証用: DebugConstructorParseTests.cs に Debug_ParseClassTest7/26/29 / Debug_ParseIfaceClassTest2 / Debug_ParseInterfaceClassForwardDecl を追加 (一時解析用、コミットから除外)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `7c844e4`、メイン `ac5a4b2` (submodule pointer 更新)
+  - Next: 8.27 の `C1 c;` 逆方向前方参照 (placeholder 登録方式は NRE を起こすため要再検討) / 分類C残 (process object member method) / F (constraint member access)
+  - メモ: リポジトリルートに一時生成した fix_interface_class.patch が残置 (削除候補)
+
+## 未解決課題
+
 - CodeView 右側サブペイン + LiveMarkdownPlugin プレビュー → 実装完了 (ビルド成功、コミット済み)
   - CodeView.axaml を Grid 化し右側に SubPaneHost (ContentControl) + SubPaneSplitter を追加。未使用時は IsVisible=false で非表示
   - `Data.TextFile.GetSubPaneContent()` virtual を新設 (既定 null = サブペイン不使用)。`CodeView.SetTextFileAsync` 内で `UpdateSubPane()` を呼び、ファイル切替時にサブペインを自動更新 (内容なしファイルでは非表示化)
