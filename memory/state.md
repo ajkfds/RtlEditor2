@@ -3,6 +3,18 @@
 
 ## 未解決課題
 
+- sv-tests include 相対パス解決 (file not found 107件) 対応 → 実装完了 (ビルド成功、テスト実行、コミット済み)
+  - 対象テスト: sv_tests 全体 (file not found 107件の Error diagnostic)
+  - 原因解析: テストハーネスがテスト対象ファイル1件のみを空 TestProject に登録していたため、WordScanner.parseInclude の include 解決 (同一フォルダ検索: Project.FindItems / 全プロジェクト検索: Project.SearchFile / VerilogHeaderInstance.Create の project.GetItem(relativePath)) がいずれもプロジェクト登録済みファイルを前提とする設計のため include 先 (.svh) が解決不能。include 未解決によりマクロ未展開の二次エラー連鎖も発生
+  - 修正 (SvTestsParserHarness.cs): 共有 TestProject を新設し、sv_tests 配下の全 .sv/.svh を相対パス (ディレクトリ構造保持) で item tree 登録 (中間 Folder 生成 EnsureFolder + .sv は VerilogFile / .svh は VerilogHeaderFile)。各ファイルのテキストはディスクから読んで pluginVerilog.CodeDocument(string) に投入し、リフレクションで TextFile.CodeDocument property に設定 (GetProjectAndFile(absolutePath) が共有 project + 該当 VerilogFile を返す)
+  - 修正 (SvTestsParserTests.cs): ParseSvTestFile を共有 project 経由 (GetProjectAndFile) に変更
+  - 結果: file not found 107 → 3件。Error diagnostic 大幅減。テスト 839 → 847 合格 / 195 → 187 失敗 (+8)
+  - 残存失敗の主因: unfound module 13件 (各テストが自ファイルのみ parse のため cross-file module 定義未解決) / macro arguments mismatch / illegal initial construct 等の個別文法課題 / unfound object 23件
+  - 注意: テスト全体実行時は SharedProject の初回構築に時間がかかる (数百ファイルの CodeDocument 生成)
+  - ビルド成功 (SystemVerilogLanguageServer.Tests.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: メイン `f831a2e`
+  - Next: cross-file module 定義の解決 (unfound module 13件) / 残存 unfound object 分類の精査
+
 - sv-tests interface class / class 前方宣言・package scope 解決対応 → 実装完了 (ビルド成功、コミット済み)
   - 対象テスト: class_test_7 (`extends Package::Bar`) / class_test_26 (`implements Bar#(N)`) / class_test_29 (`implements Pkg::Bar, Baz`) / iface_class_test_2 (`interface class base_ic #(int N = 8, type T = string)`) / 8.27--forward_declaration (`typedef class C2;` + 同一 module 内相互参照)
   - 修正1 (Root.cs): root level の `interface class` 宣言を `InterfaceClass.ParseDeclaration` に dispatch (従来は通常 interface として parse され崩壊)
