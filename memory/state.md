@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- OpenRouterChat に ProviderOnly プロパティ追加 (OpenRouter provider routing 対応) → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: OpenRouter SDK の `provider: { "only": [...], "allow_fallbacks": false }` 相当の指定を OpenRouterChat に入れたい
+  - 実装 (CodeEditor2AiPlugin `c5bcb95` / メイン `15731a0` submodule pointer 更新):
+    - `OpenRouterChat.ProviderOnly` プロパティ (string?) を新設。null/空なら routing 制限なし
+    - `GetAsyncCollectionChatResult` の options 構築で、`ProviderOnly` 設定時に `options.AdditionalProperties["provider"]` に `BinaryData.FromString(JsonSerializer.Serialize(new { only = new[] { ProviderOnly }, allow_fallbacks = false }))` を設定 (include_reasoning と同一の透過送信メカニズム)
+  - 使い方: コードから `chat.ProviderOnly = "gmicloud/fp8";` 等で設定 (手動/コード設定方式、案B)
+  - 注意: MEAI OpenAI adapter の AdditionalProperties 透過挙動に依存するため、実リクエストでの provider 制限の効きは要確認
+  - Next: エディタ上で ProviderOnly 設定時のリクエスト確認 (OpenRouter 側で指定 provider に固定されること)
+
 - sv-tests array locator method の `with` 句対応 → 実装完了 (ビルド成功、テスト実行、コミット済み)
   - 対象テスト: chapter-7/arrays/associative/locator-methods の find.sv / find-index.sv / find-first.sv / find-last.sv / find-first-index.sv / find-last-index.sv (6件)。`qs = s.find with ( item == "sad" );` 等
   - 原因: `BuiltinMethodCall.ParseCreate` が `with ( expression )` 句 (IEEE 1800-2017 section 7.12 array locator / ordering method の with_expression) に未対応で、`with` トークンが呼び出し元の statement 解析に残り "; expected" / "illegal task name" / "unfound object" 連鎖
