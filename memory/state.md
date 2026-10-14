@@ -3,6 +3,33 @@
 
 ## 未解決課題
 
+- sv_tests 未実装項目の洗い出し (調査完了、未着手) → 現状 853 合格 / 181 失敗 (全 1034 件、UVM 依存テストは skip)
+  - 計測: `dotnet test SystemVerilogLanguageServer.Tests/SystemVerilogLanguageServer.Tests.csproj --filter "FullyQualifiedName~SvTestsParserTests" --no-build`
+  - レポート: `SystemVerilogLanguageServer.Tests/bin/Debug/net10.0/sv_tests_report.txt` (Error 165 / Warning 18 / Notice 9)
+  - 失敗カテゴリと代表テスト (未実装・未対応項目):
+    1. プリプロセッサ/マクロ系 (最多) — `unsupported macro call` 4+ / `macro arguments mismatch` 3 / `unsupported compiler directive` 6+ / `illegal file`・`file not found` (include) 7 / `illegal initial construct`・`endmodule expected` 10 (define-expansion 連鎖)
+       - 代表: 22.5.1--define-expansion_15/16/17 / 5.6.4--compiler-directives-begin-keywords/debug/preprocessor-macro_1 / 22.9--unconnected_drive-basic / 22.12--line-basic・line-complex / 22.11--pragma-number-multi / 22.4--include_* / 5.6.4--compiler-directives-include
+    2. class / interface class 系 — `virtual interface type required` 7 / `illegal method prototype` 6 / `illegal class item` 4 / `illegal interface class item`・`( required`・`) required` / `illegal separator`・`data type expected`
+       - 代表: 18.5.2--pure-constraint_0/3 / 8.21--abstract_class / 8.22--dynamic_method_lookup / class_test_4 / class_member_test_4/6/7/8/25/26 / 8.26.3--type_access_implements・extends / 8.26.6.2--parameter_type_conflict / iface_class_test_10 / class_test_17/18 / 8.5--parameters / 8.27--forward_declaration / 8.15--super・super-default-new / 8.7--constructor_super
+    3. constraint / randomize (in-line constraint) — `unfound object` / `illegal statement`
+       - 代表: 18.7--in-line-constraints--randomize_1/3/5 / 18.5.9--global-constraints_0 / 18.5.8.1・18.5.8.2--iterative-constraints_0 / 18.5.1--implicit-external-constraint_0 / 18.5.4--distribution_0 / 18.5.14.1--soft-constraint-priorities_2 / 18.7.1--local-scope-resolution_0
+    4. queue / array method (index expression) — `illegal index expression`
+       - 代表: pop_back_assing / pop_front_assign / insert_assign / delete_assign / slice / delete
+    5. sequence / property (assertion) — `illegal range` / `unfound module`・`( expected` / `event expected`・`unfound object`
+       - 代表: 16.9--sequence-cons/goto/noncons-repetition / 16.2--assert0・assume0・cover0・assert-final・assume-final・cover-final / 16.14--assume-property / 16.15--property-disable-iff / 16.10--sequence-local-var / 15.5.1--named-event-trigger-* / 15.5.2--named-event-wait / 16.12--property-iff
+    6. system task 未登録 — `unsupported system task`
+       - 代表: 21.3--fread/fgets/fscanf/fpos/sscanf / 21.7--dumpports / 6.24.2--cast_task / 8.26.5--cast_between_interface_classes
+    7. typedef / struct / union — `{ required` / `data type expected`
+       - 代表: typedef_test_0/22/23/25 / struct_test_0 / union_test_0 / 5.10-structure-replication
+    8. nettype / interconnect — `illegal module item` / `unfound module`
+       - 代表: 6.6.7--nettype・nettype_resolution_fn / 6.6.8--interconnect / 22.8--default_nettype-redefinition
+    9. process class — `unfound object` / `undefined function`
+       - 代表: 9.7--process_cls_await/kill/suspend_resume
+    10. その他 — `25.3-interface` (interface) / `15.4--mailbox-blocking・non-blocking` (mailbox) / `24.3--program` / `26.2--package-decl`・`26.3--package-ref` (package) / `6.19.5.3--enum_next`・`6.19.5.4--enum_prev` (too few arguments) / `5.7.1--integers-signed` / `5.11-arrays-*` / `12.6.2--if_pattern` / `12.6.3--conditional_pattern`
+  - 既存の分類 (state.md) との対応: 分類C残 (process object member method) / 分類F (constraint cross-object member access) / dispatcher 未接続 (case_generate_construct / checker_instantiation / extern declaration 群 / net_type_declaration / DPI spec string / super.new / SpecifyBlock / UDP nonansi)
+  - 優先順位 (案): 件数上位の (1) プリプロセッサ/マクロ系 と (2) class/interface class 系 から着手 → (3) constraint 系
+  - Next: どのカテゴリから着手するかユーザ指示待ち
+
 - OpenRouterChat に ProviderOnly プロパティ追加 (OpenRouter provider routing 対応) → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: OpenRouter SDK の `provider: { "only": [...], "allow_fallbacks": false }` 相当の指定を OpenRouterChat に入れたい
   - 実装 (CodeEditor2AiPlugin `c5bcb95` / メイン `15731a0` submodule pointer 更新):
