@@ -87,6 +87,16 @@
   - 結果: sv-tests 880 → 885 合格 / 154 → 149 失敗 (+5)。virtual interface type required 7→0
   - メインコミット: submodule pointer 更新
 
+- sv-tests queue/array range slice 対応 → 実装完了 (ビルド成功、テスト実行、コミット済み)
+  - 対象: pop_back_assign / pop_front_assign / insert_assign / delete_assign / slice / delete (「illegal index expression」2件 + slice 系)
+  - 原因: DataObjectReference の associative/dynamic/queue の index select 経路が Expression.ParseCreate のみを使い、`:` を処理できず `q[0:$-1]` 等の range slice で "illegal index expression"
+  - 修正 (CodeEditor2VerilogPlugin `194f4f2`): RangeExpression.ParseCreate に置換 (single index / [e1:e2] / [e+:w] / [e-:w] すべて対応)、val.RangesFromOriginal に登録
+  - 結果: sv-tests 885 → 890 合格 / 149 → 144 失敗 (+5)。illegal index expression 2→0
+  - メインコミット: submodule pointer 更新
+
+- sv-tests 累計: 874 → 890 合格 / 160 → 144 失敗 (+16)。対応完了カテゴリ: include .sv / virtual class / queue range slice
+  - Next: 残カテゴリ (unfound object 27 / ; expected 14 / unfound module 13 / ( required 6 / illegal method prototype 6 / { required 5 / unsupported system task 5 / illegal class item 4 / illegal separator 4 / unsupported macro call 4 等) の優先順位はユーザ指示待ち
+
 - OpenRouterChat に ProviderOnly プロパティ追加 (OpenRouter provider routing 対応) → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: OpenRouter SDK の `provider: { "only": [...], "allow_fallbacks": false }` 相当の指定を OpenRouterChat に入れたい
   - 実装 (CodeEditor2AiPlugin `c5bcb95` / メイン `15731a0` submodule pointer 更新):
