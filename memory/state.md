@@ -11,7 +11,8 @@
   - 結果: sv-tests 839 → 853 合格 / 195 → 181 失敗 (+14 合格、regression なし)。find系6ファイルすべて解消
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
   - コミット: CodeEditor2VerilogPlugin `d96a522`、メイン `8129913` (submodule pointer 更新)
-  - Next: unordered 系 locator (`unique` / `unique_index` / min/max / sort with) も同一経路で動作するはず。 iterative constraints (18.5.8.x, foreach constraint) 内の `item` 参照は別経路 (constraint 式解析) のため残存
+  - 追加確認: unordered 系 locator / ordering / reduction (`unique` / `unique_index` / `min` / `max` / `sort` / `rsort` / `reverse` / `shuffle` / `sum` / `product` / `and` / `or` / `xor`) は sv_tests の該当テスト (unique.sv / unique_index.sv / min.sv / max.sv / sort.sv / sum.sv 等、statement 位置の `qi.sort;` 含む) すべて通過済みを確認。`with` 句はメソッド名非依存のため `s.min with (item < 5)` / `ia.sort with (item > a)` も同一経路で解析可能 (sv-tests にはテストなし)。追加実装不要
+  - 残課題: iterative constraints (18.5.8.x, foreach constraint) 内の `item` 参照は別経路 (constraint 式解析) のため残存
 
 - ChatControl: Function Call が終わらないうちに次の操作に進む問題 → 修正完了 (ビルド成功、コミット済み)
   - ユーザ報告「Function Callが終わらないうちに次の操作に進んでいる」
