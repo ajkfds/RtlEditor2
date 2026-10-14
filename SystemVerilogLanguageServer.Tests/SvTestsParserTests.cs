@@ -58,17 +58,11 @@ namespace SystemVerilogLanguageServer.Tests
 
             bool isNegative = IsNegativeTest(path, text);
 
-            CodeEditor2.Data.Project project;
-            pluginVerilog.Data.VerilogFile file;
-
-            lock (_lock)
-            {
-                project = new TestProject();
-                project.ProjectProperties.Add(
-                    pluginVerilog.Plugin.StaticID,
-                    new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
-                file = CreateFile(project, fileName);
-            }
+            // use the shared project where every .sv / .svh under sv_tests is
+            // registered so that include directives and cross-file references
+            // can resolve their targets
+            (CodeEditor2.Data.Project project, pluginVerilog.Data.VerilogFile file) =
+                GetProjectAndFile(path);
 
             Exception? failure = null;
             pluginVerilog.Verilog.ParsedDocument? parsed = null;

@@ -89,5 +89,158 @@ namespace SystemVerilogLanguageServer.Tests
                 .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
+
+        // ------------------------------------------------------------------
+        // Shared project: every .sv / .svh under sv_tests is registered as a
+        // project item (with its directory structure preserved) so that
+        // include directives can resolve relative paths through
+        // Project.GetItem / FindItems (WordScanner.parseInclude).
+        // ------------------------------------------------------------------
+        private static readonly object _projectLock = new object();
+        private static CodeEditor2.Data.Project? _sharedProject;
+        private static readonly Dictionary<string, pluginVerilog.Data.VerilogFile> _svFileTable =
+            new Dictionary<string, pluginVerilog.Data.VerilogFile>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, pluginVerilog.Data.VerilogHeaderFile> _svhFileTable =
+            new Dictionary<string, pluginVerilog.Data.VerilogHeaderFile>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Returns the shared project (building it on first use) and the
+        /// registered VerilogFile for the given absolute test file path.
+        /// </summary>
+        internal static (CodeEditor2.Data.Project Project, pluginVerilog.Data.VerilogFile File)
+            GetProjectAndFile(string absolutePath)
+        {
+            EnsurePluginRegistered();
+
+            string root = FindSvTestsRoot();
+            string relative = Path.GetRelativePath(root, absolutePath)
+                .Replace(Path.DirectorySeparatorChar, '/')
+                .Replace(Path.AltDirectorySeparatorChar, '/');
+
+            lock (_projectLock)
+            {
+                if (_sharedProject == null) BuildSharedProject(root);
+
+                pluginVerilog.Data.VerilogFile? file;
+                if (!_svFileTable.TryGetValue(relative, out file) || file == null)
+                {
+                    throw new InvalidOperationException($"test file not registered in shared project: {relative}");
+                }
+                return (_sharedProject!, file);
+            }
+        }
+
+        private static void BuildSharedProject(string root)
+        {
+            CodeEditor2.Data.Project project = new TestProject();
+            project.ProjectProperties.Add(
+                pluginVerilog.Plugin.StaticID,
+                new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
+            _sharedProject = project;
+
+            // enumerate .sv and .svh (include targets) files
+            List<string> paths = new List<string>();
+            paths.AddRange(Directory.EnumerateFiles(root, "*.sv", SearchOption.AllDirectories));
+            paths.AddRange(Directory.EnumerateFiles(root, "*.svh", SearchOption.AllDirectories));
+            paths.Sort(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string path in paths)
+            {
+                string relative = Path.GetRelativePath(root, path)
+                    .Replace(Path.DirectorySeparatorChar, '/')
+                    .Replace(Path.AltDirectorySeparatorChar, '/');
+
+                string name = Path.GetFileName(relative);
+                string dir = "";
+                int slash = relative.LastIndexOf('/');
+                if (slash >= 0) dir = relative.Substring(0, slash);
+
+                CodeEditor2.Data.Folder parentFolder = EnsureFolder(project, dir);
+                string text;
+                try
+                {
+                    text = File.ReadAllText(path);
+                }
+                catch
+                {
+                    continue; // unreadable file: skip registration
+                }
+
+                if (relative.EndsWith(".svh", StringComparison.OrdinalIgnoreCase))
+                {
+                    pluginVerilog.Data.VerilogHeaderFile header = new pluginVerilog.Data.VerilogHeaderFile()
+                    {
+                        Name = name,
+                        Project = project,
+                        RelativePath = relative
+                    };
+                    SetCodeDocumentText(header, text);
+                    parentFolder.Items.AddOrUpdate(name, header);
+                    _svhFileTable[relative] = header;
+                }
+                else
+                {
+                    pluginVerilog.Data.VerilogFile file = new pluginVerilog.Data.VerilogFile()
+                    {
+                        Name = name,
+                        Project = project,
+                        RelativePath = relative,
+                        SystemVerilog = true
+                    };
+                    SetCodeDocumentText(file, text);
+                    parentFolder.Items.AddOrUpdate(name, file);
+                    _svFileTable[relative] = file;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Creates intermediate folders for the given directory-relative path
+        /// ("a/b/c") under the project and returns the deepest folder.
+        /// </summary>
+        private static CodeEditor2.Data.Folder EnsureFolder(CodeEditor2.Data.Project project, string dirRelative)
+        {
+            if (string.IsNullOrEmpty(dirRelative)) return project;
+
+            string[] parts = dirRelative.Split('/');
+            CodeEditor2.Data.Item current = project;
+            string accumulated = "";
+            foreach (string part in parts)
+            {
+                accumulated = (accumulated.Length == 0) ? part : accumulated + "/" + part;
+
+                CodeEditor2.Data.Item? found;
+                if (current.Items.TryGetValue(part, out found) && found != null)
+                {
+                    current = found;
+                    continue;
+                }
+                CodeEditor2.Data.Folder folder = CodeEditor2.Data.Folder.Create(accumulated, project, current);
+                current.Items.AddOrUpdate(part, folder);
+                current = folder;
+            }
+            return (CodeEditor2.Data.Folder)current;
+        }
+
+        /// <summary>
+        /// Creates a CodeDocument with the given text and assigns it to the
+        /// TextFile. The CodeDocument property setter is not public in
+        /// UI-less hosts (FileCheckAsync is UI dependent), so reflection is
+        /// used (same approach as ParseEngine.CreateCodeDocument).
+        /// </summary>
+        private static void SetCodeDocumentText(CodeEditor2.Data.TextFile textFile, string text)
+        {
+            // pluginVerilog.CodeDocument only exposes (IVerilogRelatedFile) and
+            // (string) constructors; the text must be set (diveIntoIncludeFile
+            // snapshots this document for the include parse)
+            pluginVerilog.CodeEditor.CodeDocument document =
+                new pluginVerilog.CodeEditor.CodeDocument(text);
+            var property = typeof(CodeEditor2.Data.TextFile).GetProperty(
+                "CodeDocument",
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic);
+            property?.SetValue(textFile, document);
+        }
     }
 }
