@@ -70,6 +70,23 @@
       - 8.13--inheritance / 8.14--override_member: inheritance / override の member 解決
     - Next: どのカテゴリから着手するかユーザ指示待ち (候補: (1) include .sv 対応 / (2) virtual interface / (3) index expression)
 
+- sv-tests include .sv 対応 → 実装完了 (ビルド成功、テスト実行、コミット済み)
+  - 対象: 22.4--include_basic / include_basic_rpath / include_with_comment / include_from_other_directory / check_included_definitions / preproc_test_2 (「illegal file」6件)
+  - 原因: Item.GetItem(relativePath) がパス分割に System.IO.Path.DirectorySeparatorChar (Windows: `\`) のみを使用。WordScanner.parseInclude は relativeFilePath を `/` に正規化して渡すため、Windows で include 先を解決できず VerilogHeaderInstance.Create が null → "illegal file"
+  - 修正: CodeEditor2 `ae172ee` Item.GetItem の区切り検出を IndexOfAny(new char[] { '/', Path.DirectorySeparatorChar }) に変更
+  - 結果: sv-tests 874 → 880 合格 / 160 → 154 失敗 (+6)。illegal file 6→0
+  - メインコミット: `ded51e4` (submodule pointer + state.md)
+  - 残: 5.6.4--compiler-directives-include (`include "/dev/null"` Linux絶対パス) / 22.5.1--include-define-expansion (`` `" `` 二重引用符内マクロ展開)
+
+- sv-tests virtual class 対応 → 実装完了 (ビルド成功、テスト実行、コミット済み)
+  - 対象: 8.21--abstract_class / 8.22--dynamic_method_lookup / 18.5.2--pure-constraint_0/3 / class_test_4 / class_member_test_26 / 8.15--super-default-new / 8.26.7--partial_implementation (「virtual interface type required」7件)
+  - 原因: `virtual class base_cls;` が Variable.ParseDeclaration の virtual interface 修飾子として `virtual` を消費され、後続の `class` keyword を型名として解決できない → "virtual interface type required"
+  - 修正 (CodeEditor2VerilogPlugin `58d3b9c`):
+    - PackageOrGenerateItemDeclaration.Parse 冒頭に `virtual` + `class` の早期分岐を追加 (Class.ParseDeclaration に転送)
+    - ClassItem.Parse の `virtual function/task` 分岐の後に `virtual class` 分岐を追加 (Class.ParseCreate に転送)
+  - 結果: sv-tests 880 → 885 合格 / 154 → 149 失敗 (+5)。virtual interface type required 7→0
+  - メインコミット: submodule pointer 更新
+
 - OpenRouterChat に ProviderOnly プロパティ追加 (OpenRouter provider routing 対応) → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: OpenRouter SDK の `provider: { "only": [...], "allow_fallbacks": false }` 相当の指定を OpenRouterChat に入れたい
   - 実装 (CodeEditor2AiPlugin `c5bcb95` / メイン `15731a0` submodule pointer 更新):
