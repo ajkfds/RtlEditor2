@@ -3,6 +3,16 @@
 
 ## 未解決課題
 
+- sv-tests array locator method の `with` 句対応 → 実装完了 (ビルド成功、テスト実行、コミット済み)
+  - 対象テスト: chapter-7/arrays/associative/locator-methods の find.sv / find-index.sv / find-first.sv / find-last.sv / find-first-index.sv / find-last-index.sv (6件)。`qs = s.find with ( item == "sad" );` 等
+  - 原因: `BuiltinMethodCall.ParseCreate` が `with ( expression )` 句 (IEEE 1800-2017 section 7.12 array locator / ordering method の with_expression) に未対応で、`with` トークンが呼び出し元の statement 解析に残り "; expected" / "illegal task name" / "unfound object" 連鎖
+  - 修正 (BuiltinMethodCall.cs): ParseCreate を parseMethodCall + parseWithClause に分離。`)` 消費後に `with` 検出時、keyword 色付け + `(` + 式 (Expression.ParseCreate) + `)` を消費し `WithExpression` に記録、Reference を拡張
+  - `bindLocatorVariable` helper を新設: locator 句内の暗黙 loop 変数 `item` を enclosing name space に string 変数として bind (未登録時のみ、PatternVariable.ParseCreate と同一パターン)。prototype / partial parse (CompletionContext != null) 時は共有 name space 汚染防止のため skip
+  - 結果: sv-tests 839 → 853 合格 / 195 → 181 失敗 (+14 合格、regression なし)。find系6ファイルすべて解消
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `d96a522`、メイン `8129913` (submodule pointer 更新)
+  - Next: unordered 系 locator (`unique` / `unique_index` / min/max / sort with) も同一経路で動作するはず。 iterative constraints (18.5.8.x, foreach constraint) 内の `item` 参照は別経路 (constraint 式解析) のため残存
+
 - ChatControl: Function Call が終わらないうちに次の操作に進む問題 → 修正完了 (ビルド成功、コミット済み)
   - ユーザ報告「Function Callが終わらないうちに次の操作に進んでいる」
   - 原因: `complete()` が LLM 呼び出し1回ごとに `inputAcceptable = false` → finally で `true` に戻す設計だったため、`completeWithFunctionCall` ループ内の tool 実行 (`agent.ParseResponceAsync`) 中はロックが解放され、この隙間にユーザが Send すると `UserComplete` が通過し既存 tool loop と並行に新しい turn が走った
