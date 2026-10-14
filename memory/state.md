@@ -3,7 +3,7 @@
 
 ## 未解決課題
 
-- プリプロセッサ/マクロ系の修正 (第1弾完了、継続中) → 853 合格 / 181 失敗 → **860 合格 / 174 失敗** (+7)
+- プリプロセッサ/マクロ系の修正 (第2弾完了) → 853 合格 / 181 失敗 → 860/174 (+7) → **874 合格 / 160 失敗** (+14、regression なし)
   - 修正 (WordScanner.cs): `` `line `` / `` `unconnected_drive `` を残り行消費 (MoveNextUntilEol) に変更、`` `nounconnected_drive `` はエラーなしで消費のみ、`` `default_nettype `` の "not supported" エラー削除 + `tri1`/`uwire` 認識追加
   - 修正 (WordScanner.cs parseMacroArguments): 実引数が仮引数より少なく残り全仮引数にデフォルト値がある場合、デフォルト値で補完 (IEEE 1800-2017 22.5.1)
   - 修正 (PragmaDirective.cs): `pragma_keyword = pragma_value` の `=` 未消費バグを修正 (後続を誤消費して "illegal identifier")
@@ -16,7 +16,12 @@
     - 22.6--ifdef-behavioral: `` `else `` 側の `and a1 (a,b,c);` (gate instantiation) が module instantiation 経路で "illegal port identifier"
     - 22.5.1--define-expansion_24: `` `define LO "`HI, world" `` 文字列内マクロ展開 `` `H(world) `` の "illegal expression"
     - 5.6.4--compiler-directives-*: UVM 系マクロ (`unsupported macro call`)、`` `line `` 引数、begin_keywords 等
-  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - 第2弾修正 (CodeEditor2VerilogPlugin `49ba558`):
+    - SystemTask.cs: 空実引数 (`$display(a,,b,,c)`) に対応 (`,` / `)` を式解析前にスキップ)。空引数非対応で "missed expression" → initial construct 崩壊していた
+    - WordScanner.cs parseMacroArguments: マクロ呼び出しの閉じ括弧 `)` 消費を削除。`returnHierarchy()` 復帰後に `MoveNext` が1トークン進むため、`)` を消費すると二重進行で後続 `endmodule` が消失し "endmodule expected" が発生していた → 削除で解消
+    - WordScanner.cs parseInclude: project-relative path を '/' 区切りに統一 (バックスラッシュ正規化)、SearchFile でパス末尾のファイル名一致フォールバック追加
+    - VerilogHeaderInstance.cs: include 対象を `VerilogHeaderFile` 限定から `CodeEditor2.Data.TextFile` に緩和 (.sv/.v の include 解決)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
 
 - sv_tests 未実装項目の洗い出し (調査完了、未着手) → 現状 853 合格 / 181 失敗 (全 1034 件、UVM 依存テストは skip)
   - 計測: `dotnet test SystemVerilogLanguageServer.Tests/SystemVerilogLanguageServer.Tests.csproj --filter "FullyQualifiedName~SvTestsParserTests" --no-build`
