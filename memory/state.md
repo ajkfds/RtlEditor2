@@ -49,6 +49,26 @@
   - 既存の分類 (state.md) との対応: 分類C残 (process object member method) / 分類F (constraint cross-object member access) / dispatcher 未接続 (case_generate_construct / checker_instantiation / extern declaration 群 / net_type_declaration / DPI spec string / super.new / SpecifyBlock / UDP nonansi)
   - 優先順位 (案): 件数上位の (1) プリプロセッサ/マクロ系 と (2) class/interface class 系 から着手 → (3) constraint 系
   - Next: どのカテゴリから着手するかユーザ指示待ち
+  - 最新集計 (sv_tests_report.txt 再取得、874 合格 / 160 失敗、UVM skip):
+    - Error 144 / Warning 18 / Notice 9
+    - メッセージ別 top: unfound object 26 / ; expected 14 / unfound module 13 / bitwidth mismatch 7 / virtual interface type required 7 / illegal file 6 / illegal method prototype 6 / { required 5 / illegal identifier 5 / illegal module item 5 / ( required 5 / unsupported system task 5 / illegal class item 4 / illegal separator 4 / unsupported macro call 4 / undefined function 3 / illegal range 3 / ) required 3 / illegal port name 3 / illegal index expression 2 他
+    - 追加で判明した代表的未実装項目:
+      - 6.23--type_op / type_op_compare: `$typename` 等 type operator (`( required` / `undefined function` 多発)
+      - 9.4.5--event_nonblocking_assignment_repeat(_int/_neg/_int_neg): `->> [repeat(expr)] var;` の repeat 付き非ブロッキング event trigger (`illegal non blocking assignment`)
+      - 5.7.1--integers-signed: 符号付き整数の式 (`illegal expression` / `illegal non blocking assignment`)
+      - 12.6.2--if_pattern / 12.6.3--conditional_pattern: `if (expr matches pattern)` 構文
+      - 5.11-arrays-key-index / replication: 配列 key index / replication (`; expected` / `} required`)
+      - 26.2/26.3--package-decl/ref: package 内 tf port / package item
+      - 24.3--program: program item 分岐
+      - 21.6--value / test: `undefined` メッセージ (elaboration system task 未登録系)
+      - 8.26.5--implemented_class_handle / cast_between_interface_classes: interface class cast / handle
+      - 6.20.2--parameter_aggregate / 6.20.3--parameter_type: parameter aggregate / type parameter
+      - 6.6.7--nettype(_resolution_fn) / 6.6.8--interconnect: nettype / interconnect
+      - 8.5--properties_enum / 8.5--parameters: enum プロパティ / parameter
+      - 20.6--typename_type: `$typename` / type parameter
+      - 20.4--printtimescale-hier: `$printtimescale` 階層引数
+      - 8.13--inheritance / 8.14--override_member: inheritance / override の member 解決
+    - Next: どのカテゴリから着手するかユーザ指示待ち (候補: (1) include .sv 対応 / (2) virtual interface / (3) index expression)
 
 - OpenRouterChat に ProviderOnly プロパティ追加 (OpenRouter provider routing 対応) → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: OpenRouter SDK の `provider: { "only": [...], "allow_fallbacks": false }` 相当の指定を OpenRouterChat に入れたい
