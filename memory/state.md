@@ -3,6 +3,21 @@
 
 ## 未解決課題
 
+- プリプロセッサ/マクロ系の修正 (第1弾完了、継続中) → 853 合格 / 181 失敗 → **860 合格 / 174 失敗** (+7)
+  - 修正 (WordScanner.cs): `` `line `` / `` `unconnected_drive `` を残り行消費 (MoveNextUntilEol) に変更、`` `nounconnected_drive `` はエラーなしで消費のみ、`` `default_nettype `` の "not supported" エラー削除 + `tri1`/`uwire` 認識追加
+  - 修正 (WordScanner.cs parseMacroArguments): 実引数が仮引数より少なく残り全仮引数にデフォルト値がある場合、デフォルト値で補完 (IEEE 1800-2017 22.5.1)
+  - 修正 (PragmaDirective.cs): `pragma_keyword = pragma_value` の `=` 未消費バグを修正 (後続を誤消費して "illegal identifier")
+  - 解消テスト: 22.12--line-basic/complex / 22.9--unconnected_drive-basic/2 / 22.11--pragma-number-multi / 22.8--default_nettype-redefinition / 22.5.1--define-expansion_15/16/17 (デフォルト補完)
+  - 残 (プリプロセッサ/マクロ系):
+    - 22.5.1--define-expansion_1/2/3/4/5/9/10/11/13/14/26: マクロ展開テキストの `initial $display(...)` が "illegal initial construct" + "endmodule expected" (parseMacro が stock に macro document を積んだ後の上位 parser へのシームレスな受け渡し経路の問題、要調査)
+    - 22.5.1--include-define-expansion: `` `include `foo(dummy_include.sv) `` の `" expected` (二重引用符内マクロ展開 `` `" ``)
+    - 22.4--include_basic/rpath/with_comment/from_other_directory: `include "dummy_include.sv"` が .sv ファイルのため `VerilogHeaderInstance.Create` が `VerilogHeaderFile` 限定で null → "illegal file"
+    - 22.4--check_included_definitions: include_directory/defs.sv の include 解決 + `` `define_var `` / `` `TWO_PLUS_TWO `` 展開
+    - 22.6--ifdef-behavioral: `` `else `` 側の `and a1 (a,b,c);` (gate instantiation) が module instantiation 経路で "illegal port identifier"
+    - 22.5.1--define-expansion_24: `` `define LO "`HI, world" `` 文字列内マクロ展開 `` `H(world) `` の "illegal expression"
+    - 5.6.4--compiler-directives-*: UVM 系マクロ (`unsupported macro call`)、`` `line `` 引数、begin_keywords 等
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+
 - sv_tests 未実装項目の洗い出し (調査完了、未着手) → 現状 853 合格 / 181 失敗 (全 1034 件、UVM 依存テストは skip)
   - 計測: `dotnet test SystemVerilogLanguageServer.Tests/SystemVerilogLanguageServer.Tests.csproj --filter "FullyQualifiedName~SvTestsParserTests" --no-build`
   - レポート: `SystemVerilogLanguageServer.Tests/bin/Debug/net10.0/sv_tests_report.txt` (Error 165 / Warning 18 / Notice 9)
