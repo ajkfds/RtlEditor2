@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- ChatControl: Function Call が終わらないうちに次の操作に進む問題 → 修正完了 (ビルド成功、コミット済み)
+  - ユーザ報告「Function Callが終わらないうちに次の操作に進んでいる」
+  - 原因: `complete()` が LLM 呼び出し1回ごとに `inputAcceptable = false` → finally で `true` に戻す設計だったため、`completeWithFunctionCall` ループ内の tool 実行 (`agent.ParseResponceAsync`) 中はロックが解放され、この隙間にユーザが Send すると `UserComplete` が通過し既存 tool loop と並行に新しい turn が走った
+  - 修正 (CodeEditor2 `c0810dd`): ロック範囲を `completeWithFunctionCall` 全体 (全 LLM 呼び出し + 全 tool 実行) に引き上げ。`completeWithFunctionCall` 冒頭で `inputAcceptable = false` + try/finally で解放、ループ本体を `completeWithFunctionCallCore` に分離。`complete()` 内の per-call lock 操作は削除 (コメントで経緯記載)
+  - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `c0810dd`、メイン `ff4790a` (submodule pointer 更新)
+  - Next: エディタ上で tool call 実行中の Send ボタン操作確認 (tool call 完了まで次の turn が開始されないこと)
+
 - sv-tests include 相対パス解決 (file not found 107件) 対応 → 実装完了 (ビルド成功、テスト実行、コミット済み)
   - 対象テスト: sv_tests 全体 (file not found 107件の Error diagnostic)
   - 原因解析: テストハーネスがテスト対象ファイル1件のみを空 TestProject に登録していたため、WordScanner.parseInclude の include 解決 (同一フォルダ検索: Project.FindItems / 全プロジェクト検索: Project.SearchFile / VerilogHeaderInstance.Create の project.GetItem(relativePath)) がいずれもプロジェクト登録済みファイルを前提とする設計のため include 先 (.svh) が解決不能。include 未解決によりマクロ未展開の二次エラー連鎖も発生
