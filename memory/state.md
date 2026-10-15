@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests tf ポートの配列 (dynamic/queue/associative) 参照解決 (6.6.7--nettype_resolution_fn の illegal range / not defined here) 対応 → 実装完了 (ビルド成功、テスト 980 → 982 合格 / 54 → 52 失敗、+2、regression なし)
+  - ユーザ要求: svtest 系未実装項目の修正候補 (6.6.7--nettype_resolution_fn) を修正
+  - 原因 (Port.cs ParseTfPortItem): `function automatic real real_sum (input real driver[])` の driver はデータ型 (real) で先に portNameSpace.NamedElements に登録され、その後の variable_dimension ループ (`[]` → DynamicArray) で port.DataObject は DynamicArray に置換されるが NamedElements は古い real Variable のまま。`driver[i]` 参照が Variable として解決され generic な `[` 分岐 (DataObjectReference) に落ちて "illegal range"、さらに Defined 未設定で "not defined here"
+  - 修正 (Port.cs): variable_dimension ループ後に portNameSpace.NamedElements を最新の port.DataObject で再登録 (Remove + Add) し、`!word.Prototype` の場合 Defined = true を付与
+  - 解消テスト: 6.6.7--nettype_resolution_fn (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `0e27156`
+
 - sv-tests class 内 enum 定数の class object 経由参照 (not defined here) 対応 → 実装完了 (ビルド成功、テスト 979 → 980 合格 / 55 → 54 失敗、+1、regression なし)
   - ユーザ要求: 8.5--properties_enum を修正
   - 原因 (Enum.parseItem): prototype 分岐が EnumConstants を Add するのみで Defined=true を設定せず。module 直下 class は prototype→real 解析だが real の class 結果は破棄され prototype 版が残るため、test_obj.C の EnumConstants が Defined=false → not defined here (変数は a4c45b2 で対応済み、enum のみ漏れ)
