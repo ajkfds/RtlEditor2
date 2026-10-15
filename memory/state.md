@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests class 本体内 typedef (type_declaration) 対応 → 実装完了 (ビルド成功、テスト 967 → 970 合格 / 67 → 64 失敗、+3、regression なし)
+  - ユーザ要求: 8.5 (properties_enum) を修正
+  - 原因 (ClassItem.cs Parse): class_item の switch に "typedef" 分岐が無く、class 内 `typedef enum {A,B,C,D} e_type;` が "illegal class item" → enum 定数 (A/B/C/D) が class NamedElements 未登録 → `test_obj.C` が unfound object
+  - 修正 (ClassItem.cs): switch (endclass の後) に `case "typedef": return DataObjects.Typedef.ParseDeclaration(word, nameSpace);` を追加 (type_declaration ::= typedef ... は class_item として正当)
+  - 解消テスト: 8.5--properties_enum (illegal class item 解消ほか計 +3)。残るエラーは 1件 (not defined here, class object 経由の enum 定数解決)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `aa15b53`
+
 - sv-tests 前方参照定数関数呼び出しの should be constant 誤報対応 → 実装完了 (ビルド成功、テスト 966 → 967 合格 / 68 → 67 失敗、+1、regression なし)
   - ユーザ要求: 13.4.3 (const-function) を修正
   - 原因 (Constants.cs ParseCreateDeclaration): `localparam a = fun(3);` (fun は後方定義) は1回目 parse で Primary.parseUndefinedFunction → UnfoundObjectReference (Constant=false, ReparseRequested) となり、Constants の `should be constant` チェックが reparse 前提の前方参照にも誤って発火 (reparse 後も WordReference のエラーが残置)
