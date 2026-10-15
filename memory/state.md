@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- sv-tests 括弧なし array delete (map.delete;) 対応 → 実装完了 (ビルド成功、テスト 963 → 965 合格 / 71 → 69 失敗、+2、regression なし)
+  - ユーザ要求: delete.sv (associative array delete) を修正
+  - 原因: (1) ArrayMethods.AddDeleteWithOptionalIndex の delete(index) の index port にデフォルトが無く、BultinMethodCall の括弧なし経路 (word.GetCharAt(0) != '(') が method.Ports.Count != 0 で "illegal function call"。(2) 括弧なし経路がデフォルト引数を考慮していなかった
+  - 修正1 (ArrayMethods.cs): AddDeleteWithOptionalIndex の index port に DefaultArgument を設定 (IEEE 7.9.2 delete の index は任意)
+  - 修正2 (BuiltinMethodCall.cs): 括弧なし経路のエラー判定を HasUnprovidedRequiredArgument(method, 0) に変更 (全引数がデフォルトを持つ場合は許容)。括弧あり "()" 経路と同一規則
+  - 解消テスト: chapter-7/arrays/associative/methods/delete.sv (1件、+1)。他1件も同時解消 (計 +2)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `479c1de`
+
 - sv-tests iterator index querying method (item.index) 対応 → 実装完了 (ビルド成功、テスト 962 → 963 合格 / 72 → 71 失敗、+1、regression なし)
   - ユーザ要求: index.sv (unpacked array index querying) を修正
   - 原因 (BuiltinMethodCall.cs bindLocatorVariable): array locator の with 句で暗黙 loop 変数 item を String 型として bind するのみで、IEEE 1800-2017 7.12.4 の iterator index querying method (item.index / item.first / item.last / item.prev / item.next) が登録されず `item.index` が unfound object
