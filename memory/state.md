@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests class 内 enum 定数の class object 経由参照 (not defined here) 対応 → 実装完了 (ビルド成功、テスト 979 → 980 合格 / 55 → 54 失敗、+1、regression なし)
+  - ユーザ要求: 8.5--properties_enum を修正
+  - 原因 (Enum.parseItem): prototype 分岐が EnumConstants を Add するのみで Defined=true を設定せず。module 直下 class は prototype→real 解析だが real の class 結果は破棄され prototype 版が残るため、test_obj.C の EnumConstants が Defined=false → not defined here (変数は a4c45b2 で対応済み、enum のみ漏れ)
+  - 修正 (Enum.cs): prototype 分岐で constants.Defined = true を追加
+  - 解消テスト: 8.5--properties_enum (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `a1b4761`
+
 - sv-tests 暗黙 `super` オブジェクトの解決 (super.method()) 対応 → 実装完了 (ビルド成功、テスト 974 → 979 合格 / 60 → 55 失敗、+5、regression なし)
   - ユーザ要求: 8.15--super / 8.8--typed_constructor / 8.7--constructor_super を修正
   - 原因 (Object.GetSourceClass): class extends 時に登録される暗黙 `super` オブジェクトは Object.Create で生成され DefinedNameSpace 未設定。module 直下の class (super_cls 等) は UnitNameSpace 未登録のため、super.incs() / super.new() の member 解決が unfound object
