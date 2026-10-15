@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests 前方参照定数関数呼び出しの should be constant 誤報対応 → 実装完了 (ビルド成功、テスト 966 → 967 合格 / 68 → 67 失敗、+1、regression なし)
+  - ユーザ要求: 13.4.3 (const-function) を修正
+  - 原因 (Constants.cs ParseCreateDeclaration): `localparam a = fun(3);` (fun は後方定義) は1回目 parse で Primary.parseUndefinedFunction → UnfoundObjectReference (Constant=false, ReparseRequested) となり、Constants の `should be constant` チェックが reparse 前提の前方参照にも誤って発火 (reparse 後も WordReference のエラーが残置)
+  - 修正 (Constants.cs): `should be constant` チェックで `expression is not UnfoundObjectReference` の場合のみエラー (前方参照はスキップ)
+  - 解消テスト: 13.4.3--const-function (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `9a8c9f9`
+
 - sv-tests interconnect の prototype/real 2パス登録 (二重登録) 対応 → 実装完了 (ビルド成功、テスト 966/68 変化なし、regression なし)
   - ユーザ要求: 6.6.8 (interconnect) を修正
   - 原因 (Net.cs ParseInterconnectDeclaration): 登録ループが word.Prototype を考慮せず無条件 ContainsKey + Add していた。module は prototype→real の2パス解析のため、real parse 時に prototype 登録済みの名前を再登録しようとして "duplicated net name" + Defined が立たず "not defined here"
