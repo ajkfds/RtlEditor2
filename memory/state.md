@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests enum_name_declaration の単一 index 形式対応 (enum { a=10, b[10] }) → 実装完了 (ビルド成功、テスト 953 → 954 合格 / 81 → 80 失敗、+1、regression なし)
+  - ユーザ要求: 6.19.2 (enum_sequence) を修正
+  - 原因 (Enum.cs parseItem): IEEE 1800-2017 6.19.2 の enum_name_declaration は `enum_identifier [ [ integral_number [ : integral_number ] ] ] [ = constant_expression ]` で単一 index (repetition count) と range の両形式を許容するが、`[` 検出時に無条件 PackedArray.ParseCreate (`: 必須`) を呼んでいたため `step[10]` の `[10]` で ": expected" → null 返却 → 以降の parse 崩壊 (`{ required` / illegal module item)
+  - 修正 (Enum.cs parseItem): `[` 分岐を書き換え。`]` まで単一 expression または `[m:n]` range を許容し `]` 消費。PackedArray.ParseCreate は使わず消費のみ
+  - 解消テスト: 6.19.2--enum_sequence (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `a30dc71`
+
 - sv-tests $test$plusargs / $value$plusargs の式内使用対応 → 実装完了 (ビルド成功、テスト 951 → 953 合格 / 83 → 81 失敗、+2、regression なし)
   - ユーザ要求: 21.6 ($test$plusargs / $value$plusargs) を修正
   - 原因 (ProjectProperty.cs): $test$plusargs / $value$plusargs は statement 用 SystemTaskParsers に登録済みだが、式用 SystemFunctions に未登録。if ($test$plusargs("TEST")) の条件式は FunctionCall.ParseCreate 経由で解析されるため、SystemFunctions に無いと "undefined"
