@@ -3,6 +3,16 @@
 
 ## 未解決課題
 
+- sv-tests マクロ/プリプロセッサ (unsupported macro call) 対応 → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: sv-tests 未実装項目のうち「マクロ/プリプロセッサ (unsupported macro call)」を修正する
+  - 原因1 (20.14--coverage.sv): IEEE 1800-2017 §20.14 の coverage control で事前定義される `SV_COV_*` マクロ (`SV_COV_START`/`STOP`/`RESET`/`CHECK`/`MODULE`/`HIER`/`ASSERTION`/`FSM_STATE`/`STATEMENT`/`TOGGLE` 等) が WordScanner で未知マクロ扱いとなり `unsupported macro call` (約20件) → 連鎖して `undefined`/`( required`/`illegal arguments end` 等も発生
+  - 修正1 (CodeEditor2VerilogPlugin `7134fc3` / WordScanner.cs): `parseMacro` に事前定義マクロテーブル `predefinedMacros` (SV_COV_* 13種) を追加。Root/ProjectProperty の Macros に未登録のとき事前定義テーブルを参照し、該当時は `Macro.Create(name, value)` で展開 (エラーなし)。`unsupported macro call` は完全に消滅
+  - 原因2 (5.6.4--compiler-directives-preprocessor-macro_1.sv): sv-tests の `:defines:` メタデータマーカー (`:defines: VAR_1=2 VAR_2=5`) はランナーがコンパイラ `-D` として渡す定義だが、テストハーネスが処理していなかった
+  - 修正2 (メイン `5880d52` / SvTestsParserHarness.cs + SvTestsParserTests.cs): `ParseDefinesMetadata` helper を新設 (`^[ \t]*:defines:` を Multiline で抽出、`NAME=VALUE` / `NAME` 形式)。テスト実行前に `ProjectProperty.Macros` へ一時登録し、parse 後に削除 (テストは非並列のため安全)
+  - 結果: sv-tests 933 合格 / 101 失敗 → **934 合格 / 100 失敗** (+1、regression なし)。`unsupported macro call` は 0 件 (Error 90 → 89)。`5.6.4--compiler-directives-preprocessor-macro_1.sv` 解消。`20.14--coverage.sv` の unsupported macro call 消滅 (残るエラーは unfound module / unsupported system task 等の別カテゴリ)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - 残課題 (プリプロセッサ/マクロ系): `5.6.4--compiler-directives-include.sv` (`/dev/null` 絶対パス file not found) / `5.6.4--compiler-directives-{debug-line,pragma}.sv` (illegal module item) / `22.6--ifdef-behavioral.sv` (illegal port identifier) / negative test 未検出群 (22.3--resetall_illegal 等)
+
 - sv-tests typedef struct/union packed 構文 対応 → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: typedef struct/union packed 構文 の修正
   - 対象: typedef_test_0/2/3/9/10/11/12/13/14/22/23/25, struct_test_0, union_test_0 (失敗していた15件)
