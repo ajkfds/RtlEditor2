@@ -3,6 +3,32 @@
 
 ## 未解決課題
 
+- sv-tests typedef struct/union packed 構文 対応 → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: typedef struct/union packed 構文 の修正
+  - 対象: typedef_test_0/2/3/9/10/11/12/13/14/22/23/25, struct_test_0, union_test_0 (失敗していた15件)
+  - 修正1 (Typedef.cs): 前方宣言対応。`typedef identifier ;` (forward typedef) と `typedef struct/union/enum identifier ;` (forward type declaration) を Clone probe で判定し、キーワード+識別子を消費して正常終了 (登録なし)。従来は DataTypeFactory が解決できず "data type expected"
+  - 修正2 (Typedef.cs): `type_identifier { variable_dimension }` 対応。`typedef reg quartet[3:0];` / `typedef data_t arr [k:0][j:0];` の unpacked/associative/queue 次元を括弧バランスで消費
+  - 修正3 (DataTypeFactory.cs): `[package_scope] type_identifier` (`pkg::type`) 対応。parsePackageScopeType helper を新設し、同一ファイル Root.BuildingBlocks または PackageNameSpace からパッケージを解決し、その NamedElements の Typedef を UserDefinedType として返す
+  - 修正4 (StructType.cs): parseCommon のメンバーループ停止条件が `General.ListOfKeywords.Contains` のため `reg`/`logic` 等の型キーワードで次メンバーを誤って構造終端と判定していた。構造終端 keyword (endmodule/endpackage/endinterface/...) のみで停止するよう修正 (typedef_test_25 の `reg [A-1:0] addr;` 等が解消)
+  - 修正5 (Enum.cs): default 分岐で enum_base_type (`typedef enum num_t { ... } e;` の `num_t`) を DataTypeFactory.ParseCreate で解決するよう修正 ("{ required" 解消)
+  - 結果: sv-tests 915 → 933 合格 / 119 → 101 失敗 (+18、regression なし)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `c43ed69`、メイン (submodule pointer 更新)
+
+- sv-tests constraint / randomize 系の修正 → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: constraint / randomize 系の未実装項目を修正する
+  - 調査: memory/state.md と sv_tests_report.txt から未実装項目を洗い出し、Debug_ParseConstraintMinimal / Debug_ParseRandomizeWithMinimal / Debug_ParseForeachConstraint / Debug_ParseDistConstraint / Debug_ParseExternalConstraint を追加してエラー発生源を特定
+  - 修正1 (`randomize() with {}` 未対応、BuiltinMethodCall.cs): parseWithClause が `with ( expression )` (配列 locator 用) 形式のみ扱っており、`randomize() with { constraint_block }` および `with (identifier_list) { ... }` を処理できず `( required` / `illegal statement` の連鎖エラー。skipConstraintBlock helper を新設し両形式を消費するよう修正
+  - 修正2 (foreach constraint loop 変数、ConstraintDeclaration.cs): `foreach ( B[i] ) B[i] == 5;` の loop 変数 `i` を名前空間にバインドせず `unfound object`。ParseForEachConstraint に `[ loop_variables ]` 解析 + bindLoopVariable helper を追加 (prototype/partial parse は汚染回避のため skip)
+  - 修正3 (dist 制約、ConstraintDeclaration.cs): `b dist { 3 := 1, ... }` を skipDistList で消費 (expression_or_dist)
+  - 修正4 (extern constraint クラス内宣言、ClassItem.cs): `extern` 分岐に `constraint` 処理を追加 (extern constraint_prototype)
+  - 修正5 (外部 constraint 宣言、Root.cs + ConstraintDeclaration.cs): root レベルの `constraint Class::name { ... }` (extern_constraint_declaration) を ParseCreate の `Class::` 早期消費 + Root case "constraint" で処理
+  - 結果: sv-tests 853 → 915 合格 / 181 → 119 失敗 (+62)。18.7--in-line-constraints--randomize_1/5 / 18.5.8.1--foreach-iterative-constraints_0 / 18.5.4--distribution_0 / 18.5.1--implicit-external-constraint_0 等が解消
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `9315fd9`、メイン `8f34310` (submodule pointer 更新)
+  - 残課題: 18.15--manually-seeding-randomize_0 (`std::randomize(x)`) / 18.5.1--explicit-external-constraint_0 (illegal method prototype) / 18.12--randomization-of-scope-variables_0 (undefined function) 等
+  - 一時ファイル: DebugConstructorParseTests.cs に Debug_ParseConstraintMinimal 等を追加 (検証用、コミットから除外・作業ツリーに残置)
+
 - LLMAgent DSML パーサが実モデル出力形式で invokes.Count == 0 になる問題 → 修正完了 (ビルド成功、コミット済み)
   - 問題: 実際のモデル出力は閉じタグが `</｜DSML｜ invoke>` (`/` が `｜DSML｜` の前に来る形式) かつ wrapper が `<｜DSML｜ calls>` (tool_calls でなく `calls`) の形式に対し、正規表現は `<｜DSML｜/invoke>` / `<｜DSML｜tool_calls>` のみ想定していたため DSMLInvokeRegex.Matches が 0 件
   - 修正 (CodeEditor2 `b054037` / LLMAgent.cs):
