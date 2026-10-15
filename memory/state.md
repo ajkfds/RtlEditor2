@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests module 直下 nettype 宣言 dispatcher 接続 → 実装完了 (ビルド成功、テスト 946 → 947 合格 / 88 → 87 失敗、+1、regression なし)
+  - ユーザ要求: module 直下の nettype 宣言 (6.6.7) を修正
+  - 原因 (DataDeclaration.cs): net_type_declaration の分岐が `word.Text == "typedef" && word.NextText == "nettype"` のみで `nettype` 単体の分岐がなく、module 直下の `nettype real real_net;` が ModuleInstantiation 経路に落ち "illegal module item" / "unfound module"。また typedef nettype 分岐は先の typedef 分岐に吸収され到達不能だった
+  - 修正 (DataDeclaration.cs): `word.Text == "nettype" || (word.Text == "typedef" && word.NextText == "nettype")` の分岐を typedef 分岐の前に追加し NetTypeDeclaration.Parse に転送。typedef nettype の到達不能分岐を解消
+  - 解消テスト: 6.6.7--nettype (1件)。6.6.7--nettype_resolution_fn は当該 4 エラー (illegal module item / unfound module) が消え残り 1 件 (illegal range, 別要因) のみに
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `20150ed`
+
 - sv-tests sequence repetition range ([*m:n] / [=m:n] / [->m:n]) 対応 → 実装完了 (ビルド成功、テスト 943 → 946 合格 / 91 → 88 失敗、+3、regression なし)
   - ユーザ要求: 16.9 (sequence repetition の illegal range) を修正
   - 原因1: SequenceExpr.ParseBooleanAbbreviation / SequenceRepetition.ParseCreate の repetition 分岐が単一カウント (`[=3]`) のみ対応で range 形式 (`[=2:10]`) の const_or_range_expression を解析できず `[` + qualifier 消費後に `]` 期待で失敗 → 位置が壊れ後続の expression parse が "illegal range"
