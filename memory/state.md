@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests system function の data_type 引数 ($bits(int) / $typename(type)) 対応 → 実装完了 (ビルド成功、テスト 972 → 974 合格 / 62 → 60 失敗、+2、regression なし)
+  - ユーザ要求: class_test_51 / 20.6--typename_type を修正
+  - 原因 (ListOfArguments.parseUndefinedPort): system function ($bits/$typename/$isunbounded 等) は引数に data_type を取り得るが、portNameSpace==null 経路の parseUndefinedPort が引数を式としてのみ解析するため `$bits(int)` の `int` が unfound object
+  - 修正 (ListOfArguments.cs): parseUndefinedPort 冒頭で Clone probe + DataTypeFactory.ParseCreate により引数が data_type かを判定し、data_type の場合それを消費して正常復帰 (式でない)。改善が無い場合は従来の式解析へフォールバック
+  - 解消テスト: class_test_51 / 20.6--typename_type (2件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `83de74e`
+
 - sv-tests module 本体の `pragma / `line 指令後の行ずれ (illegal module item) 対応 → 実装完了 (ビルド成功、テスト 970 → 972 合格 / 64 → 62 失敗、+2、regression なし)
   - ユーザ要求: 5.6.4--compiler-directives-{pragma,debug-line} を修正
   - 原因: `parseCompilerDirective` の `pragma / `line は MoveNextUntilEol (行内容に留まる) のみで wordPointer.MoveNext() を呼ばず、ポインタが指令の引数トークンに残ったまま module item として評価され "illegal module item" (parseUndef / parseDefine は直後に MoveNext 済み)
