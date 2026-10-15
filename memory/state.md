@@ -3,6 +3,18 @@
 
 ## 未解決課題
 
+- sv-tests class member / interface class 解析系対応 → 実装完了 (第1弾、ビルド成功、テスト 901 → 910 合格 / 133 → 124 失敗、+9、regression なし)
+  - 修正1 (ClassItem.cs extern 分岐): `extern` 直後の method_qualifier (`virtual` / `static` / `protected` / `local` / `pure virtual` の組み合わせ) を消費してから MethodPrototype.ParseCreate に委譲 (BNF: `"extern" { method_qualifier } method_prototype`)。解消テスト: class_member_test_4/6/7/8/9 (extern virtual task / extern protected task / extern virtual protected task / extern protected virtual task)
+  - 修正2 (Function.cs ParsePrototype): 括弧なし function prototype 対応。`function data_type_or_void function_identifier [ ( [ tf_port_list ] ) ]` の tf_port_list は optional で、identifier 直後 `;` を消費して正常終了 (従来は "required" エラー)。解消テスト: class_member_test_15 (`extern function void subroutine;`) / class_member_test_25 (`extern virtual function integer subroutine;`)
+  - コミット: CodeEditor2VerilogPlugin `fdb340f`
+  - 残 (class member / interface class 系):
+    - class_member_test_15/26 の `( required` 残存 (ParsePrototype 修正後も残る、別経路の可能性 → デバッグテストで要特定)
+    - class_member_test_9/18/19 の `) required / ; required / illegal class item` (extern function の tf_port 内 typedef 型 `arg_type` / unpacked dimension `x[N]` 解析)
+    - 8.26.3--type_access_extends / type_access_implements / 8.26.6.2--parameter_type_conflict / iface_class_test_10 (interface class 内 pure virtual function の tf port / typedef 参照)
+    - super / inheritance 系 (8.15--super / 8.7--constructor_super / 8.13--inheritance / 8.14--override_member): `super.method()` の unfound object + undefined function
+    - class_test_17/18 (illegal separator + data type expected) / class_test_49/53 (should be constant + ( required) / 8.5--parameters
+  - Next: デバッグテストで test_15/26 の `( required` 発生源特定 → interface class 系 → super 系
+
 - sv-tests プリプロセッサ/マクロ系対応 → 実装完了 (ビルド成功、テスト 890 → 901 合格 / 133 失敗、+11、regression なし)
   - 修正1 (WordScanner.cs): `` `__FILE__ `` / `` `__LINE__ `` 事前定義マクロ対応 (IEEE 1800-2017 22.5.3)。`parseCompilerDirective` に新分岐 + `diveIntoText` / `parsePredefinedFileMacro` / `parsePredefinedLineMacro` を新設 (parseMacro と同一の stock + 新 ParsedDocument 機構を流用)。解消テスト: 5.6.4--compiler-directives-debug
   - 修正2 (WordScanner.cs parseMacro): token pasting `` `` `` / stringification `` `" `` 対応。マクロ展開テキストの `` `"x`" `` → `"x"`、``a``b`` → ab に置換。解消テスト: 22.5.1--define-expansion_26
