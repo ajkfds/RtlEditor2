@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests 配列 reduction method のキーワード名 (b.or/b.and/b.xor) 対応 → 実装完了 (ビルド成功、テスト 959 → 962 合格 / 75 → 72 失敗、+3、regression なし)
+  - ユーザ要求: or.sv / and.sv / xor.sv (unpacked array reduction) を修正
+  - 原因 (NameReference.cs ParseCreate): `.` separator の後の member/method 名を General.IsSimpleIdentifier で判定していたため、キーワード (or/and/xor は ListOfKeywords 登録済み) が識別子判定で false となり `b.or` の `.or` が未消費 → "; expected" / illegal statement
+  - 修正 (NameReference.cs): `.` 直後のトークンが General.IsIdentifier (キーワード含む identifier 構文) であれば受理する条件を追加。以降 BuiltinMethodCall 経由で ArrayMethods の or/and/xor が解決される
+  - 解消テスト: or / and / xor (unpacked array reduction methods, 3件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `7c22966`
+
 - sv-tests virtual [interface] を data_type として受理 (type param 既定値) → 実装完了 (ビルド成功、テスト 957 → 959 合格 / 77 → 75 失敗、+2、regression なし)
   - ユーザ要求: class_test_17/18 (type パラメータ既定値 virtual x_if) を修正
   - 原因 (DataTypeFactory): `virtual` の case がなく、`class Foo #(type IFType=virtual x_if);` の type パラメータ既定値 `virtual x_if` / `virtual interface x_if` がデータ型として解決できず "data type expected" → 位置が進まず崩壊
