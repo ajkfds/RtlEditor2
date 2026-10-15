@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests 組み込みメソッドのデフォルト引数対応 (enum.next()/prev() 引数なし呼び出し) → 実装完了 (ビルド成功、テスト 941 → 943 合格 / 93 → 91 失敗、+2、regression なし)
+  - ユーザ要求: enum next() / prev() が引数なしで "too few arguments" になる問題を修正
+  - 原因 (BuiltinMethodCall.cs): enum の組み込みメソッド `next`/`prev` は IEEE 1800-2017 §6.19.5.3 で `function enum next( int unsigned N = 1 )` のデフォルト引数 N=1 を持つが、呼び出し側 BuiltinMethodCall.parseMethodCall が DefaultArgument を考慮せず引数リスト空 (`()`) で無条件 "too few arguments"。ListOfArguments.cs は `port.DefaultArgument == null` をチェックしており非対称
+  - 修正 (BuiltinMethodCall.cs): HasUnprovidedRequiredArgument(method, startIndex) helper を新設 (startIndex 以降のポートで DefaultArgument == null が1つでもあれば true)。`)` 検出時の2箇所 (空引数 全デフォルトあり時 / 途中引数後の残り 全デフォルトあり時) の "too few arguments" 判定をこの helper に置換
+  - 解消テスト: 6.19.5.3--enum_next / 6.19.5.4--enum_prev (2件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `76819a2`
+
 - sv-tests module 直下 concurrent / deferred immediate assertion 対応 → 実装完了 (ビルド成功、テスト 934 → 941 合格 / 100 → 93 失敗、+7、regression なし)
   - ユーザ要求: 16.2 / 16.14 (module 内 concurrent assertion の module 直下 dispatch) を修正
   - 原因1 (ModuleCommonItem): module 直下の assertion_item dispatch が `case "assert"` のみで `assume` / `cover` / `restrict` が未分岐 → `assume property (...)` が ModuleInstantiation 経路に落ち "unfound module"
