@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- LLMAgent DSML パーサが実モデル出力形式で invokes.Count == 0 になる問題 → 修正完了 (ビルド成功、コミット済み)
+  - 問題: 実際のモデル出力は閉じタグが `</｜DSML｜ invoke>` (`/` が `｜DSML｜` の前に来る形式) かつ wrapper が `<｜DSML｜ calls>` (tool_calls でなく `calls`) の形式に対し、正規表現は `<｜DSML｜/invoke>` / `<｜DSML｜tool_calls>` のみ想定していたため DSMLInvokeRegex.Matches が 0 件
+  - 修正 (CodeEditor2 `b054037` / LLMAgent.cs):
+    - DSMLInvokeRegex / DSMLParameterRegex: 閉じタグを両形式受容 (`<｜DSML｜/xxx>` と `</｜DSML｜ xxx>`)
+    - DSMLWrapperRegex: `tool_calls` / `calls` 両方を受容
+  - ビルド成功 (CodeEditor2.csproj, 0 errors)
+  - Next: エディタ上で実モデル出力 (`</｜DSML｜ invoke>` 形式) の tool call 実行確認
+
 - ChatControl / LLMAgent に DeepSeek DSML 方式の tool call 対応を追加 → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: pseudo function call 解析に DSML 形式 (`<｜DSML｜tool_calls><｜DSML｜invoke name="..."><｜DSML｜parameter name="..." string="true">value</｜DSML｜parameter>...`) を対応させる
   - 実装 (CodeEditor2 `d2a8dc0` / メイン `249e78f` submodule pointer 更新、LLMAgent.cs):
