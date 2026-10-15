@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests package-scope implements の parameter_value_assignment 対応 → 実装完了 (ビルド成功、テスト 965 → 966 合格 / 69 → 68 失敗、+1、regression なし)
+  - ユーザ要求: class_test_27 (implements Package::Bar#(1, 2)) を修正
+  - 原因 (Class.cs parseClassItems implements 分岐): package-scope (Pkg::Bar) の2つの解決分岐 (cross-file / same-file package) が parameter_value_assignment (#(...)) を消費せず、`implements Package::Bar#(1,2);` の `#(1,2)` が残って "; expected" / illegal class item
+  - 修正 (Class.cs): SkipParameterValueAssignment helper を新設 (# ("...") を bracket depth で消費)。package-scope の2分岐 (pkgIface / localPkgIface 解決後) で呼び出し。非 package-scope 分岐は既に #(...) 消費済み
+  - 解消テスト: class_test_27 (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `319149e`
+
 - sv-tests 括弧なし array delete (map.delete;) 対応 → 実装完了 (ビルド成功、テスト 963 → 965 合格 / 71 → 69 失敗、+2、regression なし)
   - ユーザ要求: delete.sv (associative array delete) を修正
   - 原因: (1) ArrayMethods.AddDeleteWithOptionalIndex の delete(index) の index port にデフォルトが無く、BultinMethodCall の括弧なし経路 (word.GetCharAt(0) != '(') が method.Ports.Count != 0 で "illegal function call"。(2) 括弧なし経路がデフォルト引数を考慮していなかった
