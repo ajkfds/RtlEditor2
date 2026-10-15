@@ -3,6 +3,16 @@
 
 ## 未解決課題
 
+- sv-tests 非ブロッキングイベントトリガ ->> のトークナイザ/dispatcher 対応 → 実装完了 (ビルド成功、テスト 951/83 変化なし、regression なし)
+  - ユーザ要求: 15.5.1 (named event trigger) を修正
+  - 原因: WordPointer の2文字演算子リストに `->>` がなく (`->` のみ)、`->> e;` が `->` + `>` + `e` に分解されていた。Statements.cs の dispatcher も `case "->"` のみで `->>` 未分岐 → EventTrigger が `->` 消費後に `>` を式として解析し "event expected"
+  - 修正 (WordPointer.cs): 3文字演算子として `->>` を単一トークン化 (wordType = Text)
+  - 修正 (Statements.cs): `case "->": case "->>":` に変更し EventTrigger に転送
+  - 結果: 951 合格 / 83 失敗で増減なし (regression なし)。`15.5.1--named-event-trigger-non-blocking` は "event expected" が消え `unfound object` (階層 named event `top.e` / class 内 event 参照の解決) に変化
+  - 残課題 (15.5): 階層 named event 識別子 (`top.e`) / class 内 event 参照 の解決 (別要因)。解決されれば 15.5.1 blocking/non-blocking / 15.5.2 wait が解消見込み
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `e0904c1`
+
 - sv-tests 代入 RHS の repeat ( expr ) event_control 対応 → 実装完了 (ビルド成功、テスト 947 → 951 合格 / 87 → 83 失敗、+4、regression なし)
   - ユーザ要求: 9.4.5 (event nonblocking assignment repeat) を修正
   - 原因: BlockingAssignment.ParseCreateAfterAssignmentOperator / NonBlockingAssignment.ParseCreateAfterAssignmentOperator が代入 RHS の delay_or_event_control として `#`(delay_control) と `@`(event_control) のみ処理し、BNF (A.6.5) の `repeat ( expression ) event_control` 分岐がなかった。`a = repeat(3) @(posedge clk) b;` の `repeat` が RHS 式として解析されず illegal expression / illegal non blocking assignment / ; expected の連鎖
