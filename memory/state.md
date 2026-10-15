@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests parameter の unpacked_dimension (param_assignment) 対応 → 実装完了 (ビルド成功、テスト 954 → 956 合格 / 80 → 78 失敗、+2、regression なし)
+  - ユーザ要求: 6.20.2 (parameter_aggregate) を修正。skip でなく部分 assignment として処理
+  - 原因 (Constants.ParseCreateDeclaration): BNF A.2.1.1 の param_assignment は `parameter_identifier { unpacked_dimension } [ = constant_param_expression ]` だが、識別子消費後に unpacked_dimension (`[3:0]`) を処理する分岐がなく `= ` でないため即 break → `; expected`
+  - 修正 (Constants.cs ParseCreateDeclaration): 識別子直後に `while (word.Text == "[")` で `VariableArray.ParseCreate` により unpacked dimension を解析し、`constants.UnpackedArrays` に登録 (DataObject は UnpackedArrays を保持)。`Variable.ParseDeclaration` と同一方式 (skip でなく部分 assignment として処理)
+  - 解消テスト: 6.20.2--parameter_aggregate (1件)。他の parameter 宣言複合テストも +1 (計 +2)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `a521b11`
+
 - sv-tests enum_name_declaration の単一 index 形式対応 (enum { a=10, b[10] }) → 実装完了 (ビルド成功、テスト 953 → 954 合格 / 81 → 80 失敗、+1、regression なし)
   - ユーザ要求: 6.19.2 (enum_sequence) を修正
   - 原因 (Enum.cs parseItem): IEEE 1800-2017 6.19.2 の enum_name_declaration は `enum_identifier [ [ integral_number [ : integral_number ] ] ] [ = constant_expression ]` で単一 index (repetition count) と range の両形式を許容するが、`[` 検出時に無条件 PackedArray.ParseCreate (`: 必須`) を呼んでいたため `step[10]` の `[10]` で ": expected" → null 返却 → 以降の parse 崩壊 (`{ required` / illegal module item)
