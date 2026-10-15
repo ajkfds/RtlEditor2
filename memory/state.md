@@ -3,6 +3,17 @@
 
 ## 未解決課題
 
+- sv-tests module 直下 concurrent / deferred immediate assertion 対応 → 実装完了 (ビルド成功、テスト 934 → 941 合格 / 100 → 93 失敗、+7、regression なし)
+  - ユーザ要求: 16.2 / 16.14 (module 内 concurrent assertion の module 直下 dispatch) を修正
+  - 原因1 (ModuleCommonItem): module 直下の assertion_item dispatch が `case "assert"` のみで `assume` / `cover` / `restrict` が未分岐 → `assume property (...)` が ModuleInstantiation 経路に落ち "unfound module"
+  - 原因2 (ConcurrentAssertionItemExceptCheckerInstantiation): deferred immediate assertion (`assert #0`, `assert final`, `assume #0`, `cover final` 等) の分岐がなく ModuleInstantiation 経路で "unfound module" + "( expected" + "endmodule expected"
+  - 修正1 (ModuleCommonItem.cs): assertion_item 分岐に `assume` / `cover` / `restrict` を追加 (assert/assume/cover/restrict を ConcurrentAssertionItemExceptCheckerInstantiation に転送)
+  - 修正2 (ConcurrentAssertionItemExceptCheckerInstantiation.cs): assert/assume/cover × `#`/`final` の場合に `Statements.ImmidiateAssertionStatement.ParseCreate` に転送する deferred immediate assertion 分岐を追加
+  - 解消テスト: 16.2--assert0 / assume0 / cover0 / assert-final / assume-final / cover-final / 16.14--assume-property (7件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `39e1e23`
+  - 残 (16章 assertion 系): 16.9--sequence-*-repetition (illegal range) / 16.2--assert-uvm 系 (UVM skip) / 16.10--sequence-local-var / 16.12--property-iff / 16.15--property-disable-iff
+
 - sv-tests マクロ/プリプロセッサ (unsupported macro call) 対応 → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: sv-tests 未実装項目のうち「マクロ/プリプロセッサ (unsupported macro call)」を修正する
   - 原因1 (20.14--coverage.sv): IEEE 1800-2017 §20.14 の coverage control で事前定義される `SV_COV_*` マクロ (`SV_COV_START`/`STOP`/`RESET`/`CHECK`/`MODULE`/`HIER`/`ASSERTION`/`FSM_STATE`/`STATEMENT`/`TOGGLE` 等) が WordScanner で未知マクロ扱いとなり `unsupported macro call` (約20件) → 連鎖して `undefined`/`( required`/`illegal arguments end` 等も発生
