@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests プリプロセッサ/マクロ系対応 → 実装完了 (ビルド成功、テスト 890 → 901 合格 / 133 失敗、+11、regression なし)
+  - 修正1 (WordScanner.cs): `` `__FILE__ `` / `` `__LINE__ `` 事前定義マクロ対応 (IEEE 1800-2017 22.5.3)。`parseCompilerDirective` に新分岐 + `diveIntoText` / `parsePredefinedFileMacro` / `parsePredefinedLineMacro` を新設 (parseMacro と同一の stock + 新 ParsedDocument 機構を流用)。解消テスト: 5.6.4--compiler-directives-debug
+  - 修正2 (WordScanner.cs parseMacro): token pasting `` `` `` / stringification `` `" `` 対応。マクロ展開テキストの `` `"x`" `` → `"x"`、``a``b`` → ab に置換。解消テスト: 22.5.1--define-expansion_26
+  - 修正3 (WordScanner.cs parseInclude): `` `include `macro(args) `` 対応。マクロ展開テキスト (`` `"the_file`" `` → "the_file" 形式) を include 対象として解決。マクロ引数のスペース結合 ("dummy_include . sv") を再結合。エラー " expected → file not found に変化 (dummy_include.sv がハーネスに未登録の状態から同一フォルダ解決経路の確認は次回)
+  - 修正4 (GateInstantiation.cs NInputGate): gate terminal に implicit net 許容 (output_terminal は net_lvalue、input_terminal も未宣言なら implicit net 生成)。解消テスト: 22.5.1--define-expansion_20 (`` `var_nand(dly) nand #dly `` の gate instantiation)
+  - 確認済み: 22.6--ifdef-behavioral (`` `else `` 側 gate instantiation) は先行修正で解決済み (debug テストでエラーなし確認)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: include-define-expansion の file not found 残存 (同一フォルダ解決経路の確認)
 - プリプロセッサ/マクロ系の修正 (第2弾完了) → 853 合格 / 181 失敗 → 860/174 (+7) → **874 合格 / 160 失敗** (+14、regression なし)
   - 修正 (WordScanner.cs): `` `line `` / `` `unconnected_drive `` を残り行消費 (MoveNextUntilEol) に変更、`` `nounconnected_drive `` はエラーなしで消費のみ、`` `default_nettype `` の "not supported" エラー削除 + `tri1`/`uwire` 認識追加
   - 修正 (WordScanner.cs parseMacroArguments): 実引数が仮引数より少なく残り全仮引数にデフォルト値がある場合、デフォルト値で補完 (IEEE 1800-2017 22.5.1)
