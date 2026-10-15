@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- sv-tests 階層 named event 参照 (`->> top.e` / `-> top.e`) の same-file 前方参照対応 → 実装完了 (ビルド成功、テスト 984 → 996 合格 / 50 → 38 失敗、+12、regression なし)
+  - ユーザ要求: svtest 系未実装項目の修正候補 (15.5--named-event 系) を修正
+  - 原因 (ParseEngine): 単一パスでは同一ファイル内の後方定義モジュール `top` への階層参照 (`->> top.e`) が、`top` が Root.BuildingBlocks / DefinitionNameSpace に未登録のため解決できず "unfound object" / "event expected"。切り分けで blocking/non-blocking/その他 15.5 系に加え、他カテゴリの前方参照 (18.5.9--global-constraints / 15.4--mailbox 等) も同一要因を含むことが判明
+  - 修正1 (ParseEngine.cs): パースを `ParseOnceAsync` に抽出し、1パス目で `ErrorCount > 0` の場合のみ2パス目を実行する2パス機構を追加 (エラーが無ければ従来どおり1パスのみ。editor の ParseHierarchy multi-pass と同効果)
+  - 修正2 (NameReference.cs): `GetElement` の fallback に同一ファイル `BuildingBlock.File.VerilogParsedDocument.Root.BuildingBlocks` の解決を追加 (DefinitionNameSpace ミス時)
+  - 結果: sv-tests 984 → 996 合格 / 50 → 38 失敗 (+12、regression なし)。解消テスト: 15.5.1--named-event-trigger-blocking/non-blocking / 15.5.2--named-event-wait / 6.6.8--interconnect (unfound module 解消) / 18.5.9--global-constraints_0 / 16.12--property-iff / 5.6.1--nonescaped-access ほか (前方参照由来の unfound object 群)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `36ae0cf`
+
 - sv-tests implemented interface class メソッドの再宣言 (partial implementation) 対応 → 実装完了 (ビルド成功、テスト 983 → 984 合格 / 51 → 50 失敗、+1、regression なし)
   - ユーザ要求: svtest 系未実装項目の修正候補 (8.26.7--partial_implementation) を修正
   - 原因 (Class.cs implements 処理 + Function.cs ParsePrototype): `virtual class vhello implements ihello;` の implements 処理が interface class `ihello` のメソッド (hello/world) を vhello の NamedElements にコピーし、その後 `pure virtual function void world();` を再宣言 (override) すると、Function.ParsePrototype の prototype 分岐が既存 Function を検出して "duplicate task name" を誤発火
