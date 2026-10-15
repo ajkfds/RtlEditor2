@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests module parameter port list の type parameter (#(type T = real)) 対応 → 実装完了 (ビルド成功、テスト 956 → 957 合格 / 78 → 77 失敗、+1、regression なし)
+  - ユーザ要求: 6.20.3 (parameter_type) を修正
+  - 原因 (Module.cs parameter port list ループ): BNF parameter_port_declaration ::= ... | "type" list_of_type_assignments だが module 側に type 分岐がなかった。`#(type T = real)` の type が General.IsIdentifier にマッチ (type は ListOfKeywords 未登録) → DataTypeFactory が null → param 名として消費され崩壊
+  - 修正 (Module.cs): parameter port list ループの parameter 分岐の後に `else if (word.Text == "type")` 分岐を追加し Constants.ParseCreateTypeAssignmentsForPort に転送 (Class.cs と同一パターン、既存ヘルパー呼び出しのみ)
+  - 解消テスト: 6.20.3--parameter_type (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `e917129`
+
 - sv-tests parameter の unpacked_dimension (param_assignment) 対応 → 実装完了 (ビルド成功、テスト 954 → 956 合格 / 80 → 78 失敗、+2、regression なし)
   - ユーザ要求: 6.20.2 (parameter_aggregate) を修正。skip でなく部分 assignment として処理
   - 原因 (Constants.ParseCreateDeclaration): BNF A.2.1.1 の param_assignment は `parameter_identifier { unpacked_dimension } [ = constant_param_expression ]` だが、識別子消費後に unpacked_dimension (`[3:0]`) を処理する分岐がなく `= ` でないため即 break → `; expected`
