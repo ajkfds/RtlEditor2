@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests virtual [interface] を data_type として受理 (type param 既定値) → 実装完了 (ビルド成功、テスト 957 → 959 合格 / 77 → 75 失敗、+2、regression なし)
+  - ユーザ要求: class_test_17/18 (type パラメータ既定値 virtual x_if) を修正
+  - 原因 (DataTypeFactory): `virtual` の case がなく、`class Foo #(type IFType=virtual x_if);` の type パラメータ既定値 `virtual x_if` / `virtual interface x_if` がデータ型として解決できず "data type expected" → 位置が進まず崩壊
+  - 修正 (DataTypeFactory.cs): `case "virtual": return parseVirtualInterfaceType(...)` を追加。helper で `virtual` ["interface"] interface_identifier [#(...)] [. modport] を消費し、宣言済み interface があればそれを、無ければ TypeReference(null,null) プレースホルダを返す (Constants.cs の型未指定 placeholder と同一)
+  - 解消テスト: class_test_17 / class_test_18 (2件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `c99914c`
+
 - sv-tests module parameter port list の type parameter (#(type T = real)) 対応 → 実装完了 (ビルド成功、テスト 956 → 957 合格 / 78 → 77 失敗、+1、regression なし)
   - ユーザ要求: 6.20.3 (parameter_type) を修正
   - 原因 (Module.cs parameter port list ループ): BNF parameter_port_declaration ::= ... | "type" list_of_type_assignments だが module 側に type 分岐がなかった。`#(type T = real)` の type が General.IsIdentifier にマッチ (type は ListOfKeywords 未登録) → DataTypeFactory が null → param 名として消費され崩壊
