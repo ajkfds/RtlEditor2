@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests implemented interface class メソッドの再宣言 (partial implementation) 対応 → 実装完了 (ビルド成功、テスト 983 → 984 合格 / 51 → 50 失敗、+1、regression なし)
+  - ユーザ要求: svtest 系未実装項目の修正候補 (8.26.7--partial_implementation) を修正
+  - 原因 (Class.cs implements 処理 + Function.cs ParsePrototype): `virtual class vhello implements ihello;` の implements 処理が interface class `ihello` のメソッド (hello/world) を vhello の NamedElements にコピーし、その後 `pure virtual function void world();` を再宣言 (override) すると、Function.ParsePrototype の prototype 分岐が既存 Function を検出して "duplicate task name" を誤発火
+  - 修正 (Function.cs): IsInheritedFromImplementedInterface helper を新設。nameSpace が Class で、その ImplementedInterfaceClasses のいずれかが該当メソッド名を持つ場合 (interface 継承メソッドの再宣言=override) は重複エラーを出さず NamedElements.Replace するよう変更
+  - 解消テスト: 8.26.7--partial_implementation (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `7d5515f`
+
 - sv-tests class スコープの `this.<built-in method>` 呼び出し (`this.srandom(seed)`) 対応 → 実装完了 (ビルド成功、テスト 982 → 983 合格 / 52 → 51 失敗、+1、regression なし)
   - ユーザ要求: svtest 系未実装項目の修正候補 (18.15--manually-seeding-randomize_0) を修正
   - 原因1 (NameReference.cs GetElement): `this.` 解決後に baseNameSpace に Class を設定したが、その後の通常検索 (searchNameSpaceUpward/Downward) が baseNameSpace を上書き (null) し class member が解決されない。`this.` 処理後は直接 searchElement に進むよう分岐
