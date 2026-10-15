@@ -3,6 +3,18 @@
 
 ## 未解決課題
 
+- sv-tests sequence repetition range ([*m:n] / [=m:n] / [->m:n]) 対応 → 実装完了 (ビルド成功、テスト 943 → 946 合格 / 91 → 88 失敗、+3、regression なし)
+  - ユーザ要求: 16.9 (sequence repetition の illegal range) を修正
+  - 原因1: SequenceExpr.ParseBooleanAbbreviation / SequenceRepetition.ParseCreate の repetition 分岐が単一カウント (`[=3]`) のみ対応で range 形式 (`[=2:10]`) の const_or_range_expression を解析できず `[` + qualifier 消費後に `]` 期待で失敗 → 位置が壊れ後続の expression parse が "illegal range"
+  - 原因2: Expression.ParseCreate (DataObjectReference) が `a[*2:10]` の `[*` を不正な range として消費し "illegal range" (sequence 文脈の repetition を bit-select 扱い)
+  - 原因3: `[->` はトークナイザで単一トークン `->` になるが、goto 分岐が `-` + `>` の2トークン想定のため `[->2:10]` でマッチせず
+  - 修正1 (SequenceExpr.cs): TryParseRepetitionCountRange helper を新設 (const_or_range_expression = constant_expression または `e1 : e2` を解析し `]` 消費、range は Count/EndCount に記録)。ParseBooleanAbbreviation の `*` / `=` / `->` 分岐と SequenceRepetition.ParseCreate の同分岐を range 対応に置換 (internal 化して相互利用)。RecoverRepetitionBracket で異常時 `]` まで復旧
+  - 修正2 (SequenceExpr.cs): goto 分岐を `->` 単一トークン (および `-`+`>` 互換) に対応。repetition probe 判定も `->` を含める
+  - 修正3 (DataObjectReference.cs): range fallback ループで `[` の次トークンが `*`/`+`/`=`/`-`/`->` の場合は sequence repetition として消費せず break (Expression が repetition を食わないように)
+  - 解消テスト: 16.9--sequence-cons-repetition / goto-repetition / noncons-repetition (3件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `0d9a4f8`
+
 - sv-tests 組み込みメソッドのデフォルト引数対応 (enum.next()/prev() 引数なし呼び出し) → 実装完了 (ビルド成功、テスト 941 → 943 合格 / 93 → 91 失敗、+2、regression なし)
   - ユーザ要求: enum next() / prev() が引数なしで "too few arguments" になる問題を修正
   - 原因 (BuiltinMethodCall.cs): enum の組み込みメソッド `next`/`prev` は IEEE 1800-2017 §6.19.5.3 で `function enum next( int unsigned N = 1 )` のデフォルト引数 N=1 を持つが、呼び出し側 BuiltinMethodCall.parseMethodCall が DefaultArgument を考慮せず引数リスト空 (`()`) で無条件 "too few arguments"。ListOfArguments.cs は `port.DefaultArgument == null` をチェックしており非対称
