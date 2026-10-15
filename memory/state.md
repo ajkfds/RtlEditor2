@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- sv-tests module 本体の `pragma / `line 指令後の行ずれ (illegal module item) 対応 → 実装完了 (ビルド成功、テスト 970 → 972 合格 / 64 → 62 失敗、+2、regression なし)
+  - ユーザ要求: 5.6.4--compiler-directives-{pragma,debug-line} を修正
+  - 原因: `parseCompilerDirective` の `pragma / `line は MoveNextUntilEol (行内容に留まる) のみで wordPointer.MoveNext() を呼ばず、ポインタが指令の引数トークンに残ったまま module item として評価され "illegal module item" (parseUndef / parseDefine は直後に MoveNext 済み)
+  - 修正1 (PragmaDirective.cs): Parse 末尾に `if (!wordPointer.Eof) wordPointer.MoveNext();` を追加 (引数行の後、次トークンへ)
+  - 修正2 (WordScanner.cs): `line 分岐の MoveNextUntilEol 後に wordPointer.MoveNext() を追加
+  - 解消テスト: 5.6.4--compiler-directives-pragma / debug-line (2件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `d7c542e` (PragmaDirective.cs はユーザの既存変更 (MoveNextUntilEol 化) を含むため同コミット)
+
 - sv-tests class 本体内 typedef (type_declaration) 対応 → 実装完了 (ビルド成功、テスト 967 → 970 合格 / 67 → 64 失敗、+3、regression なし)
   - ユーザ要求: 8.5 (properties_enum) を修正
   - 原因 (ClassItem.cs Parse): class_item の switch に "typedef" 分岐が無く、class 内 `typedef enum {A,B,C,D} e_type;` が "illegal class item" → enum 定数 (A/B/C/D) が class NamedElements 未登録 → `test_obj.C` が unfound object
