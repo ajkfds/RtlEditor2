@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- sv-tests forward declaration (相互参照 class) の同一 module 内 class 解決 → 実装完了 (ビルド成功、テスト 998 → 999 合格 / 36 → 35 失敗、+1、regression なし)
+  - ユーザ要求: svtest 系未実装項目の修正候補 (8.27--forward_declaration) を修正
+  - 原因 (DataTypeFactory / Class): module 本体の `class C1 { C2 c; } class C2 { C1 c; }` 相互参照で `C2 c;` / `C1 c;` が "illegal class item"。class の `Parent` は常にファイル Root に固定されるため、モジュール内 class の lexical scope (enclosing module) へ到達できず sibling class を解決不能
+  - 修正1 (Class.cs): `Class.DeclaringNameSpace` プロパティを新設し、`Class.ParseCreate` で宣言時の nameSpace を記録
+  - 修正2 (DataTypeFactory.cs): 同一ファイル class 解決 fallback を強化。enclosing building block の BuildingBlocks / NamedElements を走査し、ネスト時に `Class.DeclaringNameSpace` を優先して lexical scope を辿る
+  - 解消テスト: 8.27--forward_declaration (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `b239721`
+
 - sv-tests for_initialization の複数 for_variable_declaration (各宣言が独自の型) 対応 → 実装完了 (ビルド成功、テスト 996 → 998 合格 / 38 → 36 失敗、+2、regression なし)
   - ユーザ要求: svtest 系未実装項目の修正候補 (class_member_test_31/32) を修正
   - 原因 (Variable.cs ParseDeclaration): `for (int shft_idx=0, bit c=1'b1; ...)` の for_initialization は `for_variable_declaration { , for_variable_declaration }` で各宣言が独自の data_type を持てるが、カンマ後の新しい型 (`bit c=1'b1`) を処理する分岐がなく `; required` / `illegal statement` / `illegal inc_or_dec_expression` 連鎖
