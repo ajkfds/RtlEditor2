@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- ChatControl / LLMAgent に DeepSeek DSML 方式の tool call 対応を追加 → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: pseudo function call 解析に DSML 形式 (`<｜DSML｜tool_calls><｜DSML｜invoke name="..."><｜DSML｜parameter name="..." string="true">value</｜DSML｜parameter>...`) を対応させる
+  - 実装 (CodeEditor2 `d2a8dc0` / メイン `249e78f` submodule pointer 更新、LLMAgent.cs):
+    - DSMLInvokeRegex / DSMLParameterRegex / DSMLWrapperRegex を新設。`string` 属性は optional (vllm deepseek_v4.py の _param_patterns と同仕様)、パラメータ値は閉じタグ or 次パラメータ開始 (trailing-partial) で終端
+    - `ConvertDSMLToolCalls` 新設: DSML invoke ブロックを標準擬似 XML 形式 (`<toolName id="..."><param>value</param></toolName>`) に変換してから既存 parse 経路に渡す (実行 / spinner / tool_result id 機構をそのまま再利用)。`id` 属性は invoke に付けた場合のみ引き継ぎ
+    - `AppendPersudoFunctionCallInstruction` に DSML 形式の使用例を追記 (LLM への案内)
+  - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - Next: エディタ上で DSML 形式の tool call (id あり/なし、string 属性なしパラメータ) の実行確認
+
 - sv-tests class member / interface class 解析系対応 → 実装完了 (第1弾、ビルド成功、テスト 901 → 910 合格 / 133 → 124 失敗、+9、regression なし)
   - 修正1 (ClassItem.cs extern 分岐): `extern` 直後の method_qualifier (`virtual` / `static` / `protected` / `local` / `pure virtual` の組み合わせ) を消費してから MethodPrototype.ParseCreate に委譲 (BNF: `"extern" { method_qualifier } method_prototype`)。解消テスト: class_member_test_4/6/7/8/9 (extern virtual task / extern protected task / extern virtual protected task / extern protected virtual task)
   - 修正2 (Function.cs ParsePrototype): 括弧なし function prototype 対応。`function data_type_or_void function_identifier [ ( [ tf_port_list ] ) ]` の tf_port_list は optional で、identifier 直後 `;` を消費して正常終了 (従来は "required" エラー)。解消テスト: class_member_test_15 (`extern function void subroutine;`) / class_member_test_25 (`extern virtual function integer subroutine;`)
