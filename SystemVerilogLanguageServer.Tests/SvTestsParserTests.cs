@@ -64,6 +64,22 @@ namespace SystemVerilogLanguageServer.Tests
             (CodeEditor2.Data.Project project, pluginVerilog.Data.VerilogFile file) =
                 GetProjectAndFile(path);
 
+            // sv-tests `:defines:` metadata marker: the runner passes these as
+            // compiler -D defines. Register them project-wide for the duration
+            // of this parse (tests are not parallelized).
+            Dictionary<string, string> defines = ParseDefinesMetadata(text);
+            pluginVerilog.ProjectProperty projectProperty =
+                (pluginVerilog.ProjectProperty)project.ProjectProperties[pluginVerilog.Plugin.StaticID];
+            var addedMacros = new List<string>();
+            foreach (var kvp in defines)
+            {
+                if (!projectProperty.Macros.ContainsKey(kvp.Key))
+                {
+                    projectProperty.Macros.Add(kvp.Key, pluginVerilog.Verilog.Macro.Create(kvp.Key, kvp.Value));
+                    addedMacros.Add(kvp.Key);
+                }
+            }
+
             Exception? failure = null;
             pluginVerilog.Verilog.ParsedDocument? parsed = null;
             try
@@ -73,6 +89,10 @@ namespace SystemVerilogLanguageServer.Tests
             catch (Exception ex)
             {
                 failure = ex;
+            }
+            finally
+            {
+                foreach (string name in addedMacros) projectProperty.Macros.Remove(name);
             }
 
             if (failure != null)

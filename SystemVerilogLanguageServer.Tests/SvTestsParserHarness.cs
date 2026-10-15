@@ -80,6 +80,39 @@ namespace SystemVerilogLanguageServer.Tests
         }
 
         /// <summary>
+        /// Parses the sv-tests `:defines:` metadata marker
+        /// (`:defines: NAME1 NAME2=VALUE ...`) from the file header. The
+        /// harness passes these as preprocessor defines (equivalent to the
+        /// sv-tests runner's compiler -D flags), so they are registered as
+        /// project-wide macros before parsing.
+        /// </summary>
+        internal static Dictionary<string, string> ParseDefinesMetadata(string text)
+        {
+            var result = new Dictionary<string, string>();
+            // match a `:defines:` metadata line (must start the line, so the
+            // occurrence inside the free-text `:description:` line is ignored)
+            var match = System.Text.RegularExpressions.Regex.Match(
+                text, @"^[ \t]*:defines:[ \t]*(?<line>[^\r\n]*)",
+                System.Text.RegularExpressions.RegexOptions.Multiline);
+            if (!match.Success) return result;
+
+            foreach (string token in match.Groups["line"].Value.Split(
+                new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int equalsIndex = token.IndexOf('=');
+                if (equalsIndex >= 0)
+                {
+                    result[token.Substring(0, equalsIndex)] = token.Substring(equalsIndex + 1);
+                }
+                else
+                {
+                    result[token] = "1";
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Enumerates every .sv test file under the sv_tests root.
         /// </summary>
         internal static List<string> EnumerateSvFiles()
