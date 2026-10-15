@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests for_initialization の複数 for_variable_declaration (各宣言が独自の型) 対応 → 実装完了 (ビルド成功、テスト 996 → 998 合格 / 38 → 36 失敗、+2、regression なし)
+  - ユーザ要求: svtest 系未実装項目の修正候補 (class_member_test_31/32) を修正
+  - 原因 (Variable.cs ParseDeclaration): `for (int shft_idx=0, bit c=1'b1; ...)` の for_initialization は `for_variable_declaration { , for_variable_declaration }` で各宣言が独自の data_type を持てるが、カンマ後の新しい型 (`bit c=1'b1`) を処理する分岐がなく `; required` / `illegal statement` / `illegal inc_or_dec_expression` 連鎖
+  - 修正 (Variable.cs): for 文脈 (`nameSpace is Statements.ForStatememt`) でカンマ後のトークンが data_type 開始 (組み込み型 keyword または probe で型解決) の場合、カンマ消費 + 新 data_type 解析 + 継続する分岐を追加 (`NextStartsWithDataType` helper + `dataTypeStartKeywords` セット)
+  - 解消テスト: class_member_test_31 / class_member_test_32 (2件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `3421a5f`
+
 - sv-tests 階層 named event 参照 (`->> top.e` / `-> top.e`) の same-file 前方参照対応 → 実装完了 (ビルド成功、テスト 984 → 996 合格 / 50 → 38 失敗、+12、regression なし)
   - ユーザ要求: svtest 系未実装項目の修正候補 (15.5--named-event 系) を修正
   - 原因 (ParseEngine): 単一パスでは同一ファイル内の後方定義モジュール `top` への階層参照 (`->> top.e`) が、`top` が Root.BuildingBlocks / DefinitionNameSpace に未登録のため解決できず "unfound object" / "event expected"。切り分けで blocking/non-blocking/その他 15.5 系に加え、他カテゴリの前方参照 (18.5.9--global-constraints / 15.4--mailbox 等) も同一要因を含むことが判明
