@@ -11,6 +11,7 @@
     - `AppendPersudoFunctionCallInstruction` に DSML 形式の使用例を追記 (LLM への案内)
   - ビルド成功 (CodeEditor2.csproj / RtlEditor2.Desktop.csproj, 0 errors)
   - Next: エディタ上で DSML 形式の tool call (id あり/なし、string 属性なしパラメータ) の実行確認
+  - 追加修正 (UseDSML 切り替え、CodeEditor2 `0c23ad0` / メイン `a855f8b`): `LLMAgent.UseDSML` (bool, default false) を新設。true 時は system prompt (# Tools) に DSML 形式を必須指示 + 各ツールの Usage 例も DSML 形式 (`<｜DSML｜invoke name="...">` + `<｜DSML｜parameter name="...">`) で出力、false 時は従来 XML Usage + DSML 形式も併記許容の案内。パーサ側は常に両形式を受容 (flag は指示形式のみ切替)
 
 - sv-tests class member / interface class 解析系対応 → 実装完了 (第1弾、ビルド成功、テスト 901 → 910 合格 / 133 → 124 失敗、+9、regression なし)
   - 修正1 (ClassItem.cs extern 分岐): `extern` 直後の method_qualifier (`virtual` / `static` / `protected` / `local` / `pure virtual` の組み合わせ) を消費してから MethodPrototype.ParseCreate に委譲 (BNF: `"extern" { method_qualifier } method_prototype`)。解消テスト: class_member_test_4/6/7/8/9 (extern virtual task / extern protected task / extern virtual protected task / extern protected virtual task)
