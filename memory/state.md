@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests iterator index querying method (item.index) 対応 → 実装完了 (ビルド成功、テスト 962 → 963 合格 / 72 → 71 失敗、+1、regression なし)
+  - ユーザ要求: index.sv (unpacked array index querying) を修正
+  - 原因 (BuiltinMethodCall.cs bindLocatorVariable): array locator の with 句で暗黙 loop 変数 item を String 型として bind するのみで、IEEE 1800-2017 7.12.4 の iterator index querying method (item.index / item.first / item.last / item.prev / item.next) が登録されず `item.index` が unfound object
+  - 修正 (BuiltinMethodCall.cs): bindLocatorVariable で item (String の NamedElements) に index/first/last/next/prev (int 戻り値の BuiltInMethod) を登録
+  - 解消テスト: chapter-7/arrays/unpacked/index.sv (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `ab70a6d`
+
 - sv-tests 配列 reduction method のキーワード名 (b.or/b.and/b.xor) 対応 → 実装完了 (ビルド成功、テスト 959 → 962 合格 / 75 → 72 失敗、+3、regression なし)
   - ユーザ要求: or.sv / and.sv / xor.sv (unpacked array reduction) を修正
   - 原因 (NameReference.cs ParseCreate): `.` separator の後の member/method 名を General.IsSimpleIdentifier で判定していたため、キーワード (or/and/xor は ListOfKeywords 登録済み) が識別子判定で false となり `b.or` の `.or` が未消費 → "; expected" / illegal statement
