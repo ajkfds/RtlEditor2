@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests interconnect の prototype/real 2パス登録 (二重登録) 対応 → 実装完了 (ビルド成功、テスト 966/68 変化なし、regression なし)
+  - ユーザ要求: 6.6.8 (interconnect) を修正
+  - 原因 (Net.cs ParseInterconnectDeclaration): 登録ループが word.Prototype を考慮せず無条件 ContainsKey + Add していた。module は prototype→real の2パス解析のため、real parse 時に prototype 登録済みの名前を再登録しようとして "duplicated net name" + Defined が立たず "not defined here"
+  - 修正 (Net.cs): 登録ループを Net.ParseDeclaration と同様に prototype / non-prototype で分岐。prototype は未登録なら Add (non-ansi port 名は Replace)、real parse は既存 Interconnect を Defined=true にして再利用 (なければ Add)
+  - 結果: 966/68 変化なし (regression なし)。6.6.8--interconnect のエラーが 6件 → 2件 (unfound module × 2) に減少 (duplicated net name / not defined here 解消)。残る unfound module は cross-module (mod_i/mod_o) 解決の別要因
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `5507bf6`
+
 - sv-tests module 直下 interconnect 宣言の dispatcher 接続 → 実装完了 (ビルド成功、テスト 966/68 変化なし、regression なし)
   - ユーザ要求: 6.6.8 (interconnect) を修正
   - 原因 (PackageOrGenerateItemDeclaration.cs): net_declaration 分岐の case リストに "interconnect" が無く、module 直下の `interconnect bus;` が ModuleInstantiation 経路に落ちて unfound module / ( expected / unfound object
