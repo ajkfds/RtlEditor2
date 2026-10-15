@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- sv-tests class スコープの `this.<built-in method>` 呼び出し (`this.srandom(seed)`) 対応 → 実装完了 (ビルド成功、テスト 982 → 983 合格 / 52 → 51 失敗、+1、regression なし)
+  - ユーザ要求: svtest 系未実装項目の修正候補 (18.15--manually-seeding-randomize_0) を修正
+  - 原因1 (NameReference.cs GetElement): `this.` 解決後に baseNameSpace に Class を設定したが、その後の通常検索 (searchNameSpaceUpward/Downward) が baseNameSpace を上書き (null) し class member が解決されない。`this.` 処理後は直接 searchElement に進むよう分岐
+  - 原因2 (Primary.cs): `this.srandom(seed)` は element=BuiltInMethod / targetElement=Class で、built-in method 分岐が `targetElement is DataObject` を要求していたため不一致 → parseUndefinedFunction ("undefined function")。NameSpace owner 版の分岐を追加
+  - 原因3 (BuiltinMethodCall.cs): NamedElements を owner に取る ParseCreate オーバーロード (NameSpace 版) を追加 (Class が自身の NamedElements に登録済みの組み込みメソッド srandom/randomize を解決)
+  - 解消テスト: 18.15--manually-seeding-randomize_0 (1件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `dde0e68`
+
 - sv-tests tf ポートの配列 (dynamic/queue/associative) 参照解決 (6.6.7--nettype_resolution_fn の illegal range / not defined here) 対応 → 実装完了 (ビルド成功、テスト 980 → 982 合格 / 54 → 52 失敗、+2、regression なし)
   - ユーザ要求: svtest 系未実装項目の修正候補 (6.6.7--nettype_resolution_fn) を修正
   - 原因 (Port.cs ParseTfPortItem): `function automatic real real_sum (input real driver[])` の driver はデータ型 (real) で先に portNameSpace.NamedElements に登録され、その後の variable_dimension ループ (`[]` → DynamicArray) で port.DataObject は DynamicArray に置換されるが NamedElements は古い real Variable のまま。`driver[i]` 参照が Variable として解決され generic な `[` 分岐 (DataObjectReference) に落ちて "illegal range"、さらに Defined 未設定で "not defined here"
