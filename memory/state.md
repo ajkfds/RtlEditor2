@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests $test$plusargs / $value$plusargs の式内使用対応 → 実装完了 (ビルド成功、テスト 951 → 953 合格 / 83 → 81 失敗、+2、regression なし)
+  - ユーザ要求: 21.6 ($test$plusargs / $value$plusargs) を修正
+  - 原因 (ProjectProperty.cs): $test$plusargs / $value$plusargs は statement 用 SystemTaskParsers に登録済みだが、式用 SystemFunctions に未登録。if ($test$plusargs("TEST")) の条件式は FunctionCall.ParseCreate 経由で解析されるため、SystemFunctions に無いと "undefined"
+  - 修正 (ProjectProperty.cs): SystemFunctions に $test$plusargs / $value$plusargs を追加 (null 委譲)
+  - 解消テスト: 21.6--test / 21.6--value (2件)
+  - コミット: CodeEditor2VerilogPlugin `97b82bb` (ユーザの SystemTaskParsers 追加分 $fread/$dumpports/$cast 等と同梱)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+
 - sv-tests 非ブロッキングイベントトリガ ->> のトークナイザ/dispatcher 対応 → 実装完了 (ビルド成功、テスト 951/83 変化なし、regression なし)
   - ユーザ要求: 15.5.1 (named event trigger) を修正
   - 原因: WordPointer の2文字演算子リストに `->>` がなく (`->` のみ)、`->> e;` が `->` + `>` + `e` に分解されていた。Statements.cs の dispatcher も `case "->"` のみで `->>` 未分岐 → EventTrigger が `->` 消費後に `>` を式として解析し "event expected"
