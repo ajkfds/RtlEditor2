@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- sv-tests 代入 RHS の repeat ( expr ) event_control 対応 → 実装完了 (ビルド成功、テスト 947 → 951 合格 / 87 → 83 失敗、+4、regression なし)
+  - ユーザ要求: 9.4.5 (event nonblocking assignment repeat) を修正
+  - 原因: BlockingAssignment.ParseCreateAfterAssignmentOperator / NonBlockingAssignment.ParseCreateAfterAssignmentOperator が代入 RHS の delay_or_event_control として `#`(delay_control) と `@`(event_control) のみ処理し、BNF (A.6.5) の `repeat ( expression ) event_control` 分岐がなかった。`a = repeat(3) @(posedge clk) b;` の `repeat` が RHS 式として解析されず illegal expression / illegal non blocking assignment / ; expected の連鎖
+  - 修正 (BlockingAssignment.cs): internal static ParseDelayOrEventControl helper を新設 (`#`→DelayControl / `@`→EventControl / `repeat` + `(` + expr + `)` + `@`→EventControl)。BlockingAssignment.ParseCreateAfterAssignmentOperator の該当2分岐を helper 呼び出しに置換
+  - 修正 (NonBlockingAssignment.cs): 同様に helper へ委譲
+  - 解消テスト: 9.4.5--event_nonblocking_assignment_repeat / _int / _neg / _int_neg (4件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `88df34f`
+
 - sv-tests module 直下 nettype 宣言 dispatcher 接続 → 実装完了 (ビルド成功、テスト 946 → 947 合格 / 88 → 87 失敗、+1、regression なし)
   - ユーザ要求: module 直下の nettype 宣言 (6.6.7) を修正
   - 原因 (DataDeclaration.cs): net_type_declaration の分岐が `word.Text == "typedef" && word.NextText == "nettype"` のみで `nettype` 単体の分岐がなく、module 直下の `nettype real real_net;` が ModuleInstantiation 経路に落ち "illegal module item" / "unfound module"。また typedef nettype 分岐は先の typedef 分岐に吸収され到達不能だった
