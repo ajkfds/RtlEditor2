@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests 暗黙 `super` オブジェクトの解決 (super.method()) 対応 → 実装完了 (ビルド成功、テスト 974 → 979 合格 / 60 → 55 失敗、+5、regression なし)
+  - ユーザ要求: 8.15--super / 8.8--typed_constructor / 8.7--constructor_super を修正
+  - 原因 (Object.GetSourceClass): class extends 時に登録される暗黙 `super` オブジェクトは Object.Create で生成され DefinedNameSpace 未設定。module 直下の class (super_cls 等) は UnitNameSpace 未登録のため、super.incs() / super.new() の member 解決が unfound object
+  - 修正 (Object.cs GetSourceClass): UnitNameSpace + DefinedNameSpace の name-based 解決が失敗した場合のフォールバックとして、Object の DataType (生成元 Class) を直接返す分岐を追加 (`if (DataType is BuildingBlocks.Class dtClass) return dtClass;`)
+  - 解消テスト: 8.15--super / 8.7--constructor_super / 8.8--typed_constructor 等 (計 +5)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `2aa89e7`
+
 - sv-tests system function の data_type 引数 ($bits(int) / $typename(type)) 対応 → 実装完了 (ビルド成功、テスト 972 → 974 合格 / 62 → 60 失敗、+2、regression なし)
   - ユーザ要求: class_test_51 / 20.6--typename_type を修正
   - 原因 (ListOfArguments.parseUndefinedPort): system function ($bits/$typename/$isunbounded 等) は引数に data_type を取り得るが、portNameSpace==null 経路の parseUndefinedPort が引数を式としてのみ解析するため `$bits(int)` の `int` が unfound object
