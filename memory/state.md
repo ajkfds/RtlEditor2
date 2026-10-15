@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- sv-tests module 直下 interconnect 宣言の dispatcher 接続 → 実装完了 (ビルド成功、テスト 966/68 変化なし、regression なし)
+  - ユーザ要求: 6.6.8 (interconnect) を修正
+  - 原因 (PackageOrGenerateItemDeclaration.cs): net_declaration 分岐の case リストに "interconnect" が無く、module 直下の `interconnect bus;` が ModuleInstantiation 経路に落ちて unfound module / ( expected / unfound object
+  - 修正 (PackageOrGenerateItemDeclaration.cs): net_declaration の case リストに "interconnect" を追加し Net.ParseDeclaration に転送 (Net.ParseDeclaration は内部で interconnect を ParseInterconnectDeclaration に振り分け済み)
+  - 結果: 966/68 変化なし (regression なし)。6.6.8--interconnect は "unfound module" が消え `duplicated net name` / `not defined here` に変化 (interconnect 登録は機能。ポート接続の interconnect 解決が別要因として残存)
+  - 残課題 (6.6.8): interconnect を module instance のポート接続で解決する処理 (別要因)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `c85ab9e`
+
 - sv-tests package-scope implements の parameter_value_assignment 対応 → 実装完了 (ビルド成功、テスト 965 → 966 合格 / 69 → 68 失敗、+1、regression なし)
   - ユーザ要求: class_test_27 (implements Package::Bar#(1, 2)) を修正
   - 原因 (Class.cs parseClassItems implements 分岐): package-scope (Pkg::Bar) の2つの解決分岐 (cross-file / same-file package) が parameter_value_assignment (#(...)) を消費せず、`implements Package::Bar#(1,2);` の `#(1,2)` が残って "; expected" / illegal class item
