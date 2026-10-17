@@ -3,6 +3,16 @@
 
 ## 未解決課題
 
+- sv-tests interface class / class type access 系対応 → 実装完了 (ビルド成功、テスト 999 → 1004 合格 / 35 → 30 失敗、+5、regression なし)
+  - ユーザ要求: interface class / class type access 系の失敗テストを修正
+  - 対象: 8.26.3--type_access_implements / type_access_extends / 8.26.6.2--parameter_type_conflict / 8.26.5--cast_between_interface_classes / implemented_class_handle (5件)
+  - 修正1 (InterfaceClass.cs parseTypedef): interface class 本体内の "typedef int int_t;" が interfaceClass.NamedElements に登録されておらず、pure virtual function の引数 int_t が解決できず ") required / illegal interface class item" 連鎖。parseTypedef 末尾で Typedef を interfaceClass.NamedElements に登録 (word.Active && CompletionContext==null ガード)
+  - 修正2 (DataTypeFactory.cs parseInterfaceClassScopeType 新設): "ihello::int_t" の型アクセス (scope resolution) 未対応。parsePackageScopeType の package 解決失敗時に interfaceClass scope として解決するフォールバックを追加。nameSpace の upward 検索 + Class.DeclaringNameSpace 遡り (module-scope interface class は Parent が Root のため) + Root.BuildingBlocks 内 NamedElements 走査で解決。解決後 "::" 消費 + member typedef を UserDefinedType として返却
+  - 修正3 (Constants.ParseCreateTypeAssignmentsForPort): interface class #(type T = logic) の type parameter が module-scope interface class の real parse で登録されない。非 prototype 分岐で未登録かつ typeDataType != null の場合に Typedef を登録
+  - 修正4 (Variable.cs + InterfaceClassVariable.cs 新設): "ihello iobj;" (interface class 型の変数宣言) が Variable.ParseDeclaration の InterfaceClass 分岐で即 return され、ModuleCommonItem 経由で InterfaceInstance.Parse に落ちて "unfound module" / "( expected" / "unfound object"。DataTypeEnum.InterfaceClass 用の InterfaceClassVariable を新設 (NamedElements は DataType.AppendChiledNamedElements 経由の遅延解決) し変数宣言として登録。ReferencedUnitNameSpace に interface class 名を記録
+  - 解消テスト: 上記5件すべての parser エラーが 0。sv-tests 999 → 1004 合格 / 35 → 30 失敗 (+5、regression なし)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj、0 errors)
+
 - sv-tests forward declaration (相互参照 class) の同一 module 内 class 解決 → 実装完了 (ビルド成功、テスト 998 → 999 合格 / 36 → 35 失敗、+1、regression なし)
   - ユーザ要求: svtest 系未実装項目の修正候補 (8.27--forward_declaration) を修正
   - 原因 (DataTypeFactory / Class): module 本体の `class C1 { C2 c; } class C2 { C1 c; }` 相互参照で `C2 c;` / `C1 c;` が "illegal class item"。class の `Parent` は常にファイル Root に固定されるため、モジュール内 class の lexical scope (enclosing module) へ到達できず sibling class を解決不能
