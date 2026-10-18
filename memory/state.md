@@ -3,7 +3,7 @@
 
 ## 未解決課題
 
-- sv-tests 未実装項目の逐次修正 (第1弾) → 実装完了 (ビルド成功、テスト 1011 → 1026 合格 / 23 → 8 失敗、+15、regression なし)
+- sv-tests 未実装項目の逐次修正 (第1弾) → 実装完了 (ビルド成功、テスト 1011 → 1028 合格 / 23 → 6 失敗、+17、regression なし)
   - ユーザ要求: 失敗ファイルを逐次修正する
   - 修正1 (Pattern matching 演算子 `matches`): BinaryOperator/InsideOperator と同様の `MatchesOperator` を新設 (`Verilog/Expressions/Operators/MatchesOperator.cs`)。`Expression.parseExpressionPrimaries` の inside 直後に `matches` 分岐を追加、RPN 評価ループに `MatchesOperator` の処理を追加。これにより `tmp matches tagged a '{4'b01zx, .v}` (if文 12.6.2) / 三項演算子 `tmp matches ... ? 1 : 2` (12.6.3) が解析可能になった (以前は `ConditionalStatement.cs` に matches 処理を追加したが Expression 経由でも消費されるようになったため不要化、削除済み)
   - 修正2 (AssociativeArray delete): `AssociativeArray.Create` で delete メソッドを登録していなかった (size/num/first/next/prev/last/exists のみ)。`ArrayMethods.AddDeleteWithOptionalIndex(associativeArray.NamedElements)` を追加し `map.delete("sad")` / `map.delete` の両方を解決
@@ -21,11 +21,15 @@
   - 修正13 (struct member の unpacked dimension): `StructType.parseMembers` で member 識別子後の `[N]` (unpacked dimension) を受理 (`int a, b[4];`)。`[m:n]` (packed range) のみ PackedArray.ParseCreate に委譲。解消: 5.10-structure-replication (433 error 解消)
   - 修正14 (BlockingAssignment の assignment pattern): `Expressions.AssignmentPattern` (旧スタブ、先頭要素のみ解析) を実使用の `DataObjects.AssignmentPattern` (nested repetition / keyed / comma list 対応) に置換。解消: 5.10-structure-replication (`'{2{'{3{'{a,'{2{b,c}}}}}}}`)
   - 修正15 (class parameter port の prototype Defined): `Constants.ParseCreateDeclarationForPort` の prototype 分岐で `constants.Defined = true`。解消: 8.5--parameters
-  - 解消テスト 計 +15: (前回分) + 5.10-structure-replication / 8.5--parameters
-  - 残 (8件、全て実バグまたはテスト環境依存):
-    - 【実装必要 (難度中〜高)】: 5.6.1--nonescaped-access (escaped id `\cpu3` を `cpu3` で参照、`assign reference_test = cpu3;` の LHS で "illegal assignment") / 8.8--typed_constructor_param (`test_cls#(.t(23))::new(.def(41))` の `::new` unfound object) / 16.12--property-iff (property 式 `a iff b` の `b` unfound) / 20.14--coverage (coverage 系 system task の task 登録不足 + covergroup) / class_test_53 (class 内 `parameter type AT = int;` の `(` required) / 24.3--program (program 内 datapath item)
+  - 修正16 ($root と coverage task): `$root.a.b` top-level scope 参照 (`RootReference` 新設) + SystemTaskParsers に coverage 系 task ($coverage_control / $get_coverage / $set_coverage_db_name / $load_coverage_db 等) を追加。解消: 20.14--coverage
+  - 修正17 (class item の parameter/localparam type): `Constants.ParseCreateDeclaration` に type parameter 分岐 (`ParseCreateTypeAssignments(NameSpace)` 新設、Typedef を class name space に登録)。解消: class_test_53 (10 errors → 0)
+  - 修正18 (package-scope class type の parameter_value_assignment): `DataTypeFactory.parsePackageScopeType` で `pkg::ClassName#(N+M)` の `#(...)` を消費。解消: class_test_53 の残 1 error
+  - 修正19 (parameter_port_list 形式の class parameter): `Constants.ParseCreateParamAssignmentsForPort` の prototype 分岐で `constants.Defined = true`
+  - 解消テスト 計 +17: (前回分 15) + 20.14--coverage / class_test_53
+  - 残 (6件、全て実バグまたはテスト環境依存):
+    - 【実装必要 (難度中〜高)】: 5.6.1--nonescaped-access (escaped id `\cpu3` を `cpu3` で参照、LHS で "illegal assignment") / 8.8--typed_constructor_param (function body から class parameter port `t` の upward 解決 unfound) / 16.12--property-iff (property 式 `a iff b`) / 24.3--program (program + コメントヘッダ相互作用で "illegal module item")
     - 【環境依存】: 5.6.4--compiler-directives-include (`include "/dev/null"` Linux 絶対パス、Windows で解決不能) / other.sv (EnumerateSvFiles に現れず)
-  - コミット: CodeEditor2VerilogPlugin `54a0fe6` / `e2af31b` / `87f7ae4` / `921f25a` / `249e755` / `47673c9` / `a7759b1` / `9fa5758` / `faeabe2` / `fdcb48c` (5.10) / `d9eaeb8` (8.5)、メイン `b3f1377` (ハーネス名前空間リセット)
+  - コミット: CodeEditor2VerilogPlugin `54a0fe6` / `e2af31b` / `87f7ae4` / `921f25a` / `249e755` / `47673c9` / `a7759b1` / `9fa5758` / `faeabe2` / `fdcb48c` (5.10) / `d9eaeb8` (8.5) / `3e2f76e` (20.14) / `156abbd` (class item param type) / `64a915f` (pkg-scope class type) / `aa6e941` (param port list)、メイン `b3f1377` (ハーネス名前空間リセット) / `4672d4d` (state.md)
   - 一時ファイル: SystemVerilogLanguageServer.Tests/DebugPackageTests.cs / DebugConstructorParseTests.cs / DebugPerfScr1Tests.cs (一時解析用、コミットから除外)
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
 
