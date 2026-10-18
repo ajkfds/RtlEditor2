@@ -26,9 +26,10 @@
   - 修正18 (package-scope class type の parameter_value_assignment): `DataTypeFactory.parsePackageScopeType` で `pkg::ClassName#(N+M)` の `#(...)` を消費。解消: class_test_53 の残 1 error
   - 修正19 (parameter_port_list 形式の class parameter): `Constants.ParseCreateParamAssignmentsForPort` の prototype 分岐で `constants.Defined = true`
   - 解消テスト 計 +17: (前回分 15) + 20.14--coverage / class_test_53
-  - 残 (6件、全て実バグまたはテスト環境依存):
-    - 【実装必要 (難度中〜高)】: 5.6.1--nonescaped-access (escaped id `\cpu3` を `cpu3` で参照、LHS で "illegal assignment") / 8.8--typed_constructor_param (function body から class parameter port `t` の upward 解決 unfound) / 16.12--property-iff (property 式 `a iff b`) / 24.3--program (program + コメントヘッダ相互作用で "illegal module item")
-    - 【環境依存】: 5.6.4--compiler-directives-include (`include "/dev/null"` Linux 絶対パス、Windows で解決不能) / other.sv (EnumerateSvFiles に現れず)
+  - 残 (6件):
+    - 【test-order 依存 (単独 parse では pass)】: 16.12--property-iff (`a iff b`、実ファイル単独では unfound object だが header/whitespace を変えた再構成では pass、CRLF/LF で error が異なる = 非決定的) / 24.3--program (program + `:assert:` 文字列、単独では pass)。共有ハーネスの deep state が原因と推定、テスト隔離の強化が必要
+    - 【実装必要 (難度中〜高)】: 5.6.1--nonescaped-access (escaped id `\cpu3` は NamedElements に Defined=true で登録済みだが `assign reference_test = cpu3;` の解析で "illegal assignment"、参照解決経路の深い問題) / 8.8--typed_constructor_param (function body から class parameter port `t` を参照、class.NamedElements に `t` は Registered だが function からの upward 解決が unfound)
+    - 【環境依存】: 5.6.4--compiler-directives-include (`include "/dev/null"` Linux 絶対パス、Windows で解決不能) / other.sv (EnumerateSvFiles に現れず実ファイル確認不能)
   - コミット: CodeEditor2VerilogPlugin `54a0fe6` / `e2af31b` / `87f7ae4` / `921f25a` / `249e755` / `47673c9` / `a7759b1` / `9fa5758` / `faeabe2` / `fdcb48c` (5.10) / `d9eaeb8` (8.5) / `3e2f76e` (20.14) / `156abbd` (class item param type) / `64a915f` (pkg-scope class type) / `aa6e941` (param port list)、メイン `b3f1377` (ハーネス名前空間リセット) / `4672d4d` (state.md)
   - 一時ファイル: SystemVerilogLanguageServer.Tests/DebugPackageTests.cs / DebugConstructorParseTests.cs / DebugPerfScr1Tests.cs (一時解析用、コミットから除外)
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
