@@ -3,6 +3,15 @@
 
 ## 未解決課題
 
+- sv-tests process class member method (array 要素経由の await/kill/suspend/resume/status) 対応 → 実装完了 (ビルド成功、テスト 1004 → 1007 合格 / 30 → 27 失敗、+3、regression なし)
+  - ユーザ要求: process class member method を実装する
+  - 対象テスト: 9.7--process_cls_await / 9.7--process_cls_kill / 9.7--process_cls_suspend_resume (3件)
+  - 原因 (NameReference.searchElement): `process job[] = new [N];` の `job[1].await()` / `job[i].status` / `job[i].kill()` で、動的配列 (DynamicArray) の NamedElements には配列操作メソッド (size/delete/...) しか無く、要素型 DataObject (ここでは ProcessType 変数) の member (await/kill/suspend/resume/status) を解決できず "unfound object" → "undefined function" → "illegal module item" の連鎖
+  - 修正 (NameReference.cs searchElement): NamedElements に名前が無い場合の fallback として、nameSpace が DynamicArray / Queue / AssociativeArray のとき、その DataObject (要素型) の NamedElements に name があれば要素型を対象に searchElement を再帰呼び出しする分岐を追加。GetArrayElementDataObject helper を新設 (3種の配列から要素 DataObject を取得)
+  - 解消テスト: 9.7--process_cls_await / 9.7--process_cls_kill / 9.7--process_cls_suspend_resume (3件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors)
+  - コミット: CodeEditor2VerilogPlugin (下記)
+
 - sv-tests interface class / class type access 系対応 → 実装完了 (ビルド成功、テスト 999 → 1004 合格 / 35 → 30 失敗、+5、regression なし)
   - ユーザ要求: interface class / class type access 系の失敗テストを修正
   - 対象: 8.26.3--type_access_implements / type_access_extends / 8.26.6.2--parameter_type_conflict / 8.26.5--cast_between_interface_classes / implemented_class_handle (5件)
