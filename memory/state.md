@@ -3,6 +3,14 @@
 
 ## 未解決課題
 
+- sv-tests mailbox member method (parameterized mailbox の #(type)) 対応 → 実装完了 (ビルド成功、テスト 1007 → 1009 合格 / 27 → 25 失敗、+2、regression なし)
+  - ユーザ要求: mailbox member method を実装する
+  - 対象テスト: 15.4--mailbox-blocking / 15.4--mailbox-non-blocking (2件)
+  - 原因 (MailboxType.ParseCreate): `mailbox #(string) m;` のパラメータ付き mailbox 宣言で、`mailbox` keyword 消費後に `#(string)` (parameter_value_assignment: メッセージ型) を消費する処理が無く、`#` が変数宣言ループに残り "illegal identifier" / "illegal module item" → 以後の `m.put/get/peek/num/try_put/try_get` が未解決で "unfound object" / "undefined function" の連鎖。mailbox member method 自体 (MailboxType.AddDelete 等の NamedElements) は既に登録済みで、宣言側の #(type) 消費漏れが根本原因だった
+  - 修正 (MailboxType.cs ParseCreate): `#` 検出時に `#` / `(` / data_type / `)` を消費する分岐を追加。メッセージ (element) 型を `MailboxType.ElementType` プロパティとして保持。`#(...)` 消費により後続の `m` 識別子が正しく変数名として扱われ、Mailbox 変数の NamedElements (num/put/get/try_put/try_get/peek/try_peek) が解決されるようになった
+  - 解消テスト: 15.4--mailbox-blocking / 15.4--mailbox-non-blocking (2件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors)
+
 - sv-tests process class member method (array 要素経由の await/kill/suspend/resume/status) 対応 → 実装完了 (ビルド成功、テスト 1004 → 1007 合格 / 30 → 27 失敗、+3、regression なし)
   - ユーザ要求: process class member method を実装する
   - 対象テスト: 9.7--process_cls_await / 9.7--process_cls_kill / 9.7--process_cls_suspend_resume (3件)
