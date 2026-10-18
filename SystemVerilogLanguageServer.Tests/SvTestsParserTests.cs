@@ -58,9 +58,14 @@ namespace SystemVerilogLanguageServer.Tests
 
             bool isNegative = IsNegativeTest(path, text);
 
+            // Reset the shared project's name spaces so that previously parsed
+            // test files do not leak symbols into this parse (cross-file
+            // resolution pollution). The project item tree is kept so include
+            // directives still resolve.
+            ResetNameSpaces();
+
             // use the shared project where every .sv / .svh under sv_tests is
-            // registered so that include directives and cross-file references
-            // can resolve their targets
+            // registered so that include directives can resolve their targets
             (CodeEditor2.Data.Project project, pluginVerilog.Data.VerilogFile file) =
                 GetProjectAndFile(path);
 

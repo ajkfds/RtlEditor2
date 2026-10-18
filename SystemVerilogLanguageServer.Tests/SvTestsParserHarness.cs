@@ -140,6 +140,27 @@ namespace SystemVerilogLanguageServer.Tests
         /// Returns the shared project (building it on first use) and the
         /// registered VerilogFile for the given absolute test file path.
         /// </summary>
+        /// <summary>
+        /// Replaces the shared project's Verilog ProjectProperty with a fresh
+        /// instance, clearing the definition / package / unit name spaces and
+        /// macro table. Tests run in one process against a shared project so
+        /// that include directives resolve; without this reset the name spaces
+        /// accumulate every previously parsed test file, causing spurious
+        /// cross-file name resolution (e.g. an unrelated "class a" from another
+        /// test matching "input a;"). File registration (the project item tree)
+        /// is kept so include resolution still works.
+        /// </summary>
+        internal static void ResetNameSpaces()
+        {
+            EnsurePluginRegistered();
+            lock (_projectLock)
+            {
+                if (_sharedProject == null) return;
+                _sharedProject.ProjectProperties[pluginVerilog.Plugin.StaticID] =
+                    new pluginVerilog.ProjectProperty(_sharedProject, new pluginVerilog.ProjectProperty.Setup());
+            }
+        }
+
         internal static (CodeEditor2.Data.Project Project, pluginVerilog.Data.VerilogFile File)
             GetProjectAndFile(string absolutePath)
         {
