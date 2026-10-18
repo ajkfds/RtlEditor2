@@ -3,6 +3,18 @@
 
 ## 未解決課題
 
+- sv-tests type operator (type_reference: type(expr) / type(data_type)) 対応 → 実装完了 (ビルド成功、テスト 1009 → 1011 合格 / 25 → 23 失敗、+2、regression なし)
+  - ユーザ要求: type operator に対応する
+  - 対象テスト: 6.23--type_op (`var type(a+b) c;`) / 6.23--type_op_compare (`case(type(T))` / `if(type(T)==type(logic[12:0]))` / `parameter type T = type(logic[11:0])`) (2件)
+  - 原因1 (DataTypeFactory.parseTypeReference): 閉じ括弧 `)` を消費していなかった。`parameter type T = type(logic[11:0])` で `)` が残り `( required` 連鎖
+  - 原因2 (Primary.parseCreate): 式コンテキストの `type(...)` (type operator) が未対応で、`case(type(T))` / `if(type(T)==...)` の `type` が unfound object / undefined function
+  - 原因3 (DataTypeFactory.parseTypeReference): data_type probe を Clone せず直接 word で行っていたため、`type(a+b)` で `a` を型として消費して位置がずれ、式 fallback が破綻。さらに probe 消費後に `)` 到達で判定するよう厳密化 (probe が `+` で止まる `a+b` を data_type と誤判定しないため)
+  - 原因4 (Variable.CreateFromTypeReference): 式ベース TypeReference が未解決のとき `UserDefinedVariable.Create` が例外 (dataType.Type != UserDefined) を投げていた。未解決 TypeReference はプレースホルダ Variable として登録
+  - 原因5 (Constants.ParseCreateDeclarationForPort): `parameter type T = ...` の `type` が type_reference として誤解釈されていた。`type` の直後が `(` でない場合は type parameter 宣言として ParseCreateTypeAssignmentsForPort に委譲
+  - 修正: 上記5点 (DataTypeFactory.cs / Primary.cs / Variable.cs / Constants.cs)
+  - 解消テスト: 6.23--type_op / 6.23--type_op_compare (2件)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj 0 errors)
+
 - sv-tests mailbox member method (parameterized mailbox の #(type)) 対応 → 実装完了 (ビルド成功、テスト 1007 → 1009 合格 / 27 → 25 失敗、+2、regression なし)
   - ユーザ要求: mailbox member method を実装する
   - 対象テスト: 15.4--mailbox-blocking / 15.4--mailbox-non-blocking (2件)
