@@ -1930,6 +1930,14 @@ endmodule
 
 ## Next Steps
 
+- LiveMarkdown preview ペインの幅を約半分のデフォルトにし、スプリッタでリサイズ可能に → 実装完了 (ビルド成功、コミット済み)
+  - 原因: `CodeView.axaml` のルート Grid が `ColumnDefinitions="*, 4, 0"` でサブペイン列が固定 0 幅、`SubPaneHost` の `MinWidth=100` で最小幅のみ確保されていた (GridSplitter は存在するが幅が 0 なので実質表示されない)
+  - 修正1 (`CodeView.axaml`): ルート Grid に `Name="RootGrid"` を追加 (コードから列幅制御するため)
+  - 修正2 (`CodeView.axaml.cs`): `subPaneWidth` (GridLength, 既定 `1*` = エディタ列と同等 = 約半分) / `subPaneVisible` (bool) フィールドを追加。`SetSubPaneContent` の hidden→visible 遷移時のみ `RootGrid.ColumnDefinitions[2].Width = subPaneWidth` を適用 (ユーザの手動リサイズ幅を保持)。`HideSubPane` で現在幅を `subPaneWidth` に保存してから列幅を `0` に設定
+  - リサイズは既存の `SubPaneSplitter` (Column=1 の GridSplitter) で可能
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `9d813fc`
+
 - LivemarkdownPlugin 追加で `System.InvalidOperationException: The calling thread cannot access this object because a different thread owns it.` (Avalonia.Threading.Dispatcher.VerifyAccess) → 修正完了 (ビルド成功、コミット済み)
   - 原因: `CodeEditor2LiveMarkdownPlugin/.../Data/LiveMarkdownFile.cs` の `public Views.PreviewControl PreviewControl { get; } = new Views.PreviewControl();` が **プロパティ初期化子**として評価され、File 生成経路 (`Folder.cs` L164 → `File.CreateAsync` → `FileType.CreateFile` → `LiveMarkdownFile.CreateAsync`) が `Task.Run` のバックグラウンドスレッドから呼ばれるため、Avalonia Control (PreviewControl / 内部の LiveMarkdownControl) がバックグラウンドスレッドで生成された。以降 UI スレッドから `CodeView.SetSubPaneContent` → `SubPaneHost.Content = content` (ContentControl.Content setter) 時に Control の所有者 Dispatcher が UI スレッドと異なるため `VerifyAccess` で例外
   - 修正: `PreviewControl` を遅延生成に変更。キャッシュフィールド `previewControl` を持ち、getter で null 時に `Dispatcher.UIThread.CheckAccess()` で UI スレッド確認 → そうでなければ `Dispatcher.UIThread.Invoke(() => PreviewControl)` で UI スレッドに遷移してから生成。UI スレッドなら `previewControl = new Views.PreviewControl()`。これにより生成タイミングが常に UI スレッドになる
