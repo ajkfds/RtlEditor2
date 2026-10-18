@@ -3,6 +3,27 @@
 
 ## 未解決課題
 
+- sv-tests 未実装項目の逐次修正 (第1弾) → 実装完了 (ビルド成功、テスト 1011 → 1016 合格 / 23 → 18 失敗、+5、regression なし)
+  - ユーザ要求: 失敗ファイルを逐次修正する
+  - 修正1 (Pattern matching 演算子 `matches`): BinaryOperator/InsideOperator と同様の `MatchesOperator` を新設 (`Verilog/Expressions/Operators/MatchesOperator.cs`)。`Expression.parseExpressionPrimaries` の inside 直後に `matches` 分岐を追加、RPN 評価ループに `MatchesOperator` の処理を追加。これにより `tmp matches tagged a '{4'b01zx, .v}` (if文 12.6.2) / 三項演算子 `tmp matches ... ? 1 : 2` (12.6.3) が解析可能になった (以前は `ConditionalStatement.cs` に matches 処理を追加したが Expression 経由でも消費されるようになったため不要化、削除済み)
+  - 修正2 (AssociativeArray delete): `AssociativeArray.Create` で delete メソッドを登録していなかった (size/num/first/next/prev/last/exists のみ)。`ArrayMethods.AddDeleteWithOptionalIndex(associativeArray.NamedElements)` を追加し `map.delete("sad")` / `map.delete` の両方を解決
+  - 修正3 (nested assignment pattern repetition): `'{2{'{3{4, 5}}}}` のような nested repetition + comma element list に対応 (`AssignmentPatternWithoutKey.parseCreate` の repetition 分岐で、count を先頭 expression ではなく `'{` の直前 expression とし、`{` 内を要素リストとして解析)。解消: 5.11-arrays-replication
+  - 修正4 (`?` z_digit): 10 進数リテラルの値部で `?` を z_digit として受理 (`16'sd?` = 16'sbz)。解消: +1 (副次効果)
+  - 修正5 (escaped identifier 非エスケープ参照): `General`/`NameReference` で `\cpu3` を `cpu3` で参照する alias 解決 (IEEE 1800-2017 5.6.1)。5.6.1--nonescaped-access の "unfound object" が "illegal assignment" に変化 (参照解決は改善、残る assignment 側は別要因)
+  - 修正6 (`std::randomize`): `StdRandomizeCall` を新設。`std::randomize( [vars] ) [ with { constraint_block } ]` を解析し int を返す。解消: 18.12--randomization-of-scope-variables_0 / 18.12.1--adding-constraints-to-scope-variables_0
+  - 修正7 (固定長 unpacked array の配列メソッド): `Variable.ParseDeclaration` で unpacked array 変数に `ArrayMethods.AppendArrayLocatorMethods` (sum/product/find/min/max/...) + size を登録。解消: 18.5.8.2--array-reduction-iterative-constraints_0
+  - 修正8 (extern constraint のクラス scope 解決): `constraint ClassName::c { ... }` の body を named class の name space で解決 (class member の unfound object 解消)。解消: 18.5.14.1--soft-constraint-priorities_2
+  - 修正9 (class_scope の parameter_value_assignment): NameReference で `ClassName#(...)::member` の `#(...)` を消費 (parametrized class scope resolution)。8.25.1 の "illegal expression" が "not defined here" に改善、8.8--typed_constructor_param も "illegal statement" 解消
+  - 修正10 (class parameter の prototype Defined): `Constants.ParseCreateDeclaration` の prototype 分岐で `constants.Defined = true` を設定 (module-scope class の parameter は prototype のみが残る)。解消: 8.25.1--parametrized_class_scope_resolution
+  - 修正11 (テストハーネス名前空間リセット): SvTestsParserHarness.ResetNameSpaces を新設し、各テスト parse 前に共有プロジェクトの ProjectProperty (DefinitionNameSpace / PackageNameSpace / UnitNameSpace / Macros) を作り直す。テストは include 解決のため単一プロセス内の共有プロジェクトを使うが、名前空間が累積して他テストのシンボル (例: 別テストの class a) が誤解決していた。project item tree は維持するため include 解決は不変。解消: 26.2--package-decl / 26.3--package-ref ほか
+  - 解消テスト 計 +13: 12.6.2--if_pattern / 12.6.3--conditional_pattern / 5.11-arrays-replication / 18.12 / 18.12.1 / 18.5.8.2 / 18.5.14.1 / 8.25.1 / 26.2--package-decl / 26.3--package-ref ほか副次 +3
+  - 残 (10件、実装難易度分類):
+    - 【正体不明/環境依存】: other.sv (EnumerateSvFiles に現れず実在確認できず。ハーネス生成の仮想/一時ファイルの可能性) / 5.6.4--compiler-directives-include (`include "/dev/null"` Linux 絶対パス。Windows 環境では解決不能のためテスト環境依存)
+    - 【実装必要 (難度中〜高)】: delete.sv 残 unfound (598/671、associative array string index) / 5.10-structure-replication (Debug 単独では再現せず) / 16.12--property-iff (Debug 単独では再現せず) / 20.14--coverage (covergroup + system task 未対応) / class_test_53 (Debug 単独では再現せず、ハーネス全体でのみ失敗) / 8.8--typed_constructor_param (`test_cls#(...)::new(...)` unfound object) / 24.3--program (program 内宣言)
+  - コミット: CodeEditor2VerilogPlugin `54a0fe6` / `e2af31b` / `87f7ae4` / `921f25a` / `249e755` / `47673c9` / `a7759b1` / `9fa5758` / `faeabe2`、メイン `b3f1377` (ハーネス名前空間リセット)
+  - 一時ファイル: SystemVerilogLanguageServer.Tests/DebugPackageTests.cs / DebugConstructorParseTests.cs / DebugPerfScr1Tests.cs (一時解析用、コミットから除外)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+
 - sv-tests type operator (type_reference: type(expr) / type(data_type)) 対応 → 実装完了 (ビルド成功、テスト 1009 → 1011 合格 / 25 → 23 失敗、+2、regression なし)
   - ユーザ要求: type operator に対応する
   - 対象テスト: 6.23--type_op (`var type(a+b) c;`) / 6.23--type_op_compare (`case(type(T))` / `if(type(T)==type(logic[12:0]))` / `parameter type T = type(logic[11:0])`) (2件)
