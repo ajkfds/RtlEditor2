@@ -555,11 +555,18 @@
   - CodeEditor2LiveMarkdownPlugin を standalone アプリから plugin ライブラリに作り替え: pluginLiveMarkdown.Plugin (Id="LiveMarkdown") + LiveMarkdownFile filetype (.lmd) + LiveMarkdownFile (TextFile 派生、GetSubPaneContent で Views.PreviewControl を返却) + LiveMarkdownFileNode + Parser (markdown header/コードブロック色付け) + Style
   - Views.PreviewControl は AjkAvaloniaLibs.Controls.LiveMarkdownControl を内包し `UpdateFromTextFileAsync(file)` で Version 変化時のみ `markdown.Text` を更新 (live 更新は EditParse 時に StartPreviewUpdate で発火)。LiveMarkdown styles はホスト App.axaml 登録済みを利用
   - 旧 standalone 用 Program.cs は stub 化、App/MainWindow/PreviewWindow は legacy stub として維持
-  - 拡張子は MarkdownPlugin (.md) との競合回避のため `.lmd` を使用 (ユーザ確認候補)
+  - 拡張子は当初 MarkdownPlugin (.md) との競合回避のため `.lmd` を使用していたが、ユーザ指示により `.md` に変更し MarkdownPlugin を RtlEditor2.Desktop から外した (下記エントリ参照)
   - RtlEditor2.Desktop に ProjectReference + `pluginLiveMarkdown.Plugin` 登録を追加
   - ビルド成功 (CodeEditor2LiveMarkdownPlugin / RtlEditor2.Desktop, 0 errors)
   - コミット: CodeEditor2 `7344804` / CodeEditor2LiveMarkdownPlugin `5cf30cf` / メイン `3e45de7` (submodule pointer) + `fda38e1` (Program.cs/csproj)
-  - Next: エディタ上で .lmd ファイルを開いたときの右ペイン live markdown preview 動作確認 (MarkdownPlugin (.md) を使う場合は拡張子競合の再確認)
+  - Next: エディタ上で .md ファイルを開いたときの右ペイン live markdown preview 動作確認
+
+- LiveMarkdownPlugin の拡張子を .md に変更 + RtlEditor2 から MarkdownPlugin を外す → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: 拡張子は md に変えて。RtlEditor2 には MarkdownPlugin を外して LiveMarkdownPlugin を入れる
+  - 変更1 (CodeEditor2LiveMarkdownPlugin `32d252f`): FileTypes/LiveMarkdownFile.cs の IsThisFileType を `.lmd` → `.md` に変更、Plugin.cs のコメントも更新
+  - 変更2 (メイン `e9d1fc1`): RtlEditor2.Desktop/Program.cs から `pluginMarkdown.Plugin` 登録を削除 (pluginLiveMarkdown.Plugin は維持)。RtlEditor2.Desktop.csproj から CodeEditor2MarkdownPlugin の ProjectReference を削除。submodule pointer (CodeEditor2LiveMarkdownPlugin) 更新
+  - CodeEditor2MarkdownPlugin サブモジュール自体は他用途のため残置 (RtlEditor2.Desktop からの参照のみ削除)
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
 
 - sv-tests unfound object 分類E (randsequence production 引数) 対応 → 実装完了 (ビルド成功、コミット済み)
   - 対象テスト: 18.17.5--interleaving-productions-rand-join_0 / 18.17.7--value-passing-between-productions_0 等 (production 宣言・呼び出しを含む randsequence)
