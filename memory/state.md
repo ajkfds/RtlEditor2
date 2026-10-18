@@ -1930,6 +1930,12 @@ endmodule
 
 ## Next Steps
 
+- LivemarkdownPlugin 追加で `System.InvalidOperationException: The calling thread cannot access this object because a different thread owns it.` (Avalonia.Threading.Dispatcher.VerifyAccess) → 修正完了 (ビルド成功、コミット済み)
+  - 原因: `CodeEditor2LiveMarkdownPlugin/.../Data/LiveMarkdownFile.cs` の `public Views.PreviewControl PreviewControl { get; } = new Views.PreviewControl();` が **プロパティ初期化子**として評価され、File 生成経路 (`Folder.cs` L164 → `File.CreateAsync` → `FileType.CreateFile` → `LiveMarkdownFile.CreateAsync`) が `Task.Run` のバックグラウンドスレッドから呼ばれるため、Avalonia Control (PreviewControl / 内部の LiveMarkdownControl) がバックグラウンドスレッドで生成された。以降 UI スレッドから `CodeView.SetSubPaneContent` → `SubPaneHost.Content = content` (ContentControl.Content setter) 時に Control の所有者 Dispatcher が UI スレッドと異なるため `VerifyAccess` で例外
+  - 修正: `PreviewControl` を遅延生成に変更。キャッシュフィールド `previewControl` を持ち、getter で null 時に `Dispatcher.UIThread.CheckAccess()` で UI スレッド確認 → そうでなければ `Dispatcher.UIThread.Invoke(() => PreviewControl)` で UI スレッドに遷移してから生成。UI スレッドなら `previewControl = new Views.PreviewControl()`。これにより生成タイミングが常に UI スレッドになる
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2LiveMarkdownPlugin `a64ba77`
+
 - LSP autocomplete (textDocument/completion) → 実装完了 (ビルド成功、テスト 36/36 合格、publish 更新、コミット済み)
   - 背景: LSP は diagnostics push 実装済みだったが autocomplete 未実装 (plugin エディタ側の CompletionContext 部分parse 機構が LSP に未接続)
   - 実装1 (CodeEditor2VerilogPlugin `fef7aeb`): `CoreBridge/CompletionAdapter.cs` 新設。既存 `VerilogCommon.AutoComplete.GetAutoCompleteItems` (CompletionContext 部分parse) を UI フリーで駆動し、AutoCompleteItems を LSP CompletionItemKind (3=Function/Task, 6=Variable/DataObject, 9=Module/NameSpace, 14=Keyword) にマップした (text, kind, detail) エントリへ変換。重複排除
