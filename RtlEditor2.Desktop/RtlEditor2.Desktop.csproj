@@ -36,7 +36,6 @@
     <ProjectReference Include="..\CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin\CodeEditor2DrawIoPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2IcarusVerilogPlugin\CodeEditor2IcarusVerilogPlugin\CodeEditor2IcarusVerilogPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin\CodeEditor2LiveMarkdownPlugin.csproj" />
-    <ProjectReference Include="..\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin\CodeEditor2MarkdownPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin\CodeEditor2Plugin.csproj" />
     <ProjectReference Include="..\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin.csproj" />
     <ProjectReference Include="..\CodeEditor2VivadoPlugin\CodeEditor2VivadoPlugin\CodeEditor2VivadoPlugin.csproj" />

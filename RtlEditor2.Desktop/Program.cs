@@ -29,10 +29,6 @@ class Program
 
         };
         {
-            var plugin = new pluginMarkdown.Plugin();
-            Global.Plugins.Add(plugin.Id, plugin);
-        }
-        {
             var plugin = new pluginLiveMarkdown.Plugin();
             Global.Plugins.Add(plugin.Id, plugin);
         }
