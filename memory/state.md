@@ -3,7 +3,7 @@
 
 ## 未解決課題
 
-- sv-tests 未実装項目の逐次修正 (第1弾) → 実装完了 (ビルド成功、テスト 1011 → 1016 合格 / 23 → 18 失敗、+5、regression なし)
+- sv-tests 未実装項目の逐次修正 (第1弾) → 実装完了 (ビルド成功、テスト 1011 → 1026 合格 / 23 → 8 失敗、+15、regression なし)
   - ユーザ要求: 失敗ファイルを逐次修正する
   - 修正1 (Pattern matching 演算子 `matches`): BinaryOperator/InsideOperator と同様の `MatchesOperator` を新設 (`Verilog/Expressions/Operators/MatchesOperator.cs`)。`Expression.parseExpressionPrimaries` の inside 直後に `matches` 分岐を追加、RPN 評価ループに `MatchesOperator` の処理を追加。これにより `tmp matches tagged a '{4'b01zx, .v}` (if文 12.6.2) / 三項演算子 `tmp matches ... ? 1 : 2` (12.6.3) が解析可能になった (以前は `ConditionalStatement.cs` に matches 処理を追加したが Expression 経由でも消費されるようになったため不要化、削除済み)
   - 修正2 (AssociativeArray delete): `AssociativeArray.Create` で delete メソッドを登録していなかった (size/num/first/next/prev/last/exists のみ)。`ArrayMethods.AddDeleteWithOptionalIndex(associativeArray.NamedElements)` を追加し `map.delete("sad")` / `map.delete` の両方を解決
@@ -17,10 +17,15 @@
   - 修正10 (class parameter の prototype Defined): `Constants.ParseCreateDeclaration` の prototype 分岐で `constants.Defined = true` を設定 (module-scope class の parameter は prototype のみが残る)。解消: 8.25.1--parametrized_class_scope_resolution
   - 修正11 (テストハーネス名前空間リセット): SvTestsParserHarness.ResetNameSpaces を新設し、各テスト parse 前に共有プロジェクトの ProjectProperty (DefinitionNameSpace / PackageNameSpace / UnitNameSpace / Macros) を作り直す。テストは include 解決のため単一プロセス内の共有プロジェクトを使うが、名前空間が累積して他テストのシンボル (例: 別テストの class a) が誤解決していた。project item tree は維持するため include 解決は不変。解消: 26.2--package-decl / 26.3--package-ref ほか
   - 解消テスト 計 +13: 12.6.2--if_pattern / 12.6.3--conditional_pattern / 5.11-arrays-replication / 18.12 / 18.12.1 / 18.5.8.2 / 18.5.14.1 / 8.25.1 / 26.2--package-decl / 26.3--package-ref ほか副次 +3
-  - 残 (10件、実装難易度分類):
-    - 【正体不明/環境依存】: other.sv (EnumerateSvFiles に現れず実在確認できず。ハーネス生成の仮想/一時ファイルの可能性) / 5.6.4--compiler-directives-include (`include "/dev/null"` Linux 絶対パス。Windows 環境では解決不能のためテスト環境依存)
-    - 【実装必要 (難度中〜高)】: delete.sv 残 unfound (598/671、associative array string index) / 5.10-structure-replication (Debug 単独では再現せず) / 16.12--property-iff (Debug 単独では再現せず) / 20.14--coverage (covergroup + system task 未対応) / class_test_53 (Debug 単独では再現せず、ハーネス全体でのみ失敗) / 8.8--typed_constructor_param (`test_cls#(...)::new(...)` unfound object) / 24.3--program (program 内宣言)
-  - コミット: CodeEditor2VerilogPlugin `54a0fe6` / `e2af31b` / `87f7ae4` / `921f25a` / `249e755` / `47673c9` / `a7759b1` / `9fa5758` / `faeabe2`、メイン `b3f1377` (ハーネス名前空間リセット)
+  - 修正12 (Debug テストの検証強化): 従来の Debug テストは `Assert.NotNull(parsed)` のみで pass 判定していたため残り 10 件が「単独では pass」と誤認していた。実際に Error メッセージ数を assert する Debug テストに書き換えたところ全件で実エラーを再現。すなわち残りは実バグだった (テストハーネス依存ではない)。**教訓: Debug テストは必ずエラー数を検証すること**
+  - 修正13 (struct member の unpacked dimension): `StructType.parseMembers` で member 識別子後の `[N]` (unpacked dimension) を受理 (`int a, b[4];`)。`[m:n]` (packed range) のみ PackedArray.ParseCreate に委譲。解消: 5.10-structure-replication (433 error 解消)
+  - 修正14 (BlockingAssignment の assignment pattern): `Expressions.AssignmentPattern` (旧スタブ、先頭要素のみ解析) を実使用の `DataObjects.AssignmentPattern` (nested repetition / keyed / comma list 対応) に置換。解消: 5.10-structure-replication (`'{2{'{3{'{a,'{2{b,c}}}}}}}`)
+  - 修正15 (class parameter port の prototype Defined): `Constants.ParseCreateDeclarationForPort` の prototype 分岐で `constants.Defined = true`。解消: 8.5--parameters
+  - 解消テスト 計 +15: (前回分) + 5.10-structure-replication / 8.5--parameters
+  - 残 (8件、全て実バグまたはテスト環境依存):
+    - 【実装必要 (難度中〜高)】: 5.6.1--nonescaped-access (escaped id `\cpu3` を `cpu3` で参照、`assign reference_test = cpu3;` の LHS で "illegal assignment") / 8.8--typed_constructor_param (`test_cls#(.t(23))::new(.def(41))` の `::new` unfound object) / 16.12--property-iff (property 式 `a iff b` の `b` unfound) / 20.14--coverage (coverage 系 system task の task 登録不足 + covergroup) / class_test_53 (class 内 `parameter type AT = int;` の `(` required) / 24.3--program (program 内 datapath item)
+    - 【環境依存】: 5.6.4--compiler-directives-include (`include "/dev/null"` Linux 絶対パス、Windows で解決不能) / other.sv (EnumerateSvFiles に現れず)
+  - コミット: CodeEditor2VerilogPlugin `54a0fe6` / `e2af31b` / `87f7ae4` / `921f25a` / `249e755` / `47673c9` / `a7759b1` / `9fa5758` / `faeabe2` / `fdcb48c` (5.10) / `d9eaeb8` (8.5)、メイン `b3f1377` (ハーネス名前空間リセット)
   - 一時ファイル: SystemVerilogLanguageServer.Tests/DebugPackageTests.cs / DebugConstructorParseTests.cs / DebugPerfScr1Tests.cs (一時解析用、コミットから除外)
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
 
