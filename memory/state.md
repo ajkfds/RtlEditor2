@@ -1930,6 +1930,18 @@ endmodule
 
 ## Next Steps
 
+- LiveMarkdown preview にコードブロック対応 + Mermaid 対応 → 実装完了 (ビルド成功、コミット済み)
+  - 前提: Chat (MarkdownTextItem) と preview (PreviewControl) は共に `AjkAvaloniaLibs.Controls.LiveMarkdownControl` と `CodeEditor2/App.axaml` の LiveMarkdown スタイルを共有しているため、コードブロックのレンダリングは元々共通 (LiveMarkdown.Avalonia のデフォルト機能)
+  - 不足していた Mermaid 対応を有効化: Mermaid は別パッケージ `LiveMarkdown.Avalonia.Mermaid` が必要で、`LiveMarkdownControl` 内でコメントアウトされていた登録を有効化
+  - 修正1 (AjkAvaloniaLibs `0c6d703`):
+    - `AjkAvaloniaLibs.csproj` に `LiveMarkdown.Avalonia.Mermaid` 2.4.3 を追加
+    - `Controls/LiveMarkdownControl.axaml.cs` に `using LiveMarkdown.Avalonia;` を追加し、`MarkdownRenderer.ConfigurePipeline += x => x.UseMermaid();` と `MarkdownNode.Register<MermaidBlockNode>();` のコメントアウトを解除
+  - 修正2 (CodeEditor2 `4fc6df0`):
+    - `CodeEditor2.csproj` に `LiveMarkdown.Avalonia.Mermaid` 2.4.3 を追加
+    - `App.axaml` の Styles に `avares://LiveMarkdown.Avalonia.Mermaid/Styles.axaml` を追加
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)。Chat / LiveMarkdown preview の両方でコードブロック + Mermaid 図 (```mermaid フェンス) が描画される
+  - メモ: `MermaidPresenter.RenderOptions` で Padding / NodeSpacing / LayerSpacing 等を設定可能 (色・フォントは Avalonia スタイルで指定)。複雑な図はレイアウト調整が必要な場合あり
+
 - LiveMarkdown preview ペインの幅を約半分のデフォルトにし、スプリッタでリサイズ可能に → 実装完了 (ビルド成功、コミット済み)
   - 原因: `CodeView.axaml` のルート Grid が `ColumnDefinitions="*, 4, 0"` でサブペイン列が固定 0 幅、`SubPaneHost` の `MinWidth=100` で最小幅のみ確保されていた (GridSplitter は存在するが幅が 0 なので実質表示されない)
   - 修正1 (`CodeView.axaml`): ルート Grid に `Name="RootGrid"` を追加 (コードから列幅制御するため)
