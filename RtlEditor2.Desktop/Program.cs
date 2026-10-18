@@ -61,7 +61,7 @@ class Program
             {
                 //return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_oss_20b, false));
                 //return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.minimax_minimax_m2_7, false));
-                return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.minimax_minimax_m3.Name, false));
+                return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.minimax_minimax_m3.Name, false) { ProviderOnly= "novita/fp8"});
                 //return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.openai_gpt_5_1_codex_mini , false));
                 //                return new pluginAi.LLMChat(new pluginAi.OpenRouterChat(pluginAi.OpenRouterModels.google_gemini_3_pro_preview, false));
             };
@@ -131,7 +131,8 @@ class Program
     private static void MenuItem_VerilogAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         // chat agent tab
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_3_flash.Name, false);
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false) { ProviderOnly = "decart/fp4" };
+//        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_3_flash.Name, false) { ProviderOnly = "novita/fp8" };
 //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m3.Name, false);
 //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_7.Name, false);
 //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
@@ -147,7 +148,11 @@ class Program
     private static void MenuItem_DotNetAgent_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         // chat agent tab
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_3_flash.Name, false);
+//        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false) { ProviderOnly = "decart/fp4" };
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false) { ProviderOnly = "digitalocean" };
+
+//        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_3_flash.Name, false) { ProviderOnly = "novita/fp8" };
+//        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_3_flash.Name, false) { ProviderOnly = "relace" };
         //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_deepseek_v3_2, false);
         //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_2, false);
         //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.minimax_minimax_m2_7, false);
@@ -162,7 +167,9 @@ class Program
         if (item == null) return;
         CodeEditor2.Data.Project project = item.Project;
 
-        LLMAgentWindow agent = new LLMAgentWindow(project, chat, (agent) => { LLM.InitializeCSharpLLMAgent.Run(project, agent, false); });
+        LLMAgentWindow agent = new LLMAgentWindow(
+                                    project,
+                                    chat, (agent) => { LLM.InitializeCSharpLLMAgent.Run(project, agent, false,chat); });
         agent.Show();
     }
 

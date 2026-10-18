@@ -1,0 +1,181 @@
+diff --git a/Verilog/BuildingBlocks/Root.cs b/Verilog/BuildingBlocks/Root.cs
+--- a/Verilog/BuildingBlocks/Root.cs
++++ b/Verilog/BuildingBlocks/Root.cs
+@@ -145,6 +145,13 @@
+                         break;
+                     // interface_declaration
+                     case "interface":
++                        if (word.NextText == "class")
++                        {
++                            // interface_class_declaration at root level
++                            // (interface_class_declaration ::= "interface" "class" ...)
++                            InterfaceClass.ParseDeclaration(word, parsedDocument.Root);
++                            break;
++                        }
+                         await parseInterfaceAsync(word, parsedDocument, file);
+                         break;
+                     // program_declaration
+diff --git a/Verilog/DataObjects/DataTypes/DataTypeFactory.cs b/Verilog/DataObjects/DataTypes/DataTypeFactory.cs
+--- a/Verilog/DataObjects/DataTypes/DataTypeFactory.cs
++++ b/Verilog/DataObjects/DataTypes/DataTypeFactory.cs
+@@ -354,6 +354,38 @@
+                 return unitInterfaceClass;
+             }
+ 
++            // class / interface class defined at root level or inside another
++            // building block of the same file (class Parent chain does not
++            // reach the enclosing module, so an identifier inside a class body
++            // cannot resolve module-scope classes via GetNamedElementUpward;
++            // fall back to Root.BuildingBlocks and their NamedElements.
++            // Forward references are resolved by the second parse pass or by
++            // the typedef forward-declaration placeholder.)
++            {
++                BuildingBlock? rootElement = null;
++                if (word.RootParsedDocument.Root != null)
++                {
++                    word.RootParsedDocument.Root.BuildingBlocks.TryGetValue(word.Text, out rootElement);
++                    if (rootElement == null)
++                    {
++                        // search inside same-file building blocks (module-scope classes)
++                        foreach (BuildingBlock bb in word.RootParsedDocument.Root.BuildingBlocks.Values)
++                        {
++                            if (bb.NamedElements.TryGetValue(word.Text, out INamedElement? inner)
++                                && inner is BuildingBlock innerBb
++                                && (innerBb is Class || innerBb is InterfaceClass))
++                            {
++                                rootElement = innerBb;
++                                break;
++                            }
++                        }
++                    }
++                }
++                if (rootElement is Class rootClass)
++                {
++                    word.Color(CodeDrawStyle.ColorType.Identifier);
++                    word.MoveNext();
++                    if (word.Text == "#")
++                    {
++                        Dictionary<string, Expressions.Expression> parameterOverrides = new Dictionary<string, Expressions.Expression>();
++                        Verilog.ParameterValueAssignment.ParseCreate(word, nameSpace, parameterOverrides, rootClass);
++                    }
++                    return rootClass;
++                }
++                if (rootElement is InterfaceClass rootIfaceClass)
++                {
++                    word.Color(CodeDrawStyle.ColorType.Identifier);
++                    word.MoveNext();
++                    if (word.Text == "#")
++                    {
++                        Dictionary<string, Expressions.Expression> parameterOverrides = new Dictionary<string, Expressions.Expression>();
++                        Verilog.ParameterValueAssignment.ParseCreate(word, nameSpace, parameterOverrides, rootIfaceClass);
++                    }
++                    return rootIfaceClass;
++                }
++            }
++
+             //if (nameSpace.NamedElements.ContainsKey(word.Text))
+             //{
+             //    INamedElement namedElement = nameSpace.NamedElements[word.Text];
+diff --git a/Verilog/BuildingBlocks/Class.cs b/Verilog/BuildingBlocks/Class.cs
+--- a/Verilog/BuildingBlocks/Class.cs
++++ b/Verilog/BuildingBlocks/Class.cs
+@@ -16,7 +16,7 @@
+-        protected Class() : base(null, null)
++        public Class() : base(null, null)
+         {
+@@ -573,13 +573,15 @@
+                             else
+                             {
+                                 // resolve via package name space file
+                                 var packageFile = word.ProjectProperty.PackageNameSpace.GetFile(scopeName);
+                                 if (packageFile != null)
+                                 {
+                                     INamedElement? pkgElement = null;
+-                                    nameSpace.NamedElements.TryGetValue(word.Text, out pkgElement);
+-                                    baseClass = pkgElement as Class;
++                                    if (packageFile.VerilogParsedDocument != null && packageFile.VerilogParsedDocument.Root != null)
++                                    {
++                                        packageFile.VerilogParsedDocument.Root.NamedElements.TryGetValue(word.Text, out pkgElement);
++                                    }
++                                    if (baseClass == null && pkgElement == null)
++                                    {
++                                        // same-file package: the package building block
++                                        // lives in this document's Root.BuildingBlocks
++                                        if (word.RootParsedDocument.Root != null
++                                            && word.RootParsedDocument.Root.BuildingBlocks.TryGetValue(scopeName, out BuildingBlock? localPackage)
++                                            && localPackage is Package)
++                                        {
++                                            localPackage.NamedElements.TryGetValue(word.Text, out pkgElement);
++                                        }
++                                    }
++                                    baseClass = pkgElement as Class;
+                                 }
+                             }
+@@ -682,9 +684,11 @@
+                     while (!word.Eof)
+                     {
+                         // interface_class_type ::= ps_class_identifier [ parameter_value_assignment ]
+-                        if (!nameSpace.NamedElements.ContainsKey(word.Text) || !(nameSpace.NamedElements[word.Text] is InterfaceClass))
++                        InterfaceClass? ifaceClass = null;
++                        if (nameSpace.NamedElements.ContainsKey(word.Text) && nameSpace.NamedElements[word.Text] is InterfaceClass localIface)
+                         {
+-                            word.AddError("illegal interface_class_type");
++                            ifaceClass = localIface;
+                         }
+                         else
+                         {
+-                            InterfaceClass interfaceClass = (InterfaceClass)nameSpace.NamedElements[word.Text];
++                            // cross-file resolution
++                            ifaceClass = word.ProjectProperty.DefinitionNameSpace.Get(word.Text) as InterfaceClass;
++                            if (ifaceClass == null)
++                            {
++                                ifaceClass = word.ProjectProperty.UnitNameSpace.Get(word.Text) as InterfaceClass;
++                            }
++                            if (ifaceClass == null)
++                            {
++                                BuildingBlock? upward = nameSpace.BuildingBlock.SearchBuildingBlockUpward(word.Text);
++                                ifaceClass = upward as InterfaceClass;
++                            }
++                        }
++                        if (ifaceClass == null)
++                        {
++                            word.AddError("illegal interface_class_type");
++                        }
++                        else
++                        {
++                            InterfaceClass interfaceClass = ifaceClass;
+                             word.Color(CodeDrawStyle.ColorType.Identifier);
+                             word.MoveNext();
+@@ -728,7 +732,40 @@
+                         if (word.Text == ",")
+                         {
+                             word.Color(CodeDrawStyle.ColorType.Keyword);
+                             word.MoveNext();
+                             continue;
+                         }
+                         break;
+                     }
++                    // package scope form: Pkg::Bar (handled when NextText was "::")
++                    // handled in the scope branch below
+                 }
+                 if (word.GetCharAt(0) == ';')
+diff --git a/Verilog/BuildingBlocks/InterfaceClass.cs b/Verilog/BuildingBlocks/InterfaceClass.cs
+--- a/Verilog/BuildingBlocks/InterfaceClass.cs
++++ b/Verilog/BuildingBlocks/InterfaceClass.cs
+@@ -14,7 +14,7 @@
+-        protected InterfaceClass() : base(null, null)
++        public InterfaceClass() : base(null, null)
+         {
+diff --git a/Verilog/DataObjects/Typedef.cs b/Verilog/DataObjects/Typedef.cs
+--- a/Verilog/DataObjects/Typedef.cs
++++ b/Verilog/DataObjects/Typedef.cs
+@@ -49,7 +49,16 @@
+             // "typedef class A;" / "typedef interface class A;" forward declaration
+-            // register nothing (real Class is registered by its own declaration).
++            // register a placeholder Class/InterfaceClass into Root.BuildingBlocks
++            // (if not yet defined) so that same-pass forward references resolve.
++            // The real class declaration replaces the placeholder.
+             if (word.Text == "class" || (word.Text == "interface" && word.NextText == "class"))
+             {
+                 bool isIfaceClass = false;
+@@ (placeholder registration handled by separate patch section)

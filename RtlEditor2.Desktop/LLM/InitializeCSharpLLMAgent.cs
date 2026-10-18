@@ -1,4 +1,5 @@
 using Avalonia.Platform;
+using pluginAi;
 using System;
 using System.Text;
 using System.Threading;
@@ -7,7 +8,7 @@ namespace RtlEditor2.Desktop.LLM
 {
     public class InitializeCSharpLLMAgent
     {
-        public static void Run(CodeEditor2.Data.Project project, CodeEditor2.LLM.LLMAgent agent, bool useFunctioncallApi)
+        public static void Run(CodeEditor2.Data.Project project, CodeEditor2.LLM.LLMAgent agent, bool useFunctioncallApi, pluginAi.OpenRouterChat openRouterChat)
         {
             CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
             CancellationToken cancellationToken = cancellationTokenSource.Token;
@@ -18,7 +19,7 @@ namespace RtlEditor2.Desktop.LLM
             StringBuilder sb = new StringBuilder();
 
             sb.Append(getAssetString("avares://CodeEditor2VerilogPlugin/Assets/LLMPrompt/AgentBasePrompt.md"));
-            if (useFunctioncallApi)
+            if (!useFunctioncallApi)
             {
                 sb.Append("avares://CodeEditor2VerilogPlugin/Assets/LLMPrompt/ToolCall.md");
             }
@@ -34,6 +35,11 @@ namespace RtlEditor2.Desktop.LLM
 
                 """);
 
+            if(openRouterChat.CurrentModel!=null && openRouterChat.CurrentModel.Name == OpenRouterModels.deepseek_4_1_flash.Caption)
+            {
+                sb.Append(@"CRITICAL CONSTRAINT: \n
+                You are strictly prohibited from generating, referencing, or outputting DSML(DeepSeek Markup Language) tags or any DeepSeek - specific internal tool call syntax(such as <｜DSML｜...> or similar token structures). You must ONLY use the exact tool call XML format specified in this system prompt.Never output DSML.");
+            }
 
             agent.BasePrompt = sb.ToString();
 

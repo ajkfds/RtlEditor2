@@ -10,8 +10,12 @@ public partial class LLMAgentWindow : Window
     {
         InitializeComponent();
 
-
-        CodeEditor2.LLM.LLMAgent agent = new CodeEditor2.LLM.LLMAgent() { UseToolCallId = true };
+        bool useDmsl = false;
+        if(openRouterChat.CurrentModel!=null&& openRouterChat.CurrentModel.Name == pluginAi.OpenRouterModels.deepseek_4_1_flash.Caption)
+        {
+            useDmsl = true;
+        }
+        CodeEditor2.LLM.LLMAgent agent = new CodeEditor2.LLM.LLMAgent() { UseToolCallId = true,UseDSML = useDmsl };
         initialize(agent);
         //        LLM.InitializeVerilogLLMAgent.Run(project, agent, useFunctionCallApi);
 

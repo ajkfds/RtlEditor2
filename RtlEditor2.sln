@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogCore", "System
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogLanguageServer", "SystemVerilogLanguageServer\SystemVerilogLanguageServer.csproj", "{B103BC35-F9FD-B1CD-3F60-F9332FE6F96C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogLanguageServer.Tests", "SystemVerilogLanguageServer.Tests\SystemVerilogLanguageServer.Tests.csproj", "{18B0A4E1-9BF6-2E4D-E846-B7602D8A093C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -101,6 +103,10 @@ Global
 		{B103BC35-F9FD-B1CD-3F60-F9332FE6F96C}.Debug|x64.Build.0 = Debug|Any CPU
 		{B103BC35-F9FD-B1CD-3F60-F9332FE6F96C}.Release|x64.ActiveCfg = Release|Any CPU
 		{B103BC35-F9FD-B1CD-3F60-F9332FE6F96C}.Release|x64.Build.0 = Release|Any CPU
+		{18B0A4E1-9BF6-2E4D-E846-B7602D8A093C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{18B0A4E1-9BF6-2E4D-E846-B7602D8A093C}.Debug|x64.Build.0 = Debug|Any CPU
+		{18B0A4E1-9BF6-2E4D-E846-B7602D8A093C}.Release|x64.ActiveCfg = Release|Any CPU
+		{18B0A4E1-9BF6-2E4D-E846-B7602D8A093C}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,0 +1,1 @@
+Update state.md: identify 24.3 as tokenizer offset drift (leading-comment-length dependent)
