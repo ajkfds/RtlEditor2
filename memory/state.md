@@ -3,6 +3,36 @@
 
 ## 進行中タスク
 
+- TextFile のセルフセーブ時に caret 位置が変わる問題 → 修正完了 (ビルド成功、コミット済み)
+  - ユーザ要求: CodeEditor2/CodeEditor2/Data/TextFile.cs の更新確認機構を確認。セルフ Save 時に
+    リロードがかかって caret 位置が変わることがある問題を修正
+  - 調査した更新確認機構:
+    - 遅延確認: `PostStatusCheck()` → `Task.Run(FileCheckAsync)`。`_fileSemaphore.WaitAsync(0)` で
+      実行中なら skip (ノンブロッキング)
+    - キャッシュモード: `LocalFileCasheEnable` 時は AES 暗号化キャッシュ (`.cashe` 配下) を使用。
+      `LastWriteTime` 比較でキャッシュが古い場合のみ元ファイル再読込。`GetFileTextAsync`/`SaveFileAsync`
+    - 外部変更: `FileCheckBackgroundAsync` でハッシュ (XxHash64) 比較。`currentFileVersion != CodeDocument.Version`
+      かつ `currentFileHash != ""` のとき `ShowDialogYesNoAsync` でユーザ確認
+    - Linux/Windows 両対応: `EnumerationOptions.AttributesToSkip = FileAttributes.System` (Hidden を skip
+      しない)、`Item.GetItem` は `/` と `Path.DirectorySeparatorChar` の両方を受容
+  - 原因 (3点):
+    1. `FileCheckBackgroundAsync` の reload 分岐で、UI スレッド経路は `doc.CaretIndex` を保存・
+       `SetSelection` で復元していたが、**background 経路 (Dispatcher.UIThread.InvokeAsync 内) は
+       復元しておらず非対称バグ**だった
+    2. Save 直後に FileCheck が走ると、OS の end-of-write タイムスタンプ確定前の過渡状態で
+       ハッシュ不一致となり、書き込み途中/古いスナップショットで editor を上書きし caret が動く
+    3. `NormalizeLineEndings` (Save 時 CRLF→LF 正規化) の全置換で caret がリセット/クランプされ得る
+  - 修正:
+    1. `FileCheckBackgroundAsync` の background 分岐でも `doc.CaretIndex` を保存し、`TextDocument.Replace`
+       後に `doc.SetSelection(carletPosition, carletPosition)` で復元 (UI スレッド分岐と対称化)
+    2. Save 完了時に `_lastSaveCompletedTick = Environment.TickCount64` を記録し、
+       FileCheck 冒頭でセーブ後 `ReloadSuppressionMilliseconds` (500ms) 以内の spurious reload /
+       conflict prompt を抑制 (hash は更新せず return し、次の check で再読込)
+    3. `NormalizeLineEndings` で置換前に `doc.CaretIndex` を退避し、置換後にクランプして復元
+  - 検証: `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj` 0 errors
+  - コミット: CodeEditor2 `681065f`
+  - メモ: Linux/Windows 共通のロジックのみを変更 (プラットフォーム分岐なし)。キャッシュ機構自体は不変
+
 - OpenRouterChat の lastUsageInfo 収集不具合 → 修正完了 (ビルド成功、コミット済み)
   - 症状: LLM 応答後も chat.LastUsageInfo が null のまま (footer の token 情報行が出ない)
   - 原因 (OpenRouterChat.GetAsyncCollectionChatResult): ストリームループで `updates` に蓄積する条件が
