@@ -999,6 +999,24 @@ endmodule
 
 ## 進行中タスク
 
+- ChatControl: tool call 開始時点の tool result Item + Spinner 表示、ChatMessage への情報行 (token 情報) 追加 → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: (1) tool call が呼ばれた時点で tool call result の Item を追加して Spinner を表示して待機 (2) ChatMessage に message 最後の token 情報などを追加 (=本来のメッセージに含まない形で user への情報として最終行に表示)
+  - 実装1 (CodeEditor2 `dd529d7` / ChatControl.axaml.cs):
+    - `lastToolResultItem` フィールド + `ToolCallStarted(string? toolName = null)` を変更: tool call 開始時に tool-result Item (MessageType.functionCallReturn) を即座に `Items` に挿入し Spinner 表示 (progress timer の毎 100ms 呼び出しでは既存 Item を再利用)
+    - `ToolCallEnded(string? result = null)`: Spinner を消し、結果テキストを Item に追記。`ToolResultItem` / `ClearToolResultItem()` API を追加
+    - `completeWithFunctionCallCore` で turn 開始時・次 LLM 呼び出し前に `ClearToolResultItem()` を呼び、tool call ごとに新規 Item となるよう整理
+  - 実装2 (CodeEditor2 `dd529d7` / LLMAgent.cs): tool 実行の `finally` で `chatControl?.ToolCallEnded(toolResultForDisplay)` を呼び結果を渡す + `ClearToolResultItem`。開始時に `ToolCallStarted(toolName)` を渡す
+  - 実装3 (情報行 / footer):
+    - `ChatMessageWrapper` に `InfoMessage` プロパティを追加 (メッセージ本文とは別の表示専用 footer。`ChatMessage.Text` に含まれず LLM に送信されない)
+    - `MarkdownTextItem` に `infoTextBlock` (Row 1) を追加し `InfoMessage` プロパティで表示制御 (本文 markdown とは別行)
+    - `ILLMChatFrontEnd.LastUsageInfo` を追加。`OpenRouterChat` で `addMessages` 時に `response.Usage` を `FormatUsage` で整形 ("tokens: N in / M out / T total") し `LastUsageInfo` に記録 + 各 ChatMessageWrapper の `InfoMessage` / `AdditionalProperties["infoMessage"]` に保存 (Save/Load で保持)
+    - `ChatControl.completeWork`: turn 完了時に `BuildTurnInfoLine(経過時間, chat.LastUsageInfo)` で footer を生成し resultItem + pending tool-result item に付与
+    - `LoadMessagesAsync`: 保存された `InfoMessage` (または AdditionalProperties) を復元表示
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `dd529d7` / CodeEditor2AiPlugin `1076523` / メイン `2bc48c7` (submodule pointer 更新)
+  - 注意: メインの AjkAvaloniaLibs / CodeEditor2VerilogPlugin の未コミット変更は本タスク外のユーザ変更のため除外
+  - Next: エディタ上で (1) tool call 実行中に Spinner 付き tool result Item が出て、完了時に結果テキストが入ること (2) 各メッセージ末尾に token/経過時間の footer 行が表示され、Save/Load 後も保持されること の確認
+
 - 外部変更 conflict ダイアログが mainWindow の前面に出ない / 中央以外の場所に出る問題 → 修正完了 (ビルド成功、コミット済み)
   - 対象: `Controller.ShowDialogAsync` / `TextFile.FileCheckBackgroundAsync` の conflict ダイアログ
   - 原因1 (位置ずれ): `ShowDialogAsync` の中央配置計算が `mainWindow.Position` (デバイスピクセル) と `Bounds/Width` (DIP) の混在計算で、DPI 100% 以外や最大化時にずれる。画面外に出ると OS が強制再配置し「別の場所に出る」
