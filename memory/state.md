@@ -3,6 +3,17 @@
 
 ## 進行中タスク
 
+- LiveMarkdown.Avalonia.DrawIo のビルド失敗修正 → 完了 (ビルド成功、コミット済み)
+  - 症状: `dotnet build AjkAvaloniaLibs` で CS0246 (Avalonia / Markdig / Markdig.Syntax / List<> 等が見つからない) が 371 件
+  - 原因: `LiveMarkdown.Avalonia.DrawIo.csproj` が WaveDrom と違いビルド設定・パッケージ参照を欠いていた:
+    - `PackageReference` (Avalonia 12.1.3 / LiveMarkdown.Avalonia 2.4.3) が無い (Markdig は LiveMarkdown.Avalonia 経由で推移参照)
+    - `Nullable` / `ImplicitUsings` / `LangVersion` が無い (ImplicitUsings 無効で List<> 等の System 型が見つからない)
+    - `ProjectReference` が存在しないローカルパス `..\LiveMarkdown.Avalonia\LiveMarkdown.Avalonia.csproj` を指していた (本来は NuGet の LiveMarkdown.Avalonia を使用)
+  - 修正: WaveDrom の csproj と同一構成に揃えた (PackageReference + ImplicitUsings/Nullable/LangVersion + ProjectReference 削除)。NuGet からのパッケージ取得で解決 (サブモジュール本地の LiveMarkdown.Avalonia は存在しないため)
+  - ビルド: `dotnet build AjkAvaloniaLibs/AjkAvaloniaLibs/AjkAvaloniaLibs.csproj` 0 errors / `RtlEditor2.Desktop/RtlEditor2.Desktop.csproj` 0 errors
+  - コミット: LiveMarkdown.Avalonia.DrawIo `cbd2e06` / AjkAvaloniaLibs `623e1f4` / メイン `3265848` (submodule pointer + RtlEditor2.sln への DrawIo プロジェクト追加)
+  - メモ: `LiveMarkdownControl.axaml.cs` の DrawIoBlockNode 登録はコメントアウトのまま (ユーザ変更)
+
 - OpenRouterChat の usage footer に cached token 表示を追加 → コミット済み (ビルド済み)
   - 変更 (CodeEditor2AiPlugin/CodeEditor2AiPlugin/OpenRouterChat.cs): FormatUsage で
     `usage.CachedInputTokenCount` があれば " cashed" を追記。total token 表示はコメントアウトで非表示化
