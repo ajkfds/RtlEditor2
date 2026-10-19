@@ -1,6 +1,18 @@
 
 # 作業状態 (State)
 
+## 進行中タスク
+
+- OpenRouterChat の lastUsageInfo 収集不具合 → 修正完了 (ビルド成功、コミット済み)
+  - 症状: LLM 応答後も chat.LastUsageInfo が null のまま (footer の token 情報行が出ない)
+  - 原因 (OpenRouterChat.GetAsyncCollectionChatResult): ストリームループで `updates` に蓄積する条件が
+    (1) `update.Text` が非空 または (2) `FunctionCallContent` を含む、に絞られていた。usage
+    (UsageContent) のみを運ぶ最終チャンクは Text が空かつ FunctionCallContent も無いため取りこぼされ、
+    以降の `updates.ToChatResponse()` で response.Usage が空になり `FormatUsage` が null を返していた
+  - 修正: ループ先頭で全 update を無条件に `updates.Add(update)` し、重複していた条件付き Add
+    (Text 時 / FunctionCallContent 時) を削除。usage 情報と tool call 履歴の両方が ChatResponse 再構築時に保持される
+  - コミット: CodeEditor2AiPlugin `4f9f513`
+
 ## 未解決課題
 
 - sv-tests 未実装項目の逐次修正 (第1弾) → 実装完了 (ビルド成功、テスト 1011 → 1028 合格 / 23 → 6 失敗、+17、regression なし)
