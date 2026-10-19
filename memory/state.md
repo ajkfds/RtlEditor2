@@ -15,6 +15,13 @@
 
 ## 未解決課題
 
+- sv-tests 最新状況 (確認) → 全 1033 件で失敗 2 / 合格 1031 / regression なし
+  - 計測: `dotnet test SystemVerilogLanguageServer.Tests/SystemVerilogLanguageServer.Tests.csproj --no-build --filter "FullyQualifiedName~ParseSvTestFile"`
+  - 失敗 2 件の内訳: 5.6.4--compiler-directives-include (環境依存・対応不要) / 24.3--program (トークナイザ offset drift・保留)
+  - ユーザ要求「8.8--typed_constructor_param を修正」への対応: **既に解決済み**。コード修正は不要 (該当テストは pass)
+    - 当初 6 件あった POS-ERROR のうち 4 件 (8.8--typed_constructor_param / 5.6.1--nonescaped-access / 16.12--property-iff / other.sv) は後続コミット (`aa6e941` parameter_port_list 形式の class parameter を prototype で Defined 化 / `d0710f1` escaped identifier bug 修正 等) で解消済み
+    - 現状の注目残課題は 24.3--program (WordPointer offset drift) のみ
+
 - sv-tests 未実装項目の逐次修正 (第1弾) → 実装完了 (ビルド成功、テスト 1011 → 1028 合格 / 23 → 6 失敗、+17、regression なし)
   - ユーザ要求: 失敗ファイルを逐次修正する
   - 修正1 (Pattern matching 演算子 `matches`): BinaryOperator/InsideOperator と同様の `MatchesOperator` を新設 (`Verilog/Expressions/Operators/MatchesOperator.cs`)。`Expression.parseExpressionPrimaries` の inside 直後に `matches` 分岐を追加、RPN 評価ループに `MatchesOperator` の処理を追加。これにより `tmp matches tagged a '{4'b01zx, .v}` (if文 12.6.2) / 三項演算子 `tmp matches ... ? 1 : 2` (12.6.3) が解析可能になった (以前は `ConditionalStatement.cs` に matches 処理を追加したが Expression 経由でも消費されるようになったため不要化、削除済み)
@@ -38,11 +45,14 @@
   - 修正18 (package-scope class type の parameter_value_assignment): `DataTypeFactory.parsePackageScopeType` で `pkg::ClassName#(N+M)` の `#(...)` を消費。解消: class_test_53 の残 1 error
   - 修正19 (parameter_port_list 形式の class parameter): `Constants.ParseCreateParamAssignmentsForPort` の prototype 分岐で `constants.Defined = true`
   - 解消テスト 計 +17: (前回分 15) + 20.14--coverage / class_test_53
-  - 残 (6件):
-    - 【実装必要 (難度中〜高)】: 5.6.1--nonescaped-access (escaped id `\cpu3` は NamedElements に Defined=true で登録済みだが `assign reference_test = cpu3;` の解析で "illegal assignment"、参照解決経路の深い問題。minimal 再現 `reg \cpu3; wire r; assign r = cpu3;` では pass するため、宣言と参照の登録順 / escaped トークン長の相互作用が疑われる) / 8.8--typed_constructor_param (`a = def - t;` の `t` (class parameter port) が unfound。class.NamedElements には `t` が Registered 済みなので function body からの upward 解決経路の問題。minimal 再現では pass)
-    - 【24.3--program の決定性問題 → 原因特定 (トークナイザ offset drift)】: 実ファイル parse で決定的に 9 エラー (`program` 後の `module top` 復帰失敗 → "illegal module item" 連鎖)。**先頭コメントの長さに応じてエラー数が非線形に変化**することを確認 (先頭 `// ...` 長 4→1エラー / 24→2 / 40→3 / 60→9)。bisect で drop1 (先頭行除去) で 9→1、drop2 で 0 になることから先頭 `//` 行コメントが主因。**WordPointer.fetchNext のコメント/トークン長計算 (length = nextIndex - index) と上位 parser のオフセット計算の相互作用によるトークナイザ offset drift** と判明。修正はトークナイザ本体 (WordPointer.fetchNext / MoveNext / IndexReference) の根本対応が必要で、他機能への regression リスクが高いため保留
-    - 【16.12--property-iff】: 実ファイル単独で `[415] unfound object` (`a iff b` の `b`)。header/whitespace を変えた再構成では pass するため、コメント/空白のオフセットと property 式解析の相互作用
-    - 【環境依存】: 5.6.4--compiler-directives-include (`include "/dev/null"` Linux 絶対パス、Windows で解決不能) / other.sv (EnumerateSvFiles に現れず実ファイル確認不能)
+  - 残 (更新: 現状 2件のみ。全体実行 `dotnet test ... --filter FullyQualifiedName~ParseSvTestFile` で失敗 2 / 合格 1031 / 全 1033):
+    - 【環境依存】: 5.6.4--compiler-directives-include (`include "/dev/null"` Linux 絶対パス、Windows で解決不能。実装課題ではない)
+    - 【24.3--program の決定性問題 → 原因特定 (トークナイザ offset drift)】: 実ファイル parse で `program` 後の `module top` 復帰失敗 → "illegal module item" ×2 連鎖 (+ Size mismatch warning ×2)。**先頭コメントの長さに応じてエラー数が非線形に変化**することを確認 (先頭 `// ...` 長 4→1エラー / 24→2 / 40→3 / 60→9)。bisect で drop1 (先頭行除去) で 9→1、drop2 で 0 になることから先頭 `//` 行コメントが主因。**WordPointer.fetchNext のコメント/トークン長計算 (length = nextIndex - index) と上位 parser のオフセット計算の相互作用によるトークナイザ offset drift** と判明。修正はトークナイザ本体 (WordPointer.fetchNext / MoveNext / IndexReference) の根本対応が必要で、他機能への regression リスクが高いため保留
+    - **解消済み (当初 6件 → 4件が解決)**:
+      - 8.8--typed_constructor_param (`a = def - t;` の `t` = class parameter port が unfound): `Constants.ParseCreateParamAssignmentsForPort` の prototype 分岐に `constants.Defined = true` を追加で解決 (commit `aa6e941`、parameter_port_list 形式)。当該テストは現状 pass
+      - 5.6.1--nonescaped-access (escaped id `\cpu3` の非エスケープ参照): commit `d0710f1` "fix escaped identifier bug" で解決
+      - 16.12--property-iff (`a iff b` の `b` unfound): 現状 pass
+      - other.sv: 現状 pass (EnumerateSvFiles 挙動変更の影響で実ファイル確認は不要化)
   - コミット: CodeEditor2VerilogPlugin `54a0fe6` / `e2af31b` / `87f7ae4` / `921f25a` / `249e755` / `47673c9` / `a7759b1` / `9fa5758` / `faeabe2` / `fdcb48c` (5.10) / `d9eaeb8` (8.5) / `3e2f76e` (20.14) / `156abbd` (class item param type) / `64a915f` (pkg-scope class type) / `aa6e941` (param port list)、メイン `b3f1377` (ハーネス名前空間リセット) / `4672d4d` (state.md)
   - 一時ファイル: SystemVerilogLanguageServer.Tests/DebugPackageTests.cs / DebugConstructorParseTests.cs / DebugPerfScr1Tests.cs (一時解析用、コミットから除外)
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj / RtlEditor2.Desktop.csproj, 0 errors)
