@@ -39,6 +39,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemVerilogLanguageServer
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveMarkdown.Avalonia.WaveDrom", "AjkAvaloniaLibs\LiveMarkdown.Avalonia.WaveDrom\LiveMarkdown.Avalonia.WaveDrom.csproj", "{AB6CBBA0-D2C9-C16A-0106-D3739E5559E7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveMarkdown.Avalonia.DrawIo", "AjkAvaloniaLibs\LiveMarkdown.Avalonia.DrawIo\LiveMarkdown.Avalonia.DrawIo.csproj", "{FD1E3FEA-28BC-DA8B-FEC1-A6474FF76758}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -113,6 +115,10 @@ Global
 		{AB6CBBA0-D2C9-C16A-0106-D3739E5559E7}.Debug|x64.Build.0 = Debug|Any CPU
 		{AB6CBBA0-D2C9-C16A-0106-D3739E5559E7}.Release|x64.ActiveCfg = Release|Any CPU
 		{AB6CBBA0-D2C9-C16A-0106-D3739E5559E7}.Release|x64.Build.0 = Release|Any CPU
+		{FD1E3FEA-28BC-DA8B-FEC1-A6474FF76758}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FD1E3FEA-28BC-DA8B-FEC1-A6474FF76758}.Debug|x64.Build.0 = Debug|Any CPU
+		{FD1E3FEA-28BC-DA8B-FEC1-A6474FF76758}.Release|x64.ActiveCfg = Release|Any CPU
+		{FD1E3FEA-28BC-DA8B-FEC1-A6474FF76758}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
