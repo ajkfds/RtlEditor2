@@ -3,6 +3,16 @@
 
 ## 進行中タスク
 
+- OpenRouterChat の usage footer に cached token 表示を追加 → コミット済み (ビルド済み)
+  - 変更 (CodeEditor2AiPlugin/CodeEditor2AiPlugin/OpenRouterChat.cs): FormatUsage で
+    `usage.CachedInputTokenCount` があれば " cashed" を追記。total token 表示はコメントアウトで非表示化
+  - コミット: CodeEditor2AiPlugin `1c4280f`
+
+- サブモジュール pointer 更新 → コミット済み
+  - CodeEditor2VerilogPlugin `aa6e941..b5bd048` ("add partial parse error block" / "fix escaped identifier bug")
+  - AjkAvaloniaLibs `da01333..4e78de8` ("add markdown support")
+  - メインリポジトリで submodule pointer を更新
+
 - TextFile のセルフセーブ時に caret 位置が変わる問題 → 修正完了 (ビルド成功、コミット済み)
   - ユーザ要求: CodeEditor2/CodeEditor2/Data/TextFile.cs の更新確認機構を確認。セルフ Save 時に
     リロードがかかって caret 位置が変わることがある問題を修正
