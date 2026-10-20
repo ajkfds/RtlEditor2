@@ -1072,6 +1072,17 @@ endmodule
 
 ## 進行中タスク
 
+- ChatControl: tool call 結果と次の LLM completion が逆順に表示される問題 → 修正完了 (ビルド成功、コミット済み)
+  - 症状: tool call の結果 Item とその直後の LLM completion Item が、たまに表示順が逆転する (tool result が次の completion の下に出る)
+  - 原因: `ToolCallStarted` が `Dispatcher.UIThread.Post` (遅延・fire-and-forget) で tool-result Item を挿入していた。UI スレッドが混雑していると Post のコールバックが遅延し、`completeWithFunctionCallCore` が既に次の LLM turn の `complete()` を呼んで `completeWork` が Items に挿入した後で tool-result Item が挿入される → 表示順反転
+  - 修正 (`CodeEditor2` `fb954db` / ChatControl.axaml.cs):
+    - `ToolCallStarted`: `Dispatcher.UIThread.CheckAccess()` + `Invoke` (同期) に変更し、tool-result Item を呼び出し元が次の turn に進む前に確実に挿入。本体を `ApplyToolCallStarted` に分離
+    - `ToolCallEnded`: 同期実行 (CheckAccess + Invoke) にし、テキスト追記を `MarkdownTextItem.AppendTextDirect` (deferred InvokeAsync を避ける) で行う
+    - `MarkdownTextItem`: `ShowSpinnerDirect` / `AppendTextDirect` (UI スレッド専用の同期 helper) を追加
+  - ビルド成功 (RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2 `fb954db`
+  - Next: エディタ上で tool call 連続時に tool result と次の completion の順序が正しいことの確認
+
 - ChatControl: tool call 開始時点の tool result Item + Spinner 表示、ChatMessage への情報行 (token 情報) 追加 → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: (1) tool call が呼ばれた時点で tool call result の Item を追加して Spinner を表示して待機 (2) ChatMessage に message 最後の token 情報などを追加 (=本来のメッセージに含まない形で user への情報として最終行に表示)
   - 実装1 (CodeEditor2 `dd529d7` / ChatControl.axaml.cs):
