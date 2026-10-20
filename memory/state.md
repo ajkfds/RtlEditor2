@@ -1943,6 +1943,15 @@ endmodule
 
 ## 完了済みタスク
 
+- WordScanner の `include `macro 展開時 `wordPointer.Text.Substring(1)` で ArgumentOutOfRangeException → 修正完了 (ビルド成功、コミット済み)
+  - 症状: `` `include `` + マクロ展開のファイル名解決で `wordPointer.Text.Substring(1)` が `startIndex cannot be larger than length of string` 例外
+  - 根本原因: `WordPointer.MoveNext()` (WordPointer.cs L167-173) の終端処理で、既に最後のトークンだった場合に `index`/`nextIndex` を `Document.Length` に設定するが **`wordType` を `Eof` に更新していなかった**。そのため最後のトークンがバッククォート系 (`` `define `` 等) のとき `WordType` が `CompilerDirective` のまま残り、`Text` は `""` を返すのに `WordType == CompilerDirective` 判定が true になって `"".Substring(1)` が例外
+  - 修正1 (Verilog/WordPointer.cs MoveNext): 終端2箇所 (`nextIndex >= Document.Length` / `Eof`) で `length = 0; wordType = WordTypeEnum.Eof;` を設定 (wordType と index の不整合を解消)
+  - 修正2 (Verilog/WordScanner.cs parseInclude, 防御): `wordPointer.WordType == CompilerDirective` 条件に `&& wordPointer.Text.Length > 1` を追加
+  - 修正3 (Verilog/WordScanner.cs parseMacro, 防御): 冒頭で `wordPointer.Text.Length <= 1` なら "unsupported macro call" エラーにして `MoveNext` で復帰
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - メモ: `dotnet build` 全体実行時の MSB3027/MSB3021 は稼働中の RtlEditor2.Desktop プロセスによる DLL ロックで、本修正と無関係
+
 - always 後の空行で always block 判定が残る問題を追加修正 → 実装完了 (ビルド成功、コミット済み)
   - 原因: `AlwaysConstruct.ParseCreate` の `always.LastIndexReference = word.CreateIndexReferenceBefore()` は statement (begin..end) parse 完了後の word 位置 (次 token、例: "endmodule") の1つ前を指すため、`end` と `endmodule` の間の空行が always 領域に含まれ、その位置で GetDocumentRegionAt が AlwaysConstruct を返していた
   - 修正: statement が `Items.IDocumentRegeion` を実装し `LastIndexReference != null` の場合 (SequentialBlock 等、"end" 位置を持つ) は statement 自身の `LastIndexReference` を使うよう `AlwaysConstruct.cs` に分岐を追加
