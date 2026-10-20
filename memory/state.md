@@ -3,6 +3,17 @@
 
 ## 進行中タスク
 
+- NavigateNode 選択切替で CodeEditor の Caret/Scroll 位置が保持されない問題 → 修正完了 (ビルド成功、コミット済み)
+  - 症状: 別 node を選択して元の node に戻ると caret/scroll が先頭 (0) に戻る
+  - 原因: `CodeView.SetTextFileAsync` (CodeEditor2/CodeEditor2/Views/CodeView.axaml.cs) で
+    - TextFile setter (L322-332) が `_textEditor.Document` を新 CodeDocument の TextDocument に差し替えるため caret/scroll が 0 にリセット
+    - scroll は `TextFile.StoredVerticalScrollPosition` から復元していたが、caret 復元行 (`_textEditor.CaretOffset = <CodeDocument>.CaretIndex`) が commit `11b37db` (旧 `editorCodeDocument` フィールド削除) 以降コメントアウトされたままになっていた
+    - 各 CodeDocument は `Caret_PositionChanged` ハンドラで `_caretIndex` を保持しているため、復元処理を戻せば解決
+  - 修正: `SetTextFileAsync` の復元ブロックで `_textEditor.CaretOffset = TextFile.CodeDocument.CaretIndex;` を有効化 (コメントアウト解除 + 経緯コメント記載)。scroll 復元は既存のまま
+  - ビルド: CodeEditor2.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors
+  - コミット: CodeEditor2 `c686825`、メイン `01a8683` (submodule pointer 更新)
+  - Next: エディタ上で NavigateNode の別 node 選択 → 元 node 復帰時に caret/scroll が保持されることの確認
+
 - LiveMarkdown.Avalonia.DrawIo のビルド失敗修正 → 完了 (ビルド成功、コミット済み)
   - 症状: `dotnet build AjkAvaloniaLibs` で CS0246 (Avalonia / Markdig / Markdig.Syntax / List<> 等が見つからない) が 371 件
   - 原因: `LiveMarkdown.Avalonia.DrawIo.csproj` が WaveDrom と違いビルド設定・パッケージ参照を欠いていた:
