@@ -3,6 +3,22 @@
 
 ## 進行中タスク
 
+- module 外 (ファイルスコープ) の `` `define `` が "duplicate macro name" になる問題 → 修正完了 (ビルド成功、コミット済み)
+  - 症状: ファイル先頭など module の外に `` `define A 1 `` を1つ書くだけで "duplicate macro name" エラーが出る (module 内の `` `define `` では出ない)
+  - 根本原因: `WordScanner.recheckWord()` がコンパイラ指令を副作用として処理するため、1つの `` `define `` が複数回処理されていた
+    - `NextText` プローブ / `MoveNext` / `WordScanner.Clone` のコンストラクタがいずれも `recheckWord()` を呼ぶ
+    - 特に `Clone` は新規 `WordScanner` を生成 → コンストラクタが index=0 の新 WordPointer で `recheckWord()` を実行し先頭の `` `define `` を再処理 → 直後に `ret.wordPointer = wordPointer.Clone()` で上書きするため、この再処理は完全に無駄かつ有害
+  - 修正1 (`WordScanner.cs`): `Clone` 用に `suppressInitialDirective` 引数付きの internal コンストラクタを新設し、`Clone` がこれを true で呼ぶことで先頭指令の再処理を抑止
+  - 修正2 (`WordScanner.cs` / `Macro.cs`): `Macro.DefineIndex` (`` `define `` のソース index) を追加し、`parseDefine` の重複判定を「処理中の指令が既登録の定義より**厳密に後**の位置にある場合のみ "duplicate macro name"」に変更 (同一位置の再処理・前方の指令再処理は無視)。真の再定義時はエントリを置換し、二重報告を防止
+  - 検証 (DebugMacroDuplicateTests / DebugMacroTraceTests 一時追加、コミット除外):
+    - `` `define A 1 `` 単独 (前/後/間に module) → エラーなし
+    - `` `define A 1 \n `define A 2 `` (真の再定義) → "duplicate macro name" 1件
+    - `` `define A 1 \n `undef A \n `define A 2 `` → エラーなし (undef 後に再定義)
+  - sv-tests: 1033 中 1027 合格 / 6 失敗 (regression なし)。失敗6件は既知 (5.6.4--include 環境依存 / other.sv / 16.12--property-iff / 5.6.1--nonescaped-access / 8.8--typed_constructor_param / 24.3--program)
+  - ビルド: SystemVerilogLanguageServer.Tests.csproj / RtlEditor2.Desktop.csproj 0 errors
+  - コミット: CodeEditor2VerilogPlugin `30ef362` "Fix spurious duplicate macro name at module scope"
+  - メモ: `Tool/ParseHierarchy.cs` の作業ツリー変更は本タスク外のため除外
+
 - module 本体の `BBB.CCC` (階層参照) でエラーが出ない問題 → 根本原因修正完了 (ビルド成功、コミット済み)
   - 症状: `module A; wire x; assign x = BBB.CCC; endmodule` のように未定義オブジェクト `BBB.CCC` を参照してもエラーが出ない (単独 `BBB` でも出ない)
   - 根本原因: commit `b5bd048` "add partial parse error block" で導入された `WordScanner.IsPartialParse` の条件が **反転** していた
