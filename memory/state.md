@@ -3,6 +3,20 @@
 
 ## 進行中タスク
 
+- module 本体の `BBB.CCC` (階層参照) でエラーが出ない問題 → 根本原因修正完了 (ビルド成功、コミット済み)
+  - 症状: `module A; wire x; assign x = BBB.CCC; endmodule` のように未定義オブジェクト `BBB.CCC` を参照してもエラーが出ない (単独 `BBB` でも出ない)
+  - 根本原因: commit `b5bd048` "add partial parse error block" で導入された `WordScanner.IsPartialParse` の条件が **反転** していた
+    - `if (CompletionContext == null) return true;` → 通常の full parse (CompletionContext == null) で `IsPartialParse == true` となり、`AddError` / `AddWarning` / `AddNotice` / `ApplyRule` の `if (IsPartialParse) return;` がすべて早期 return → **full parse のエラー・警告が全抑制**
+    - 一方 partial parse (autocomplete, CompletionContext != null) では `false` となりエラーが報告され得る (意図と正反対)
+  - 修正: `Verilog/WordScanner.cs` の `IsPartialParse` を `return CompletionContext != null;` に修正 (partial parse のときだけ true = エラー抑制)。doc コメントも追加
+  - 検証: Debug_AssignDotTests で `assign x = BBB.CCC;` が "unfound object" (index=39, CCC 位置) を報告することを確認。単独 `BBB` も "unfound object" (index=35)。`RtlEditor2.Desktop.csproj` / `SystemVerilogLanguageServer.Tests.csproj` ビルド 0 errors
+  - 副作用 (本修正により表面化した既存バグ): エラー抑制が解除されたため、sv-tests が 1027 合格 / 6 失敗 に変化 (従来 1031 合格 / 2 失敗)。新規 4 失敗は以下の既存 parser バグが「(エラーが報告されないため) pass 扱い」だったもの:
+    - `5.6.4--compiler-directives-include` (環境依存) / `24.3--program` (トークナイザ offset drift) は従来からの既知失敗
+    - 新規: `5.6.1--nonescaped-access` (escaped id `\cpu3` を `cpu3` で参照した assign が "illegal assignment") / `16.12--property-iff` (`a iff b` の "unfound object") / `8.8--typed_constructor_param` (`int t` class param の "unfound object") / `chapter-7/arrays/associative/other.sv` (`int I[*];` struct member の associated array 構文エラー群)
+    - いずれも本修正とは独立した parser 未対応 (要個別対応)
+  - コミット: CodeEditor2VerilogPlugin `933dcaf` "Fix inverted IsPartialParse logic suppressing all errors in full parse"
+  - メモ: `Tool/ParseHierarchy.cs` の作業ツリー変更は本タスク外のため除外
+
 - module 本体の `AAAAAA.BBBB` のような無意味な階層参照がエラーにならない問題 → 修正完了 (ビルド成功、コミット済み)
   - 症状: `module MODULE4;\nAAAAAA.BBBB\nendmodule` のように `.` でつないだ無意味な識別子を module 本体に書いてもエラーが出ない (一方 `AAAAAA` 単独では "illegal module item" が出る)
   - 原因: `ModuleInstantiation.ParseAsync` (L257-264) の直前トークン検証が `General.IsIdentifier(word.Text)` を要求していた。module 識別子の直後トークンが identifier でない場合 (例: `.`) 条件が false になりエラーを出さず、続く while ループの `!IsIdentifier` 分岐の `SkipToKeyword(";")` がトークンを冪黙消費してしまうため、エラーが隠れていた
