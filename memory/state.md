@@ -3,6 +3,15 @@
 
 ## 進行中タスク
 
+- module 本体の `AAAAAA.BBBB` のような無意味な階層参照がエラーにならない問題 → 修正完了 (ビルド成功、コミット済み)
+  - 症状: `module MODULE4;\nAAAAAA.BBBB\nendmodule` のように `.` でつないだ無意味な識別子を module 本体に書いてもエラーが出ない (一方 `AAAAAA` 単独では "illegal module item" が出る)
+  - 原因: `ModuleInstantiation.ParseAsync` (L257-264) の直前トークン検証が `General.IsIdentifier(word.Text)` を要求していた。module 識別子の直後トークンが identifier でない場合 (例: `.`) 条件が false になりエラーを出さず、続く while ループの `!IsIdentifier` 分岐の `SkipToKeyword(";")` がトークンを冪黙消費してしまうため、エラーが隠れていた
+  - 修正: `validInstanceStart = General.IsIdentifier(word.Text) && (next == "(" || next == "[" || next == ";")` に変更し、`#` 以外でインスタンス名としての妥当な開始トークンでない場合に "illegal module item" を出す
+  - 同様の脆弱性が `ProgramInstantiation.ParseAsync` (illegal program item) と `InterfaceInstance.Parse` (illegal module item) にあったため同時修正
+  - 検証: デバッグテストで `AAAAAA.BBBB` が "illegal module item" になることを確認。sv-tests 全体 1031 合格 / 2 失敗 (既知: 5.6.4--compiler-directives-include 環境依存 / 24.3--program offset drift)、regression なし。RtlEditor2.Desktop.csproj ビルド 0 errors
+  - コミット: CodeEditor2VerilogPlugin `e9c3b2b`、メイン (submodule pointer 更新)
+  - メモ: `Tool/ParseHierarchy.cs` の作業ツリー変更は本タスク外のため除外
+
 - NavigateNode 選択切替で CodeEditor の Caret/Scroll 位置が保持されない問題 → 修正完了 (ビルド成功、コミット済み)
   - 症状: 別 node を選択して元の node に戻ると caret/scroll が先頭 (0) に戻る
   - 原因: `CodeView.SetTextFileAsync` (CodeEditor2/CodeEditor2/Views/CodeView.axaml.cs) で
