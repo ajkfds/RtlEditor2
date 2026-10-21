@@ -23,6 +23,7 @@
   - コミット: CodeEditor2VerilogPlugin `f63cd2a` (extern constraint) / `a76f08f` (6.5 代入) / `cb393ca` (10.3 net)、メイン (submodule pointer + state.md)
   - メモ: `RtlEditor2.Desktop/Program.cs` の作業ツリー変更は本タスク外のため除外。`SystemVerilogLanguageServer.Tests/DebugTypeCheckTests.cs` (検証用、extern constraint / net 代入ケース追加) は残置
   - 試行して撤回: `NonBlockingAssignment` への net 代入検出 (14.3--clocking-block-signals-error 狙い)。non-ANSI 出力ポート (`output q;` + `logic q;` 再宣言) が net 解決のままとなり 10.6.1/10.6.2 が regression。非ANSIポート再宣言を変数として扱う設計変更が必要なため保留 (10.3 の blocking 経路のみでは regression なし)
+  - 試行して撤回: `11.4.14.3--unpack_stream_inv` (stream wider than target)。`StreamingConcatenation.ComputeStreamBitWidth` を追加し `StreamExpression` の幅を合算 (デバッグで 96 が正しく計算されることを確認)。ただし `int d = {<<{a,b,c}};` の RHS を `Expression.ParseCreate` が返す Expression の `BitWidth` が null のため Variable の幅チェックに到達しない (`Expression.BitWidth` は `Primary` の値と非同期の箇所があり、streaming concat の Expression ラッパーへの幅伝播が未整備)。`DataObjectReference` の幅設定に int 型フォールバックを追加しても解決せず、Expression→Primary の BitWidth 伝播設計に踏み込む必要があるため保留
   - **残 NEG-NOT-REJECTED (report 掲載分)**: `18.17.6--aborting-productions-break-and-return_2_fail` / `8.26.6.3--diamond_relationship_parametrized` / `8.26.6.2--parameter_type_conflict_unresolved` / `11.4.14.3--unpack_stream_inv` / `14.3--clocking-block-signals-error` (non-ANSI 出力ポート再宣言の設計課題) / `8.25.1--parametrized_class_invalid_scope_resolution`
 
 - sv-tests NEG-NOT-REJECTED 残件の片付け (第2弾: fork 系) → **2 件解消済み (コミット済み、ビルド・テスト確認済み)**
