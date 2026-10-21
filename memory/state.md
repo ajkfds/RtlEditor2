@@ -3,6 +3,40 @@
 
 ## 進行中タスク
 
+- sv-tests NEG-NOT-REJECTED 残件の片付け → **7 件解消済み (未コミット、テスト・ビルド確認済み)**
+  - ユーザ要求: NEG-NOT-REJECTED の残件を片付ける
+  - 進捗: NEG-NOT-REJECTED **20 件 → 13 件** (7 件解消)。ビルド 0 errors、sv-tests 1032 合格 / 2 失敗 (既知のみ、regression なし)
+  - 作業ツリー: CodeEditor2VerilogPlugin サブモジュール 17 ファイル変更 (+446/-92)、すべて本タスク由来
+  - **解消 1 (前ターン実装を確定)**: `22.5.1--define-expansion_23` — `Verilog/WordScanner.cs` `compilerDirectiveNames` HashSet + `parseDefine` でコンパイラ指令名の再定義検出 (22.5.1)
+  - **解消 2 (前ターン実装を確定)**: `8.26.5--invalid_interface_instantiation` — `Verilog/Statements/BlockingAssignment.cs` で InterfaceClassVariable への `new` を検出 (8.26.5)
+  - **解消 3-5 (前ターンのバグを修正)**: `18.8--...rand_mode_4` / `18.9--...constraint_mode_1` / `18.6.3--behavior-of-randomization-methods_4`
+    - 原因: root-level class は prototype→real の 2 パスで **同一 `class_` インスタンス**を使い回すため (Class.cs)、prototype パスで `Replace(name, function)` すると real パスの `is BuiltInMethod` 判定が成立しなかった
+    - 修正 (`Verilog/Function.cs`): prototype パスで既存が `BuiltInMethod` の場合は **置換せず据え置き**、real パスでのみ判定 + 報告 (コメントで経緯明記)
+    - 修正 (`Verilog/BuildingBlocks/Class.cs`): 判定 helper `Class.IsNonOverridableBuiltInMethod` を移設 (暗黙 built-in を保有する側に責務を寄せる)。対象: randomize / srandom / rand_mode / constraint_mode / get_randstate (pre/post_randomize は override 可)
+    - 検証: 3 件すべてで Error 検出を確認。`18.6.2--post-randomize_method_0` は override 可のためエラーなし (正しい)
+  - **解消 6**: `22.3--resetall_illegal` (設計要素内 `resetall` は illegal、IEEE 1800-2017 22.3)
+    - 修正 (`Verilog/WordScanner.cs`): design element 入れ子深度 `designElementDepth` / `InDesignElement` / `EnterDesignElement()` / `ExitDesignElement()` を新設。`Clone` で深度を引き継ぐ。`parseCompilerDirective` の `` `resetall `` で `InDesignElement` なら `AddError`
+    - 修正 (横展開): `EnterDesignElement/ExitDesignElement` (try/finally) を Module / Interface / Package / Program / Class / Checker / Primitive の body parse に適用
+    - 検証: `22.3--resetall_illegal` で Error 検出、`22.3--resetall_basic` (module 外) はエラーなし
+  - **解消 7-9**: `18.5.4--distribution_2` / `18.5.14--soft-constraints_2` / `18.5.10--variable-ordering_1` (randc 変数への dist / soft / solve before は illegal、18.5.4 / 18.5.14 / 18.5.10)
+    - 修正 (`Verilog/DataObjects/DataObject.cs`): `RandomQualifier` プロパティ + `IsRandc` を新設
+    - 修正 (`Verilog/DataObjects/Variables/Variable.cs`): `ParseDeclaration` に `randomQualifier` 引数オーバーロードを追加し、宣言された DataObject に記録 (real パスの preDefined にも反映)
+    - 修正 (`Verilog/Items/ClassItem.cs`): `rand` / `randc` 分岐を新設し class_item_qualifier を消費した上で `randomQualifier` を渡す
+    - 修正 (`Verilog/Coverage/ConstraintDeclaration.cs`): helper `ReferencesRandcVariable` / `IsRandcVariable` / `GetSingleIdentifier` を新設し、`dist` / `soft` / `solve ... before` で randc を検出して AddError
+    - 検証: 3 件すべてで Error 検出
+  - **解消 10**: `typedef_test_28__bad` (forward typedef 未解決、IEEE 1800-2017 6.18)
+    - 修正 (`Verilog/ParsedDocument.cs`): `ForwardTypedefDeclaration` クラス + `ForwardTypedefs` リストを新設
+    - 修正 (`Verilog/DataObjects/Typedef.cs`): `typedef identifier ;` の forward 宣言時に `ForwardTypedefs` へ登録 (prototype / partial parse は除外)
+    - 修正 (`Verilog/BuildingBlocks/Root.cs`): `checkForwardTypedefs` を新設し `ParseCreateAsync` 末尾で検証 (Typedef / Class / InterfaceClass 以外は AddError)
+    - 検証: `typedef_test_28__bad` で Error 検出、`typedef_test_0` (正しい forward typedef) は regression なし
+  - 検証コマンド: `dotnet build SystemVerilogLanguageServer.Tests/...csproj -clp:ErrorsOnly` (0 errors) / `dotnet test --filter "FullyQualifiedName~SvTestsParserTests"` (1032 合格 / 2 失敗 = 既知 5.6.4--include 環境依存 + 24.3--program offset drift)
+  - 一時ファイル: `SystemVerilogLanguageServer.Tests/DebugTypeCheckTests.cs` (検証用、コミット除外・作業ツリー残置)。`CodeEditor2AiPlugin` (modified) / `RtlEditor2.Desktop/Program.cs` は本タスク外
+  - **残 NEG-NOT-REJECTED 13 件**: `11.4.14.3--unpack_stream_inv` (stream wider than target) / `6.5--variable_multiple_assignments` / `6.5--variable_mixed_assignments` (多重・混在 continuous assignment) / `18.17.6--aborting-productions-break-and-return_2_fail` / `8.26.6.3--diamond_relationship_parametrized` / `18.5.1--explicit-external-constraint_1` / `8.26.6.2--parameter_type_conflict_unresolved` / `13.4.4--fork-invalid` (function 内 fork join_any) / `10.3--proc-assignment--bad` / `14.3--clocking-block-signals-error` / `8.25.1--parametrized_class_invalid_scope_resolution` / `9.3.3--fork_return` (fork 内 return)
+  - **次に着手予定だった項目 (未実装)**: `9.3.3--fork_return` (fork 内 return) / `13.4.4--fork-invalid` (function 内 fork join_any)
+    - 調査済み: `Verilog/Statements/JumpStatement.cs` の `ReturnStatement.ParseCreate`、`Verilog/Statements/ParallelBlock.cs` の `JoinVariant` enum (Join / JoinAny / JoinNone) と `JoinType` プロパティ
+    - 実装方針案: (1) `WordScanner` に fork 深度を追加し、`ReturnStatement.ParseCreate` で fork 内なら AddError (9.3.3)。(2) `Function` 内で `fork ... join_any` / `join` を検出したら AddError、`join_none` は許可 (13.4.4)
+  - **Next**: (1) `9.3.3--fork_return` 実装 → (2) `13.4.4--fork-invalid` 実装 → (3) 残候補を順次 → (4) ビルド・sv-tests 全体 regression 確認 → (5) コミット (`DebugTypeCheckTests.cs` は除外)
+
 - sv-tests 未実装項目 (D) assertion 系 → 分類完了・対応不要と判明 (ハーネス分類修正、コミット済み)
   - ユーザ要求: sv-tests の現状 fail している要実装項目のうち (D) assertion 系を進める
   - 調査: (D) の候補 3 件 (`16.10--property-local-var-fail` / `16.10--sequence-local-var-fail` / `16.15--property-disable-iff-fail`) はいずれも `:type: simulation` の negative test で、`should_fail_because` の理由 (pipeline increments value by 4 but property expects incrementation by 3 / disable iff uses wrong reset polarity) は**シミュレーション実行時のアサーション評価失敗**。構文・elaboration は正常なため parser で reject するのは誤り (対応する positive test は合格済み)
