@@ -61,6 +61,14 @@ namespace SystemVerilogLanguageServer.Tests
             report.Append(await ParseAfterTwoPassesAsync("define-between-modules",
                 "module a;\nendmodule\n`define A 1\nmodule b;\nendmodule\n"));
 
+            // 6. genuine redefinition of the same macro at different lines -> should error
+            report.Append(await ParseAndCollectAsync("genuine-redefinition",
+                "`define A 1\n`define A 2\nmodule m;\nendmodule\n"));
+
+            // 7. undef then re-define -> should NOT error
+            report.Append(await ParseAndCollectAsync("undef-then-redefine",
+                "`define A 1\n`undef A\n`define A 2\nmodule m;\nendmodule\n"));
+
             File.WriteAllText(
                 Path.Combine(AppContext.BaseDirectory, "debug_macro_report.txt"),
                 report.ToString());

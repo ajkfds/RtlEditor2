@@ -15,6 +15,10 @@ public partial class LLMAgentWindow : Window
         {
             useDmsl = true;
         }
+        if (openRouterChat.CurrentModel != null && openRouterChat.CurrentModel.Name == pluginAi.OpenRouterModels.deepseek_4_1_flash_1017.Caption)
+        {
+            useDmsl = true;
+        }
         CodeEditor2.LLM.LLMAgent agent = new CodeEditor2.LLM.LLMAgent() { UseToolCallId = true,UseDSML = useDmsl };
         initialize(agent);
         //        LLM.InitializeVerilogLLMAgent.Run(project, agent, useFunctionCallApi);

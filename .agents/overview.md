@@ -22,9 +22,6 @@ A lightweight, modular Integrated Development Environment (IDE) for RTL design, 
 ```
 RtlEditor2/                                # Main repository (git add/commit here)
 ├── RtlEditor2.Desktop/                    # Main desktop application
-├── SystemVerilogCore/                      # UI-agnostic SystemVerilog interfaces (LSP seam)
-├── SystemVerilogLanguageServer/            # LSP server over stdin/stdout
-├── SystemVerilogLanguageServer.Tests/      # xUnit tests for the LSP server
 ├── AjkAvaloniaLibs/                        # Utility library (submodule)
 ├── AjkLibs/                                # Utility library (submodule)
 ├── AvaloniaEdit/                           # Text editor control (submodule)
@@ -49,7 +46,7 @@ RtlEditor2/                                # Main repository (git add/commit her
 |---------------|-----|------|
 | `CodeEditor2` | git@github.com:ajkfds/CodeEditor2.git | コアエディタコンポーネント |
 | `CodeEditor2Plugin` | git@github.com:ajkfds/CodeEditor2Plugin.git | ベースプラグインインターフェース |
-| `CodeEditor2VerilogPlugin` | git@github.com:ajkfds/CodeEditor2VerilogPlugin.git | Verilog/SystemVerilog言語サポート (CoreBridge/ で SystemVerilogCore への adapter を提供) |
+| `CodeEditor2VerilogPlugin` | git@github.com:ajkfds/CodeEditor2VerilogPlugin.git | Verilog/SystemVerilog言語サポート |
 | `CodeEditor2AiPlugin` | git@github.com:ajkfds/CodeEditor2AiPlugin.git | AI統合プラグイン |
 | `CodeEditor2AiAssistant` | git@github.com:ajkfds/CodeEditor2AiAssistant.git | AIアシスタント |
 | `CodeEditor2MarkdownPlugin` | git@github.com:ajkfds/CodeEditor2MarkdownPlugin.git | Markdownサポート |
@@ -61,19 +58,28 @@ RtlEditor2/                                # Main repository (git add/commit her
 | `AjkLibs` | https://github.com/ajkfds/AjkLibs.git | 汎用ユーティリティライブラリ |
 | `AvaloniaEdit` | git@github.com:ajkfds/AvaloniaEdit.git | テキストエディタコントロール |
 | `ajkCefGlue` | git@github.com:ajkfds/ajkCefGlue.git | CEF (Chromium Embedded Framework) サポート |
-| `TemplateEngineHost` | (要確認) | テンプレートエンジン |
 
-### 関連プロジェクト (メインディレクトリ)
+### コミット時の注意
 
-| プロジェクト | 用途 |
-|--------------|------|
-| `SystemVerilogCore` | LSP サーバと plugin 間の seam となる UI 非依存 interface 群 |
-| `SystemVerilogLanguageServer` | stdin/stdout 上で LSP を喋るサーバ。LSP client (VSCode/Neovim/Helix) から利用可能 |
-| `SystemVerilogLanguageServer.Tests` | xUnit による in-memory core と LspHandler の単体・結合テスト |
+**サブモジュール内のファイルを変更した場合**:
+```bash
+git -C <サブモジュール名>/<サブモジュール名> add <変更ファイルのパス>
+git -C <サブモジュール名>/<サブモジュール名> commit -m "<メッセージ>"
+```
+
+**メインディレクトリのファイルを変更した場合**:
+```bash
+git add <パス>
+git commit -m "<メッセージ>"
+```
 
 ## build方法
 
 ワーニングが大量にあるので、build時にはerrorのみ参照してください。
+
+```
+dotnet build -clp:ErrorsOnly
+```
 
 全体build
 ```
@@ -86,6 +92,8 @@ plugin単位のbuild
 <command>dotnet build CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin.sln -clp:ErrorsOnly</command>
 </execute_command>
 ```
+
+---
 
 ## Git Commit手順 (重要)
 
@@ -153,6 +161,33 @@ RtlEditor2/                          # メインディレクトリ (git add/comm
    - `git add <パス>`
    - `git commit -m "<メッセージ>"`
 
+
+
+### 呼び出しフロー (現在)
+
+```
+ParseHierarchy.runParallel() [Background Task - 複数ワーカー並列実行]
+    ↓
+各Worker: parseTextFile() → parser.ParseAsync()
+    ↓
+await verilogFile.AcceptParsedDocumentAsync(parser) [Background]
+    ├→ ParsedDocument設定
+    ├→ await VerilogFile.updateIncludeFilesAsync() [再帰処理]
+    └→ await UpdateAsync()
+              ↓
+        VerilogFile.UpdateAsync()
+              ├→ await base.UpdateAsync()
+              └→ await VerilogCommon.Updater.UpdateAsync()
+                    ↓
+                    // UI thread check → false (Background Taskなので)
+                    // ↓ そのまま処理続行
+                    await _semaphore.WaitAsync() ←── ★ Worker Aがsemaphore保持中
+                          ↓
+                          // → Worker B, C, D...がここでブロック!
+                    Items更新処理
+```
+
+---
 
 ## License
 
