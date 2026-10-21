@@ -3,6 +3,29 @@
 
 ## 進行中タスク
 
+- sv-tests 未実装項目の優先度順解決 (第1弾: パーサ POS-ERROR 4件 + プリプロセッサ検証) → 実装完了 (ビルド成功、テスト合格、コミット済み)
+  - ユーザ要求: svtest での未実装項目をまとめて、優先度順に解決する
+  - 着手前の集計 (全 1034 ファイル): 合格 1028 / POS-ERROR 6 / UVM-SKIPPED 115 / NEG-NOT-REJECTED 53
+  - 解消1 (5.6.1--nonescaped-access POS-ERROR): `DataObjectReference.ParseCreate` 冒頭の `ContainsDataObject(word.Text)` が escaped alias を考慮せず即 return していた。`GetDataObject(owner, name)` helper を新設し、`\cpu3` 登録 → `cpu3` 参照 (および逆) を解決 (IEEE 1800-2017 5.6.1)。宣言側キーは `\cpu3` (バックスラッシュ込み) のため `"\` + name" の代替キー参照が必要だった
+  - 解消2 (chapter-7/arrays/associative/other.sv POS-ERROR): `int I[*];` (struct メンバの unsized_dimension) が unpacked dimension の式解析経路に落ちて `] expected` 連鎖。`StructType.parseMembers` に `word.NextText == "*"` 分岐を追加し `[ * ]` を消費
+  - 解消3 (16.12--property-iff POS-ERROR): `assert property (@(posedge clk) a iff b)` で `iff` が keyword でないため `SequenceExpr` の `DistExpression` が識別子式として消費し "unfound object"。修正2点: (a) `SequenceExpr.ParseCreate` のループ冒頭で property 専用二項演算子 (iff / implies / until / s_until / until_with / s_until_with) を見たら break、(b) `PropertyExpr.ParseCreate` で先頭要素解析後は `ParseBinaryOperator` を SequenceExpr より先に判定
+  - 解消4 (8.8--typed_constructor_param POS-ERROR): module 内 declare の class は prototype / real の2インスタンスが生成され、`nameSpace.NamedElements` には prototype 版、`BuildingBlocks` には real 版が残る。parameter port が prototype 版にのみ登録され real 版の method body から解決できず "unfound object"。修正2点: (a) `Class.ParseDeclaration` の real 分岐で prototype 要素を real インスタンスへマージ、(b) `Class.ParseCreate` の class_item 解析ループ前に同一名の先行 Class 要素をマージ、(c) `Constants.ParseCreateParamAssignmentsForPort` の real 分岐で未登録時にパラメータを登録
+  - 解消5 (プリプロセッサ指令の引数検証 / NEG-NOT-REJECTED 10件): `WordScanner.parseCompilerDirective` に検証を追加
+    - `` `line ``: `parseLineDirective` 新設。number は正整数、filename は文字列リテラル、level は 0/1/2 かつ必須 (22.12--line-illegal-1〜5)
+    - `` `timescale ``: `validateTimescaleDirective` 新設。magnitude は 1/10/100、precision は unit 以上に精細。`1 ns / 1 ps` (5トークン) と `100ps/10ps` (1トークン) の両形式に対応 (22.7--timescale-basic-3/4)
+    - `` `unconnected_drive ``: `validateUnconnectedDriveArgument` 新設。pull0/pull1 のみ許可 (22.9--unconnected_drive-invalid-1/2)
+    - `` `nounconnected_drive ``: 同一行にトークンがあれば引数エラー (22.9--unconnected_drive-invalid-3)
+    - `` `pragma ``: pragma_name が同一行にあるか検証 (22.11--pragma-invalid)
+    - helper: `getDirectiveLineTokens` (MoveNextUntilEol の行テキストを空白分割) / `getLineEndIndex` / `tryParseTimescale`
+  - 解消6 (6.12--real_edge NEG): `EventExpression.ParseCreateSingle` で edge (posedge/negedge/edge) の対象が real 型ならエラー (IEEE 1800-2017 6.12)。helper `isRealType` / `getReferencedDataObjects`
+  - 解消7 (6.19--enum_xx_inv / 6.19--enum_xx_inv_order NEG): `Enum.parseItem` で 2-state 基底型 (bit/byte/shortint/int/longint) または基底型未指定 (既定 int は 4-state なので対象外) の enum 名に x/z 値、および x/z 値に続く未代入名をエラー (IEEE 1800-2017 6.19.2)。helper `isFourStateBaseType` / `containsXOrZ` (式文字列に x/z/? を含むか)
+  - 解消8 (6.12--real_bit_select_idx NEG の一部): `DataObjectReference` で real 変数への bit select をエラー。helper `isRealVariable` (テスト自体は real を添字に使うケースのため未解消)
+  - 結果: sv-tests **1032 合格 / 2 失敗** (着手前 1028/6)。残る 2 件は既知 (5.6.4--compiler-directives-include は `/dev/null` の環境依存 / 24.3--program はトークナイザ offset drift)。NEG-NOT-REJECTED は **53 → 41** (12件解消)。regression なし
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `3e0c73e` (POS-ERROR 4件 + プリプロセッサ検証) / `ca12ce4` (enum x/z + real edge) / メイン (submodule pointer 更新)
+  - 次候補 (NEG-NOT-REJECTED 残 41件): (B) 型チェック系 (6.19.3--enum_type_checking_inv / 6.19.4--enum_numerical_expr_no_cast / 6.19--enum_value_inv / default-value.sv / variable-slice-zero.sv / 5.10-structure-arrays-illegal / 10.3--proc-assignment--bad / 13.4.1--function-void-return / 6.12--real_bit_select_idx) → (C) class 抽象性・制約 (class_member_test_5 / 8.21--abstract_class_inst / 18.5.2--pure-constraint_2 / 8.26.6.x) → (D) assertion (16.10 / 16.15) → (E) その他
+  - メモ: 一時デバッグテスト (DebugClassParamTests / DebugDirectiveTests / DebugPropertyIffTests) は検証用のためコミットから除外し作業ツリーに残置。DebugNonescapedTests の追加ケースは checkout で復元
+
 - ChatControl: native (API) tool call の UI 表示 (wait/spinner + 履歴) → 実装完了 (ビルド成功、コミット済み)
   - 症状: pseudo (message) tool call では wait 表示/履歴表示されるが、ネイティブ API tool call (MEAI function-invocation middleware) では表示されなかった
   - 原因: API tool loop は frontend 内 (`OpenRouterChat.GetStreamingResponseAsync` の `UseFunctionInvocation()` middleware) で完結するため、ChatControl が `ToolCallStarted/ToolCallEnded` を受け取れず spinner/tool-result item が生成されなかった
