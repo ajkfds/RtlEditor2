@@ -3,6 +3,13 @@
 
 ## 進行中タスク
 
+- sv-tests 関連 実装項目のまとめ (`memory/svtest_summary.md`) → 作成完了 (コミット済み)
+  - ユーザ要求: sv-tests に関係する実装項目をまとめる
+  - 方針: `memory/state.md` に点在する sv-tests 関連の実装・修正項目 (テストハーネス / プリプロセッサ / class / constraint / assertion / array / nettype / system task / data type / statement / interface / エラー復帰) をカテゴリ別に整理
+  - 成果物: `memory/svtest_summary.md` 新設 (16 セクション)
+    - 現状ステータス (1032 合格 / 2 失敗)、テストハーネス、カテゴリ別実装項目、残課題一覧 (NEG-NOT-REJECTED 40件)、主要コミット履歴、メモ
+  - コード変更なし (ドキュメントのみ、ビルド不要)。sv-tests に関係する実装履歴を一覧参照できるリファレンスとして整備
+
 - sv-tests 未実装項目の優先度順解決 (第1弾: パーサ POS-ERROR 4件 + プリプロセッサ検証) → 実装完了 (ビルド成功、テスト合格、コミット済み)
   - ユーザ要求: svtest での未実装項目をまとめて、優先度順に解決する
   - 着手前の集計 (全 1034 ファイル): 合格 1028 / POS-ERROR 6 / UVM-SKIPPED 115 / NEG-NOT-REJECTED 53
