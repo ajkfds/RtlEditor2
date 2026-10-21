@@ -20,10 +20,12 @@
   - 解消6 (6.12--real_edge NEG): `EventExpression.ParseCreateSingle` で edge (posedge/negedge/edge) の対象が real 型ならエラー (IEEE 1800-2017 6.12)。helper `isRealType` / `getReferencedDataObjects`
   - 解消7 (6.19--enum_xx_inv / 6.19--enum_xx_inv_order NEG): `Enum.parseItem` で 2-state 基底型 (bit/byte/shortint/int/longint) または基底型未指定 (既定 int は 4-state なので対象外) の enum 名に x/z 値、および x/z 値に続く未代入名をエラー (IEEE 1800-2017 6.19.2)。helper `isFourStateBaseType` / `containsXOrZ` (式文字列に x/z/? を含むか)
   - 解消8 (6.12--real_bit_select_idx NEG の一部): `DataObjectReference` で real 変数への bit select をエラー。helper `isRealVariable` (テスト自体は real を添字に使うケースのため未解消)
-  - 結果: sv-tests **1032 合格 / 2 失敗** (着手前 1028/6)。残る 2 件は既知 (5.6.4--compiler-directives-include は `/dev/null` の環境依存 / 24.3--program はトークナイザ offset drift)。NEG-NOT-REJECTED は **53 → 41** (12件解消)。regression なし
+  - 解消9 (13.4.1--function-void-return NEG): `ReturnStatement.ParseCreate` で戻り値付き return のとき enclosing nameSpace が `Function` かつ `ReturnVariable == null` (void 宣言) ならエラー (IEEE 1800-2017 13.4.1)
+  - 結果: sv-tests **1032 合格 / 2 失敗** (着手前 1028/6)。残る 2 件は既知 (5.6.4--compiler-directives-include は `/dev/null` の環境依存 / 24.3--program はトークナイザ offset drift)。NEG-NOT-REJECTED は **53 → 40** (13件解消)。regression なし
   - ビルド成功 (CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj, 0 errors)
-  - コミット: CodeEditor2VerilogPlugin `3e0c73e` (POS-ERROR 4件 + プリプロセッサ検証) / `ca12ce4` (enum x/z + real edge) / メイン (submodule pointer 更新)
-  - 次候補 (NEG-NOT-REJECTED 残 41件): (B) 型チェック系 (6.19.3--enum_type_checking_inv / 6.19.4--enum_numerical_expr_no_cast / 6.19--enum_value_inv / default-value.sv / variable-slice-zero.sv / 5.10-structure-arrays-illegal / 10.3--proc-assignment--bad / 13.4.1--function-void-return / 6.12--real_bit_select_idx) → (C) class 抽象性・制約 (class_member_test_5 / 8.21--abstract_class_inst / 18.5.2--pure-constraint_2 / 8.26.6.x) → (D) assertion (16.10 / 16.15) → (E) その他
+  - コミット: CodeEditor2VerilogPlugin `3e0c73e` (POS-ERROR 4件 + プリプロセッサ検証) / `ca12ce4` (enum x/z + real edge) / `7f6cd66` (real bit select) / `df89ba8` (void function return)、メイン `cc0e562` / `33a7a60` / `7db77b3` (submodule pointer 更新)
+  - 試行して撤回: 10.3--proc-assignment--bad (net への手続き代入検出)。`BlockingAssignment.ParseCreateAfterAssignmentOperator` に net チェックを入れると `10.6.1--assign-deassign` (`output q;` + `logic q;` の非ANSIポート再宣言) と `10.6.2--force-release` (`force u_flop.q`) が回帰。非ANSIポート net を変数宣言で置換する修正も prototype/real 両分岐で必要となり影響範囲が広いため、回帰ゼロを優先して撤回 (`git checkout`)。再着手時は非ANSIポート再宣言の設計から見直すこと
+  - 次候補 (NEG-NOT-REJECTED 残 40件): (B) 型チェック系 (6.19.3--enum_type_checking_inv / 6.19.4--enum_numerical_expr_no_cast / 6.19--enum_value_inv / default-value.sv / variable-slice-zero.sv / 5.10-structure-arrays-illegal / 6.12--real_bit_select_idx) → (C) class 抽象性・制約 (class_member_test_5 / 8.21--abstract_class_inst / 18.5.2--pure-constraint_2 / 8.26.6.x) → (D) assertion (16.10 / 16.15) → (E) その他
   - メモ: 一時デバッグテスト (DebugClassParamTests / DebugDirectiveTests / DebugPropertyIffTests) は検証用のためコミットから除外し作業ツリーに残置。DebugNonescapedTests の追加ケースは checkout で復元
 
 - ChatControl: native (API) tool call の UI 表示 (wait/spinner + 履歴) → 実装完了 (ビルド成功、コミット済み)
