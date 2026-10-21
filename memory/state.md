@@ -3,6 +3,17 @@
 
 ## 進行中タスク
 
+- SimulationSetup: parameter 付き instance + `generate if` で無効化した module が unfound 扱いになる問題 → 修正完了 (ビルド成功、コミット済み)
+  - ユーザ報告: `SimulationSetup.cs` の hierarchy 走査で parameter 付き instance した中で、そのパラメータを使って `generate if` でインスタンス B を無効化したとき、インスタンス B のモジュールが unfound 扱いになる
+  - 原因 (`Verilog/Items/ModuleInstantiation.cs` L237-251): `instancedModule == null` の分岐で、`word.RootParsedDocument.UnfoundModules` への登録が **prototype パス / partial parse / non-generated generate 分岐** を問わず無条件に実行されていた
+    - prototype パス (実装前に走る解析パス) では forward 参照の module が未登録のため、まだ解決できる module を「unfound」として記録
+    - `generate if` で非生成分岐 (`word.StartNonGenerated()` 中、`word.Active == false`) の instance も module が未登録のため unfound に記録
+    - Add は重複排除のみで real パス (登録済み module) になってもクリアされないため、stale な unfound 記録が `ParsedDocument.UnfoundModules` に残り、`SimulationSetup.searchHier` (L216-220) がそれを拾って `setup.UnfoundModules` に登録 → `Create()` が null を返し simulation 起動が拒否されていた
+  - 修正: 記録・ログ・`ReparseRequested = true` を `!word.Prototype && !word.IsPartialParse && word.Active` の real パス時のみに限定 (`word.AddError` 自体は `WordScanner.AddError` 内部で prototype / partial parse を抑制済みのため変更なし)
+  - 検証: CodeEditor2VerilogPlugin.csproj ビルド 0 errors
+  - コミット: CodeEditor2VerilogPlugin `2415f4a`、メイン (submodule pointer 更新 + state.md)
+  - メモ: `RtlEditor2.Desktop/Program.cs` の作業ツリー変更は本タスク外のため除外。`SystemVerilogLanguageServer.Tests/DebugTypeCheckTests.cs` (検証用) は残置
+
 - sv-tests NEG-NOT-REJECTED 残件の片付け → **7 件解消済み (コミット済み、テスト・ビルド確認済み)**
   - ユーザ要求: NEG-NOT-REJECTED の残件を片付ける
   - 進捗: NEG-NOT-REJECTED **20 件 → 13 件** (7 件解消)。ビルド 0 errors、sv-tests 1032 合格 / 2 失敗 (既知のみ、regression なし)
