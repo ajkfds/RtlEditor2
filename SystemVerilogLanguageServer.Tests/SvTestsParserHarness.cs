@@ -80,6 +80,23 @@ namespace SystemVerilogLanguageServer.Tests
         }
 
         /// <summary>
+        /// True when the test is marked ":type: simulation". Such negative tests
+        /// fail at simulation run time (assertion evaluation, reset polarity, a
+        /// value that does not match the expected pipeline depth, ...) rather
+        /// than at parse / elaboration time, so a parser cannot reject them.
+        /// They are recorded separately instead of as NEG-NOT-REJECTED.
+        /// </summary>
+        internal static bool IsSimulationOnlyTest(string text)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(
+                text, @"^[ \t]*:type:[ \t]*(?<value>[^\r\n]*)",
+                System.Text.RegularExpressions.RegexOptions.Multiline);
+            if (!match.Success) return false;
+            return match.Groups["value"].Value.Trim()
+                .Equals("simulation", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// Parses the sv-tests `:defines:` metadata marker
         /// (`:defines: NAME1 NAME2=VALUE ...`) from the file header. The
         /// harness passes these as preprocessor defines (equivalent to the

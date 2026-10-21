@@ -3,6 +3,16 @@
 
 ## 進行中タスク
 
+- sv-tests 未実装項目 (D) assertion 系 → 分類完了・対応不要と判明 (ハーネス分類修正、コミット済み)
+  - ユーザ要求: sv-tests の現状 fail している要実装項目のうち (D) assertion 系を進める
+  - 調査: (D) の候補 3 件 (`16.10--property-local-var-fail` / `16.10--sequence-local-var-fail` / `16.15--property-disable-iff-fail`) はいずれも `:type: simulation` の negative test で、`should_fail_because` の理由 (pipeline increments value by 4 but property expects incrementation by 3 / disable iff uses wrong reset polarity) は**シミュレーション実行時のアサーション評価失敗**。構文・elaboration は正常なため parser で reject するのは誤り (対応する positive test は合格済み)
+  - 結論: (D) は parser 実装課題ではなく、テストハーネスの negative 分類の問題だった。`:type: simulation` の negative test を `[SIMULATION-ONLY]` として `[NEG-NOT-REJECTED]` から分離
+  - 修正: `SvTestsParserHarness.IsSimulationOnlyTest` 新設 (`:type: simulation` メタデータ判定)。`SvTestsParserTests.ParseSvTestFile` の negative 分岐で、errorCount==0 のとき simulation-only なら `[SIMULATION-ONLY]` を記録 (parser 実装 gap の `[NEG-NOT-REJECTED]` と区別)
+  - 効果: 対象 3 件 (`16.10` x2 / `16.15`) + `11.9--tagged_union_member_access_inv` が `[SIMULATION-ONLY]` に再分類され、`[NEG-NOT-REJECTED]` (parser 未実装) の count が減少。(D) の「要実装項目」は 0 件 (全て simulation 実行時失敗で parser 対象外)
+  - 検証: SystemVerilogLanguageServer.Tests.csproj ビルド 0 errors。sv-tests 全体 1083 合格 / 3 失敗 (既知のみ、regression なし)
+  - コミット: メイン (SvTestsParserHarness.cs / SvTestsParserTests.cs)。コード変更なし
+  - メモ: `DebugTypeCheckTests.cs` (B/C 検証ケース) は検証用のためコミットから除外 (作業ツリーに残置)
+
 - sv-tests 未実装項目 (C) class 抽象性・制約系 → 一部実装完了 (4件解消、ビルド成功、テスト合格、コミット済み)
   - ユーザ要求: sv-tests の現状 fail している要実装項目のうち (C) class 抽象性・制約を進める
   - 背景: (C) の 6 項目 (`class_member_test_5` / `8.21--abstract_class_inst` / `8.26.6.1--name_conflict_unresolved` / `8.26.6.2--parameter_type_conflict_unresolved` / `8.26.6.3--diamond_relationship_parametrized` / `18.5.2--pure-constraint_2`) は全て `[NEG-NOT-REJECTED] 0 errors` だった

@@ -120,9 +120,20 @@ namespace SystemVerilogLanguageServer.Tests
             {
                 if (errorCount == 0)
                 {
-                    // negative test not rejected by the parser (known limitation,
-                    // recorded in the report but does not fail the run)
-                    RecordDiagnostic(fileName, $"[NEG-NOT-REJECTED] 0 errors ({allCount} diagnostics){diagText}");
+                    // ":type: simulation" negative tests fail at simulation run
+                    // time (assertion evaluation / reset polarity / pipeline
+                    // depth), not at parse / elaboration time, so a parser cannot
+                    // reject them; record them separately from parser gaps.
+                    if (IsSimulationOnlyTest(text))
+                    {
+                        RecordDiagnostic(fileName, $"[SIMULATION-ONLY] 0 errors ({allCount} diagnostics){diagText}");
+                    }
+                    else
+                    {
+                        // negative test not rejected by the parser (known limitation,
+                        // recorded in the report but does not fail the run)
+                        RecordDiagnostic(fileName, $"[NEG-NOT-REJECTED] 0 errors ({allCount} diagnostics){diagText}");
+                    }
                 }
                 return;
             }
