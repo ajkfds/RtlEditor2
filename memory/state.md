@@ -3,6 +3,21 @@
 
 ## 進行中タスク
 
+- sv-tests 未実装項目 (B) 型チェック系 7件 → 実装完了 (ビルド成功、テスト合格、コミット済み)
+  - ユーザ要求: sv-tests の現状 fail している要実装項目のうち (B) 型チェック系を実装する
+  - 背景: sv_tests は loose モード (negative test は diagnostic 記録のみ、fail にしない) のため、(B) の項目は全て `[NEG-NOT-REJECTED] 0 errors` として残っていた (parser が負例を reject できていない状態)。作業ツリーに前セッションの未コミット実装 (8ファイル / 272 挿入) が存在したため、内容を精査・検証して確定
+  - 解消1 (6.19--enum_value_inv): `Enum.parseItem` — sized literal constant のサイズが enum 基底型と異なる場合をエラー (IEEE 1800-2017 6.19.2)。`enum logic [2:0] { Global = 4'h2, Local = 4'h3 }` を reject (4 != 3)
+  - 解消2 (6.19.3--enum_type_checking_inv): `BlockingAssignment.checkEnumAssignment` 新設 — enum 変数へのプレーン整数リテラル代入をエラー (`val = 1;` は明示 cast `e'(1)` が必要、IEEE 1800-2017 6.19.3)。enum 変数の lvalue 判定は `getAssignedEnumVariable` (DataObjectReference.OrigainalDataObject の DataType が Enum / UserDefinedType 展開後 Enum)
+  - 解消3 (6.19.4--enum_numerical_expr_no_cast): 同 helper — enum 変数への代入/算術代入演算子 (`+=` / `-=` 等) をエラー (6.19.4)。`val += 1;` を reject (`++` / `--` は合法)
+  - 解消4 (6.12--real_bit_select_idx): `DataObjectReference.reportRealIndexOperand` 新設 — index 式 (`[ ]` 内) が real 変数参照ならエラー (`b[a]` の a が real、IEEE 1800-2017 6.12)。probe (word.Clone) で index 式を先行解析してトークン消費に影響を与えない
+  - 解消5 (variable-slice-zero): `RangeExpression.checkZeroWidthRange` 新設 — indexed part-select (`+:` / `-:`) の幅が定数 0 以下ならエラー (IEEE 1800-2017 11.5.1 / 7.4.3)。`arr_a[1+:c]` (c=parameter 0) を reject
+  - 解消6 (5.10-structure-arrays-illegal): `Variable.checkStructArrayAssignmentPattern` 新設 — struct 配列への C-like 平坦 assignment pattern (`ms_t ms[1:0] = '{0, 0, 1, 1};`) をエラー (IEEE 1800-2017 5.10 / 10.9、要素ごとの nested pattern が必要)
+  - 解消7 (default-value): `StructType.isMemberDefaultValueIllegal` 新設 — packed struct メンバの個別 default 値 (`bit [3:0] lo = c;`) をエラー (IEEE 1800-2017 7.2.2)。union を含む unpacked struct のメンバも同様
+  - 副次解消 (同コミットの2ファイル): 5.7.1--integers-signed-illegal (Number.cs — based number の値部の符号 `8'd-6` をエラー、`-8'd6` は可) / 6.20.5--specparam_inv (Constants.cs — specparam の parameter 参照をエラー)
+  - 検証: CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj ビルド 0 errors。Debug_TypeCheck で対象 7件すべてでエラー生成を確認。sv-tests 全体 1083 合格 / 3 失敗 (失敗3件は既知: 5.6.4--include 環境依存 / 24.3--program offset drift / InMemoryCore_CompletionFromRealParser 既存)。regression なし。(B) の 7ファイルはレポートから消滅 (NEG-NOT-REJECTED 解消)
+  - コミット: CodeEditor2VerilogPlugin `d7e96e4` (8 files, +272/-10)、メイン (submodule pointer 更新)
+  - メモ: `DebugTypeCheckTests.cs` は検証用のためコミットから除外 (作業ツリーに残置)。作業ツリーの `CodeEditor2AiPlugin` (modified content) / `RtlEditor2.Desktop/Program.cs` は本タスク外のため除外
+
 - sv-tests 関連 実装項目のまとめ (`memory/svtest_summary.md`) → 作成完了 (コミット済み)
   - ユーザ要求: sv-tests に関係する実装項目をまとめる
   - 方針: `memory/state.md` に点在する sv-tests 関連の実装・修正項目 (テストハーネス / プリプロセッサ / class / constraint / assertion / array / nettype / system task / data type / statement / interface / エラー復帰) をカテゴリ別に整理
