@@ -14,7 +14,17 @@
   - コミット: CodeEditor2VerilogPlugin `2415f4a`、メイン (submodule pointer 更新 + state.md)
   - メモ: `RtlEditor2.Desktop/Program.cs` の作業ツリー変更は本タスク外のため除外。`SystemVerilogLanguageServer.Tests/DebugTypeCheckTests.cs` (検証用) は残置
 
-- sv-tests NEG-NOT-REJECTED 残件の片付け → **7 件解消済み (コミット済み、テスト・ビルド確認済み)**
+- sv-tests NEG-NOT-REJECTED 残件の片付け (第2弾: fork 系) → **2 件解消済み (コミット済み、ビルド・テスト確認済み)**
+  - ユーザ要求: 中断中の実装を進める
+  - 対象: `9.3.3--fork_return` (fork 内 return) / `13.4.4--fork-invalid` (function 内 fork join/join_any)
+  - **解消 1 (`9.3.3--fork_return`)**: `WordScanner` に fork 深度 `forkDepth` / `InFork` / `EnterFork()` / `ExitFork()` を新設 (`Clone` で深度継承)。`ParallelBlock.parseParallelBlock` / `parseNamedParallelBlock` の statement ループを try/finally で `EnterFork`/`ExitFork`。`JumpStatement.ReturnStatement.ParseCreate` で `word.InFork` のとき AddError ("return shall not be used within a fork-join block"、IEEE 1800-2017 9.3.3)
+  - **解消 2 (`13.4.4--fork-invalid`)**: `ParallelBlock` に `reportIllegalJoinInFunction` helper を新設。join 種別確定後、`nameSpace is Verilog.Function` かつ join 種別が Join / JoinAny の場合に AddError ("only fork-join_none is permitted inside a function"、IEEE 1800-2017 13.4.4)。join_none は許可 (13.4.4--fork-valid は regression なし)
+  - 検証: CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj ビルド 0 errors。sv-tests 1032 合格 / 2 失敗 (既知のみ、regression なし)。report から 9.3.3--fork_return / 13.4.4--fork-invalid の [NEG-NOT-REJECTED] が消滅 (正しく reject)
+  - コミット: CodeEditor2VerilogPlugin `ee704d2`、メイン (submodule pointer + state.md)
+  - メモ: `RtlEditor2.Desktop/Program.cs` の作業ツリー変更は本タスク外のため除外。`SystemVerilogLanguageServer.Tests/DebugTypeCheckTests.cs` (検証用) は残置
+  - **次の残 NEG-NOT-REJECTED 候補** (report 掲載分): `6.5--variable_multiple_assignments` / `6.5--variable_mixed_assignments` / `11.4.14.3--unpack_stream_inv` / `18.17.6--aborting-productions-break-and-return_2_fail` / `8.26.6.3--diamond_relationship_parametrized` / `18.5.1--explicit-external-constraint_1` / `8.26.6.2--parameter_type_conflict_unresolved` / `10.3--proc-assignment--bad` / `14.3--clocking-block-signals-error` / `8.25.1--parametrized_class_invalid_scope_resolution`
+
+- sv-tests NEG-NOT-REJECTED 残件の片付け (第1弾) → **7 件解消済み (コミット済み、テスト・ビルド確認済み)**
   - ユーザ要求: NEG-NOT-REJECTED の残件を片付ける
   - 進捗: NEG-NOT-REJECTED **20 件 → 13 件** (7 件解消)。ビルド 0 errors、sv-tests 1032 合格 / 2 失敗 (既知のみ、regression なし)
   - 作業ツリー: CodeEditor2VerilogPlugin サブモジュール 17 ファイル変更 (+446/-92)、すべて本タスク由来
