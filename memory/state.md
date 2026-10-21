@@ -3,6 +3,18 @@
 
 ## 進行中タスク
 
+- sv-tests 未実装項目 (C) class 抽象性・制約系 → 一部実装完了 (4件解消、ビルド成功、テスト合格、コミット済み)
+  - ユーザ要求: sv-tests の現状 fail している要実装項目のうち (C) class 抽象性・制約を進める
+  - 背景: (C) の 6 項目 (`class_member_test_5` / `8.21--abstract_class_inst` / `8.26.6.1--name_conflict_unresolved` / `8.26.6.2--parameter_type_conflict_unresolved` / `8.26.6.3--diamond_relationship_parametrized` / `18.5.2--pure-constraint_2`) は全て `[NEG-NOT-REJECTED] 0 errors` だった
+  - 解消1 (class_member_test_5): `MethodPrototype.ParseCreateWithPureVirtual` — 非 virtual class 内の `pure virtual` をエラー ("pure virtual methods can only be declared in a virtual class"、IEEE 1800-2017 8.3/8.21)。`Class.IsVirtual` を参照
+  - 解消2 (8.21--abstract_class_inst): `BlockingAssignment.parseCreateClassNewAssignment` — abstract (`virtual`) class のインスタンス化 (`new`) をエラー ("an abstract class shall not be instantiated"、8.21)。`class_` を isDynamicArrayNew ブロック外で宣言するよう修正
+  - 解消3 (18.5.2--pure-constraint_2): `ConstraintDeclaration.IsPure` プロパティ新設 + `MethodPrototype` の `pure constraint` 分岐 (ParseCreate で IsPure=true 登録) + `Class.checkPureConstraintsImplemented` — 非 virtual 派生 class が継承した pure constraint を実装していない場合にエラー (18.5.2)。extends チェーンを遡り、非 pure の同名 constraint 再宣言を実装とみなす
+  - 解消4 (8.26.6.1--name_conflict_unresolved): `Class.checkInterfaceClassMethodNameConflict` — implements した複数 interface class で同名メソッドのシグネチャ (戻り型 + port 型/方向) が異なる場合にエラー ("unresolved interface class method name conflict"、8.26.6.1)。`EnumerateInterfaceClassAndBases` (cycle-safe BFS) + `buildMethodSignature` helper。positive の `name_conflict_resolved` (同名・同シグネチャ) はエラーにしない
+  - 未対応 (今回範囲外): 8.26.6.2--parameter_type_conflict_unresolved / 8.26.6.3--diamond_relationship_parametrized。interface class extends の `#(...)` パラメータ特殊化の型同一性判定 (parameter_value_assignment の型情報保持 + 特殊化の区別) が必要で、現状 `word.SkipToKeyword(")")` で消費のみのため実装リスク高。後続課題
+  - 検証: CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj / RtlEditor2.Desktop.csproj ビルド 0 errors。Debug_TypeCheck で解消4件のエラー生成 + name_conflict_resolved がエラーなしを確認。sv-tests 全体 1083 合格 / 3 失敗 (既知: 5.6.4--include 環境依存 / 24.3--program offset drift / InMemoryCore_CompletionFromRealParser 既存)。regression なし
+  - コミット: CodeEditor2VerilogPlugin `9b9a0d4` (4 files, +199/-1)、メイン (submodule pointer 更新)
+  - メモ: `DebugTypeCheckTests.cs` (C 項目の検証ケース追加) は検証用のためコミットから除外 (作業ツリーに残置)
+
 - sv-tests 未実装項目 (B) 型チェック系 7件 → 実装完了 (ビルド成功、テスト合格、コミット済み)
   - ユーザ要求: sv-tests の現状 fail している要実装項目のうち (B) 型チェック系を実装する
   - 背景: sv_tests は loose モード (negative test は diagnostic 記録のみ、fail にしない) のため、(B) の項目は全て `[NEG-NOT-REJECTED] 0 errors` として残っていた (parser が負例を reject できていない状態)。作業ツリーに前セッションの未コミット実装 (8ファイル / 272 挿入) が存在したため、内容を精査・検証して確定
