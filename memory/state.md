@@ -3,6 +3,22 @@
 
 ## 進行中タスク
 
+- ChatControl: native (API) tool call の UI 表示 (wait/spinner + 履歴) → 実装完了 (ビルド成功、コミット済み)
+  - 症状: pseudo (message) tool call では wait 表示/履歴表示されるが、ネイティブ API tool call (MEAI function-invocation middleware) では表示されなかった
+  - 原因: API tool loop は frontend 内 (`OpenRouterChat.GetStreamingResponseAsync` の `UseFunctionInvocation()` middleware) で完結するため、ChatControl が `ToolCallStarted/ToolCallEnded` を受け取れず spinner/tool-result item が生成されなかった
+  - 修正1 (CodeEditor2 `ILLMChatFrontEnd.cs`): `ToolCallNotificationEventArgs` (CallId/ToolName/IsStarting/Result) と `event ToolCallNotification` を新設
+  - 修正2 (CodeEditor2 `ChatControl.axaml.cs`):
+    - `SetModel` で `ToolCallNotification` を購読 (旧 frontend からは解除して二重通知を防止)
+    - `Chat_ToolCallNotification` ハンドラを新設: 開始で tool-result item + spinner、終了で result 追記 + spinner 停止
+    - `ToolCallStarted` に `insertAboveResult` 引数を追加。native は tool call と最終応答が同一 result item に流れるため、tool-result item を result item の直上に挿入して時系列順を維持
+    - `nativeToolResultItems` リストを新設し、turn 終了時に各 item へ footer (token/経過時間) を適用
+  - 修正3 (CodeEditor2AiPlugin `OpenRouterChat.cs`):
+    - `ToolCallNotification` イベントを実装
+    - `RaiseToolCallNotifications` を新設し、streaming update の `FunctionCallContent` (名前確定時に started) / `FunctionResultContent` (finished + result) を通知
+    - `FinishReason == ToolCalls` の "blank (Function Call requested)" 疑似 yield を削除 (middleware が turn を継続し最終応答を stream するため、tool call と応答の間に余計な行が挟まるのを防止)
+  - ビルド成功 (CodeEditor2.csproj 0 errors / CodeEditor2AiPlugin.csproj 0 errors)。全体ビルドの MSB3027/MSB3021 は稼働中 RtlEditor2.Desktop による DLL ロックで本修正と無関係
+  - Next: エディタ上で native function calling (EnableFunctionCalling=true) の tool call 実行時に spinner + tool result 履歴、footer が pseudo と同じように表示されることの確認
+
 - module 外 (ファイルスコープ) の `` `define `` が "duplicate macro name" になる問題 → 修正完了 (ビルド成功、コミット済み)
   - 症状: ファイル先頭など module の外に `` `define A 1 `` を1つ書くだけで "duplicate macro name" エラーが出る (module 内の `` `define `` では出ない)
   - 根本原因: `WordScanner.recheckWord()` がコンパイラ指令を副作用として処理するため、1つの `` `define `` が複数回処理されていた
