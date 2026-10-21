@@ -14,6 +14,15 @@
   - コミット: CodeEditor2VerilogPlugin `2415f4a`、メイン (submodule pointer 更新 + state.md)
   - メモ: `RtlEditor2.Desktop/Program.cs` の作業ツリー変更は本タスク外のため除外。`SystemVerilogLanguageServer.Tests/DebugTypeCheckTests.cs` (検証用) は残置
 
+- sv-tests NEG-NOT-REJECTED 残件の片付け (第3弾: extern constraint / 6.5 代入) → **3 件解消済み (コミット済み、ビルド・テスト確認済み)**
+  - ユーザ要求: NEG-NOT-REJECTED 項目の実装を進める
+  - **解消 1 (`18.5.1--explicit-external-constraint_1`)**: `ConstraintDeclaration` に `IsExtern` / `IsExternImplemented` / `Reference` / `AddExternNotDefinedError()` を新設。`ClassItem.cs` の `extern constraint` 分岐で `IsExtern=true` + NamedElements 登録。`ConstraintDeclaration.ParseCreate` の out-of-block 定義 (`constraint a::c { ... }`) で該当 prototype の `IsExternImplemented=true`。`Root.checkExternConstraintsImplemented` を `ParseCreate` 末尾に追加し未定義の extern constraint を AddError (IEEE 1800-2017 18.5.1)
+  - **解消 2-3 (`6.5--variable_multiple_assignments` / `6.5--variable_mixed_assignments`)**: `DataObject` に `ContinuousAssigned` / `ProceduralAssigned` フラグを新設。`ContinuousAssign.checkContinuousAssignmentConflict` で同一変数への多重 continuous assignment と continuous + procedural 混在を AddError。`BlockingAssignment` / `NonBlockingAssignment` に `markProceduralAssignment` を追加し procedural 代入を記録 (IEEE 1800-2017 6.5)。`getAssignedDataObject` は `ContinuousAssign` の internal helper を共用
+  - 検証: CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj ビルド 0 errors。sv-tests 1032 合格 / 2 失敗 (既知のみ、regression なし)。10.6.1--assign-deassign / 10.6.2--force-release の regression も回避。report から 18.5.1--explicit-external-constraint_1 / 6.5--variable_multiple_assignments / 6.5--variable_mixed_assignments の [NEG-NOT-REJECTED] が消滅
+  - コミット: CodeEditor2VerilogPlugin `f63cd2a` (extern constraint) / `a76f08f` (6.5 代入)、メイン (submodule pointer + state.md)
+  - メモ: `RtlEditor2.Desktop/Program.cs` の作業ツリー変更は本タスク外のため除外。`SystemVerilogLanguageServer.Tests/DebugTypeCheckTests.cs` (検証用、extern constraint ケース追加) は残置
+  - **残 NEG-NOT-REJECTED (report 掲載分)**: `18.17.6--aborting-productions-break-and-return_2_fail` / `8.26.6.3--diamond_relationship_parametrized` / `8.26.6.2--parameter_type_conflict_unresolved` / `11.4.14.3--unpack_stream_inv` / `10.3--proc-assignment--bad` / `14.3--clocking-block-signals-error` / `8.25.1--parametrized_class_invalid_scope_resolution`
+
 - sv-tests NEG-NOT-REJECTED 残件の片付け (第2弾: fork 系) → **2 件解消済み (コミット済み、ビルド・テスト確認済み)**
   - ユーザ要求: 中断中の実装を進める
   - 対象: `9.3.3--fork_return` (fork 内 return) / `13.4.4--fork-invalid` (function 内 fork join/join_any)
