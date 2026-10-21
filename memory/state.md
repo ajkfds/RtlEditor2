@@ -3,10 +3,11 @@
 
 ## 進行中タスク
 
-- sv-tests NEG-NOT-REJECTED 残件の片付け → **7 件解消済み (未コミット、テスト・ビルド確認済み)**
+- sv-tests NEG-NOT-REJECTED 残件の片付け → **7 件解消済み (コミット済み、テスト・ビルド確認済み)**
   - ユーザ要求: NEG-NOT-REJECTED の残件を片付ける
   - 進捗: NEG-NOT-REJECTED **20 件 → 13 件** (7 件解消)。ビルド 0 errors、sv-tests 1032 合格 / 2 失敗 (既知のみ、regression なし)
   - 作業ツリー: CodeEditor2VerilogPlugin サブモジュール 17 ファイル変更 (+446/-92)、すべて本タスク由来
+  - コミット: CodeEditor2VerilogPlugin `d0c2948` (本タスク本体) / CodeEditor2AiPlugin `db5bcf4` (model metadata) + `3b15ab7` (AjkAvaloniaLibs pointer) / メイン `f48ebe2` (submodule pointer + Program.cs + state.md)
   - **解消 1 (前ターン実装を確定)**: `22.5.1--define-expansion_23` — `Verilog/WordScanner.cs` `compilerDirectiveNames` HashSet + `parseDefine` でコンパイラ指令名の再定義検出 (22.5.1)
   - **解消 2 (前ターン実装を確定)**: `8.26.5--invalid_interface_instantiation` — `Verilog/Statements/BlockingAssignment.cs` で InterfaceClassVariable への `new` を検出 (8.26.5)
   - **解消 3-5 (前ターンのバグを修正)**: `18.8--...rand_mode_4` / `18.9--...constraint_mode_1` / `18.6.3--behavior-of-randomization-methods_4`
