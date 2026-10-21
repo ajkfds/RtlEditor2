@@ -1163,6 +1163,18 @@ endmodule
 
 ## 進行中タスク
 
+- ChatControl: native (API) tool call 時に、それ以前に受け取った response を独立した chat message として表示 → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: LLM で api tool call を受けたとき tool call item が UI に追加されるが、その前にこれまで受け取った response も独立した chat message として UI に追加したい (現状は 1 つの Chat response にメッセージが追加され続け、その上に Tool call 結果だけが積み増されていく)
+  - 原因: native (API) tool call は `OpenRouterChat` の `ToolCallNotification` 経由で `Chat_ToolCallNotification` → `ToolCallStarted(insertAboveResult: true)` が呼ばれるだけだった。同一 LLM turn の stream は 1 つの `resultItem` に流れ続けるため、tool call 後も同じ item に追記され、tool-result item だけが上に積み上がっていた
+  - 修正1 (`ChatControl.axaml.cs`): `SplitStreamedResponseBeforeToolCall` を新設。`Chat_ToolCallNotification` の IsStarting で tool-result item 挿入の**前**に呼び、現在 stream 中の item を独立した chat message として確定 (completeColor + info footer 対象に登録) し、その直下に新しい空の response item を挿入して以降の stream 先を切り替える (表示順: response / tool call / response / tool call / answer)。進捗プレースホルダ ("waiting ...") しか無い場合はメッセージを増やさず破棄
+  - 修正2 (`ChatControl.axaml.cs`): `streamingResultItem` (split のたびに差し替え) / `splitResponseItems` (確定済み segment) フィールドを新設。streaming loop・progress timer・loop detection 追記・エラー表示はすべて `streamingResultItem ?? resultItem` を対象に変更。turn 終了時は footer を確定 segment すべてに適用
+  - 修正3 (`ChatControl.axaml.cs`): `responseTextBuilder` を新設し、LLM call の全 stream text を item 分割とは独立に蓄積。`completeWork` の戻り値 (tool call 解析 / loop 検出 / 履歴) が分割の影響を受けないようにした (戻り値と loop 検出は builder を使用)
+  - 修正4 (`ChatControl.axaml.cs`): 再接続 retry 時に中断した試行の continuation item を削除し、`streamingResultItem` を元の `resultItem` に戻す。`ResetAsync` でも split 関連 state をクリア
+  - 修正5 (`MarkdownTextItem.cs`): `IsShowingPlaceholder` / `SetPlaceholderText` / `SetTextDirect` を追加。placeholder と実コンテンツを区別し、`SetText` / `AppendText` / `AppendTextDirect` で実コンテンツ書き込み時に flag を解除
+  - ビルド成功 (CodeEditor2.csproj 0 errors / RtlEditor2.Desktop.csproj 0 errors)
+  - コミット: CodeEditor2 `e3f286f`、メイン `b049a01` (submodule pointer 更新)
+  - Next: エディタ上で native function calling (EnableFunctionCalling=true) の tool call 実行時に、tool call 前の response が独立メッセージとして表示され、tool call 後に続く answer が別メッセージになることの確認
+
 - ChatControl: tool call 結果と次の LLM completion が逆順に表示される問題 → 修正完了 (ビルド成功、コミット済み)
   - 症状: tool call の結果 Item とその直後の LLM completion Item が、たまに表示順が逆転する (tool result が次の completion の下に出る)
   - 原因: `ToolCallStarted` が `Dispatcher.UIThread.Post` (遅延・fire-and-forget) で tool-result Item を挿入していた。UI スレッドが混雑していると Post のコールバックが遅延し、`completeWithFunctionCallCore` が既に次の LLM turn の `complete()` を呼んで `completeWork` が Items に挿入した後で tool-result Item が挿入される → 表示順反転
