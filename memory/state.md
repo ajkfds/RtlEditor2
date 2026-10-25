@@ -1320,6 +1320,24 @@ endmodule
 
 ## 進行中タスク
 
+- ChatControl: native (API) function call の呼び出し内容を UI 表示 + spinner が消えない問題を修正 → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: (1) RtlEditor2.Desktop/Program.cs → ChatControl → OpenRouterChat の `enableFunctionCalling = true` 時に、function call の「呼び出し自体」も UI に表示する (2) function call 実行中に tool result と spinner が表示されるが、function call が中断 or 終了したときに spinner が消えないことがあるので直す
+  - 原因1 (呼び出し内容が出ない): `ToolCallStarted` は tool 名しか受け取らず、`OpenRouterChat.RaiseToolCallNotifications` も `FunctionCallContent` の `Name` だけを通知していた。引数 (`call.Arguments`) は表示経路が存在しなかった
+  - 原因2 (spinner が消えない): `ToolCallEnded` は `lastToolResultItem` 単体しか対象にせず、`ShowSpinner(false)` は finish 通知が来た時だけ実行される。native tool call は MEAI function-invocation middleware 内で実行されるため、**abort (キャンセル) / 例外 / turn 終了時に finish 通知が来ない**ケースでは spinner が残り続けた。並列 tool call では `lastToolResultItem` が上書きされ、先の call の spinner も止まらなかった
+  - 修正1 (`ILLMChatFrontEnd.cs`): `ToolCallNotificationEventArgs` に `Invocation` (整形済み引数文字列) を追加
+  - 修正2 (`OpenRouterChat.cs`): `FormatInvocation(FunctionCallContent)` を新設 (引数を pretty-print JSON で整形)。`RaiseToolCallNotifications` に `lastInvocations` 辞書を渡し、引数が増えた更新のみ「started」を再通知 (同一 callId の item を in-place 更新)。`FunctionResultContent` の finish 通知は従来どおり
+  - 修正3 (`ChatControl.axaml.cs`): 呼び出し内容の表示
+    - `ToolCallStarted(toolName, insertAboveResult, invocation, callId)` に拡張。`BuildToolCallHeader` で `**Tool call: name**` + ```` ```json <args> ``` ```` をヘッダに組み立て
+    - `toolCallHeaders` / `toolCallResults` / `toolCallNames` 辞書を新設し、ヘッダ + 結果を `SetTextDirect` で再構成 (引数が後から届いても結果の上に正しく表示される)
+  - 修正4 (`ChatControl.axaml.cs`): spinner の確実な停止
+    - `toolResultItemsWithSpinner` (実行中 spinner の全 item) / `pendingToolCallItems` (callId → item) を新設。`ToolCallEnded(result, callId)` は **callId で対象 item を解決**するため、並列 tool call が各自の spinner を止められる
+    - `StopAllToolCallSpinners` / `StopAllToolCallSpinnersSafe` を新設。`AbortButton_Click` (abort 直後) / `completeWithFunctionCall` の finally (turn 終了・例外・retry) / `completeWork` の turn 終了時 / `ResetAsync` で必ず全 spinner を停止
+    - `ToolCallEnded` の対象が無い場合は `StopAllToolCallSpinners()` にフォールバック (取りこぼし防止)
+    - public `FinishPendingToolCalls()` を新設 (外部から turn 終了時に呼べる安全網)
+  - 修正5 (`LLMAgent.cs`): 疑似 (message-based) tool call も `FormatInvocation(args)` で引数を渡し、`callId` を start / progress / end すべてに伝播 (`ClearToolResultItem` 呼び出しは callId ベースの解決に置換)
+  - 検証: `dotnet build CodeEditor2AiPlugin.csproj` 0 errors / `dotnet build RtlEditor2.Desktop.csproj` 0 errors
+  - Next: エディタ上で (1) native function calling 時に tool 名 + 引数が chat に表示されること (2) tool call 中に Abort しても spinner が消えること (3) 並列 tool call で各 spinner が個別に停止すること の確認
+
 - ChatControl: native (API) tool call 時に、それ以前に受け取った response を独立した chat message として表示 → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: LLM で api tool call を受けたとき tool call item が UI に追加されるが、その前にこれまで受け取った response も独立した chat message として UI に追加したい (現状は 1 つの Chat response にメッセージが追加され続け、その上に Tool call 結果だけが積み増されていく)
   - 原因: native (API) tool call は `OpenRouterChat` の `ToolCallNotification` 経由で `Chat_ToolCallNotification` → `ToolCallStarted(insertAboveResult: true)` が呼ばれるだけだった。同一 LLM turn の stream は 1 つの `resultItem` に流れ続けるため、tool call 後も同じ item に追記され、tool-result item だけが上に積み上がっていた
