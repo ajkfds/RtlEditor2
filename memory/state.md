@@ -3,6 +3,51 @@
 
 ## 進行中タスク
 
+- assignment pattern (`DataObjects/AssignmentPattern.cs`) の値を parse 時にチェックするよう変更 → 実装完了 (ビルド成功、sv-tests 1033 合格 / 1 失敗 (既知の環境依存のみ)、コミット済み)
+  - ユーザ要求: `AssignmentPattern.cs` の値のチェックは、後で行うのではなく、parse 時に `DataObject? lhs` をもらって parse 時に行う
+  - 変更前: `CheckPattern(word, lhs)` を public メソッドとして parse 完了後に呼び出し元 (`Variable.ParseDeclaration` / `BlockingAssignment` / `NonBlockingAssignment`) が別パスで実行。struct 配列 C-like pattern の検出はさらに `Variable.checkStructArrayAssignmentPattern` という別 helper で実施 (二重管理)
+  - 変更 (`Verilog/DataObjects/AssignmentPattern.cs`):
+    - `ParseCreate(word, nameSpace, lValue, patternMode, DataObject? lhs)` オーバーロード新設。既存の 4 引数版は `lhs = null` で委譲 (cast 経由の typed pattern / case pattern / 入れ子 pattern は lhs なし)
+    - parse の末尾 (`}` 消費後) で `CheckPattern(word, lhs)` を inline 実行 (`patternMode` 時は skip)。lhs は呼び出し元から渡された解決済み対象 DataObject
+    - パターン全体の `Reference` を parse 内で設定 (`WordReference.CreateReferenceRange(beginReference, word.GetReference())`) し、診断位置が `'{ ... }` 範囲を指すようにした
+    - `CheckPattern` を `private` 化 (parse からのみ到達可能)
+    - `Variable.checkStructArrayAssignmentPattern` を `CheckPattern` 内に統合 (array of structs の C-like flattened 検出)。`getFlattenedMemberCount` helper を新設
+  - 呼び出し元の変更:
+    - `Variable.cs`: `AssignmentPattern.ParseCreate(word, nameSpace, false, false, variable)` に宣言変数を渡す。`checkStructArrayAssignmentPattern` / `CheckPattern` の事後呼び出しと helper 本体を削除
+    - `BlockingAssignment.cs`: `ParseCreate(..., Items.ContinuousAssign.getAssignedDataObject(lExpression))` に変更し事後チェックを削除
+    - `NonBlockingAssignment.cs`: 同上 (事後 `CheckPattern` 呼び出しを削除)
+    - `VariableAssignment.cs`: 連続代入 (`assign x = '{...}`) 経路にも lhs を渡す分岐を追加 (従来は `Expression.ParseCreate` 経由でチェックなし)
+  - 不要コード削除: `Expressions.AssignmentPattern.CheckPattern()` (未使用の空 stub) を削除
+  - 検証 (DebugAssignmentPatternTests.cs 一時追加、コミット除外):
+    - 正例 (struct positional / keyed / default key / unpacked array / repetition / nested struct array) → エラーなし
+    - 負例 (struct 要素数不一致 / 未知メンバー / unpacked array 要素数不一致 / scalar 複数要素 / associative の positional / struct 配列 C-like) → 期待どおり各 1 件
+    - blocking / nonblocking 代入経路でも parse 時に検出されることを確認
+  - sv-tests 全体: 1033 合格 / 1 失敗 (`5.6.4--compiler-directives-include` の `/dev/null` 環境依存のみ)、regression なし
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj / SystemVerilogLanguageServer.Tests.csproj / RtlEditor2.Desktop.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `e6526ac`、メイン (submodule pointer 更新)
+
+- assignment pattern (`DataObjects/AssignmentPattern.cs`) の右辺使用時に左辺型で詳細 syntax check → 実装完了 (ビルド成功、sv-tests 1032 合格 / 1 失敗 (既知の環境依存のみ)、コミット済み)
+  - ユーザ要求: `Verilog/DataObjects/AssignmentPattern.cs` を右辺で使用した場合、左辺のデータタイプをもらって詳細 syntax check を行う
+  - 対象 (右辺で `'{...}` が使われる呼び出し元): `Variable.ParseDeclaration` (変数宣言の初期化) / `BlockingAssignment.ParseCreateAfterAssignmentOperator` / `NonBlockingAssignment.ParseCreateAfterAssignmentOperator`
+  - 実装 (`DataObjects/AssignmentPattern.cs`): `public void CheckPattern(WordScanner word, DataObject? lhs)` を新設 (IEEE 1800-2017 10.9 / 7.9.11 / 7.2.2 / 5.10)
+    - LHS 型解決: `lhs.DataType` を `UserDefinedType.OriginalDataType` で展開 (typedef struct / パラメータ付き typedef 対応、循環防御上限 32)
+    - 構造体 (packed/unpacked struct, unpacked array でない場合): positional pattern は要素数 = メンバー数、keyed pattern はキーが `member_identifier` (構造体メンバー名) であることを検証。キーは `default` / `[index]` / assignment_pattern_key (simple_type) を除外し、メンバー名らしい識別子のみを対象 (誤検出防止、array pattern key は array_pattern_key として合法)
+    - unpacked array / associative array / dynamic array / queue: keyed pattern は不定形のため検証せず、positional pattern は要素数 = 固定サイズ (UnPackedArray.Size / Queue.Size) を検証。associative array の positional pattern は「index / default キーが必要」を検出。struct 要素の array は `Variable.checkStructArrayAssignmentPattern` (既存の C-like 平坦 pattern 検出) に委譲し二重報告を回避
+    - scalar / vector: positional pattern の複数要素を「too many elements」で検出、keyed pattern も同様に検出
+    - `hasUnpackedArray` を先に判定することで `packed struct` の unpacked array (例 `ms_t ms[1:0]`) を array 経路に振り分け
+    - 検証は `word.Prototype || word.CompletionContext != null` では skip (prototype / partial parse の共有 name space 汚染防止)
+  - 呼び出し元の変更:
+    - `Variable.cs`: 既存の `checkStructArrayAssignmentPattern` 呼び出しの後に `(exp as AssignmentPattern)?.CheckPattern(word, variable);` を追加
+    - `BlockingAssignment.cs`: `'{` 分岐を `DataObjects.AssignmentPattern.ParseCreate` の結果を変数に受け、`!word.Prototype && word.CompletionContext == null` のとき `pattern?.CheckPattern(word, Items.ContinuousAssign.getAssignedDataObject(lExpression))` を呼ぶ (LHS は `getAssignedDataObject` で解決)
+    - `NonBlockingAssignment.cs`: 従来 `Expressions.AssignmentPattern` (legacy stub, 先頭要素のみ解析) を使っていたのを `DataObjects.AssignmentPattern` に置換し、LHS 型を渡して `CheckPattern` を呼ぶ (指摘の「右辺で使用した場合」に該当する経路が正しく詳細解析されるようになった)
+  - 検証 (DebugAssignmentPatternTests.cs 一時追加、コミット除外):
+    - struct positional / struct keyed / struct default key / unpacked array / repetition pattern / associative default key → エラーなし (正例)
+    - struct 要素数不一致 (3 vs 2) / struct 未知メンバー (`c:`) / unpacked array 要素数不一致 (3 vs 8) / scalar 複数要素 / associative array の positional → 期待どおりエラー 1 件ずつ
+  - sv-tests 全体: 1032 合格 / 1 失敗 (1033 中)。失敗は `5.6.4--compiler-directives-include.sv` (`/dev/null` 環境依存) のみで regression なし (着手前も 1031〜1032 合格 / 1〜2 失敗の既知のみ)
+  - ビルド成功 (CodeEditor2VerilogPlugin.csproj, 0 errors)
+  - コミット: CodeEditor2VerilogPlugin `11214dd`、メイン `e1c9f88` (submodule pointer 更新)
+  - メモ: `SystemVerilogLanguageServer.Tests/DebugAssignmentPatternTests.cs` は検証用のためコミットから除外 (作業ツリーに残置)
+
 - SimulationSetup: parameter 付き instance + `generate if` で無効化した module が unfound 扱いになる問題 → 修正完了 (ビルド成功、コミット済み)
   - ユーザ報告: `SimulationSetup.cs` の hierarchy 走査で parameter 付き instance した中で、そのパラメータを使って `generate if` でインスタンス B を無効化したとき、インスタンス B のモジュールが unfound 扱いになる
   - 原因 (`Verilog/Items/ModuleInstantiation.cs` L237-251): `instancedModule == null` の分岐で、`word.RootParsedDocument.UnfoundModules` への登録が **prototype パス / partial parse / non-generated generate 分岐** を問わず無条件に実行されていた
