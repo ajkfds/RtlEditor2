@@ -3,6 +3,17 @@
 
 ## 進行中タスク
 
+- CodeEditor2LiveMarkdownPlugin のプレビューを白背景化 → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: `CodeEditor2LiveMarkdownPlugin` のプレビューのバックを白バックにする
+  - 調査: プレビュー本体は `CodeEditor2LiveMarkdownPlugin/.../Views/PreviewControl.axaml.cs` が生成する `AjkAvaloniaLibs.Controls.LiveMarkdownControl` (チャット表示 `CodeEditor2/LLM/MarkdownTextItem.cs` と共用のため共通コントロール自体は変更しない方針)。アプリは `CodeEditor2/App.axaml` で `RequestedThemeVariant="Dark"` のため、背景だけ白にすると markdown の文字色が白のままで不可視になる
+  - 変更 (`Views/PreviewControl.axaml.cs` のみ、+25/-1):
+    - `ThemeVariantScope markdownScope` を新設し `RequestedThemeVariant = ThemeVariant.Light` を設定 → プレビュー配下だけ Light テーマの前景色 (濃色文字) になる
+    - `Border backgroundBorder` を新設し `Background = new SolidColorBrush(Colors.White)` で白背景を描画
+    - `OnInitialized` で `markdown` → `markdownScope.Child` → `backgroundBorder.Child` → `Content` の順に組み立て (従来の `Content = markdown` を置換)
+  - 検証: `CodeEditor2LiveMarkdownPlugin.slnx` ビルド 0 errors (警告 1) / `RtlEditor2.Desktop.csproj` ビルド 0 errors (警告 590)
+  - コミット: CodeEditor2LiveMarkdownPlugin `a40f287`、メイン (submodule pointer 更新 + state.md)
+  - メモ: `RtlEditor2.Desktop/Program.cs` の作業ツリー変更、`SystemVerilogLanguageServer.Tests/DebugAssignmentPatternTests.cs` は本タスク外のため除外
+
 - assignment pattern (`DataObjects/AssignmentPattern.cs`) の値を parse 時にチェックするよう変更 → 実装完了 (ビルド成功、sv-tests 1033 合格 / 1 失敗 (既知の環境依存のみ)、コミット済み)
   - ユーザ要求: `AssignmentPattern.cs` の値のチェックは、後で行うのではなく、parse 時に `DataObject? lhs` をもらって parse 時に行う
   - 変更前: `CheckPattern(word, lhs)` を public メソッドとして parse 完了後に呼び出し元 (`Variable.ParseDeclaration` / `BlockingAssignment` / `NonBlockingAssignment`) が別パスで実行。struct 配列 C-like pattern の検出はさらに `Variable.checkStructArrayAssignmentPattern` という別 helper で実施 (二重管理)
