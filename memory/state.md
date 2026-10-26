@@ -3,6 +3,29 @@
 
 ## 進行中タスク
 
+- SimulationSetup のファイルリスト収集で、外部プロジェクトをパラメータ指定で instance したときに正しくファイルを参照できない問題 → 修正完了 (ビルド成功、コミット済み)
+  - ユーザ報告: `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Data/SimulationSetup.cs` のファイルリスト収集で、外部プロジェクトをパラメータ指定で呼んだときに正しくファイルを参照できていない
+  - 根本原因1 (param 上書きの無視): `appendFile` の外部プロジェクト分岐が、インスタンスではなく **ソースファイル** で `searchHier` していた。パラメータ上書き適用済みの parsed document / Items を持つのはインスタンス (`VerilogModuleInstance` / `InterfaceInstance` の `VerilogParsedDocument`) 側なので、ソースファイルを辿ると **既定パラメータでのベタ解析** の依存 (例: `generate if (MODE == 1)` の else 側) を収集し、実際にインスタンスされるモジュールのファイルが漏れていた
+  - 根本原因2 (backend が外部プロジェクトを無視): 外部プロジェクトのファイルは `ExternalProjectReferences` (サブセットアップ) にのみ入るため、`SimulationSetup.Files` / `IncludePaths` だけを列挙していた Icarus / Vivado のバックエンドには **外部プロジェクトのファイルが一切渡っていなかった**
+  - 根本原因3 (visited キーのプロジェクト非考慮): `searchHier` の訪問済みキーが `file.ID + ":" + buildingBlockName` で、`RelativePath` は 1 プロジェクト内でのみ一意。別プロジェクトに同じ相対パス (例 `src/top.sv`) があると、2 つ目のプロジェクトのファイルが「訪問済み」として黙ってスキップされていた
+  - 根本原因4 (依存の行き先): `appendImportedPackage` / `appendClass` の外部プロジェクト分岐が、外部ファイル自身の依存を **呼び出し元の setup** に `searchHier` していた (サブセットアップにはそのファイル 1 個だけが入る)
+  - 根本原因5 (早期 return): 外部ソースファイルを「既に追加済み」で早期 return していたため、同一外部ファイルをパラメータ違いで複数回 instance した場合に 2 回目以降の依存が収集されなかった
+  - 根本原因6 (unfound の範囲): `Create` の unfound 判定がトップの setup しか見ておらず、外部プロジェクト内の参照欠落が無視されていた
+  - 修正 (`Data/SimulationSetup.cs`):
+    - `appendExternalProjectDependencies(instance, sourceFile, subSetup, ids, path)` を新設。インスタンス (`IVerilogRelatedFile` かつ `VerilogParsedDocument != null`) を辿り、未 parse のときだけソースファイルにフォールバック。`getInstantiatedBuildingBlockName` で module / interface 名を解決
+    - `searchHier` の visited キーに `getProjectName(file)` を前置 (プロジェクト跨ぎの相対パス衝突を解消)
+    - `getExternalProjectSetup(setup, project)` helper を新設し、`appendImportedPackage` / `appendClass` の外部分岐で依存の `searchHier` 先を **サブセットアップ** に変更 (`ownerSetup`)
+    - 外部ソースファイル追加時の早期 return をやめ、常にインスタンスの依存を収集
+    - `collectUnfoundModules` を新設し、トップ + 全サブセットアップ (再帰) の unfound をプロジェクト名付きで報告
+    - `ReorderFilesByClassDependencies` を再帰化 (サブセットアップも依存順に整列)
+    - `GetAllFiles()` / `GetAllIncludePaths()` を新設 (外部プロジェクトを先に、次に自プロジェクトの順で返す)。`GetAbsolutePath(file)` を新設 (ファイルを所有するプロジェクトで絶対パス解決)
+  - 修正 (`CodeEditor2IcarusVerilogPlugin/.../Simulation/IcarusVerilogSimulation.cs`): `GetAllIncludePaths()` / `GetAllFiles()` + `SimulationSetup.GetAbsolutePath(file)` に変更
+  - 修正 (`CodeEditor2VivadoPlugin/.../Views/SimulationTab.cs`): 同上
+  - 検証: `CodeEditor2VerilogPlugin.csproj` 0 errors / `CodeEditor2IcarusVerilogPlugin.csproj` 0 errors / `CodeEditor2VivadoPlugin.csproj` 0 errors。`RtlEditor2.Desktop.csproj` 全体ビルドの MSB3027/MSB3021 は稼働中の RtlEditor2.Desktop / Visual Studio による DLL ロックで本変更と無関係
+  - コミット: CodeEditor2VerilogPlugin `e3d6e4b` / CodeEditor2IcarusVerilogPlugin `8d27eaa` / CodeEditor2VivadoPlugin `c5e54e9`、メイン (submodule pointer + state.md)
+  - メモ: サブモジュール内の `Global.cs` / `Verilog/DataObjects/Constants/Constants.cs` / `Verilog/WordScanner.cs` の作業ツリー変更は本タスク外のためコミットから除外。`RtlEditor2.Desktop/Program.cs` / `SystemVerilogLanguageServer.Tests/Debug*.cs` も除外
+  - Next: エディタ上で外部プロジェクトの module を `#(...)` 付き + `// @project <name>` で instance し、Run Simulation のコマンドファイル (command / .prj) に外部プロジェクトのソースが含まれること / パラメータで選択される generate 分岐のファイルが正しく収集されること の確認
+
 - `@project` 付きで他プロジェクトの module を parameter 付きで instance したとき "not parsed yet." エラー → 修正完了 (ビルド成功、コミット済み)
   - ユーザ報告: `CodeEditor2VerilogPlugin/.../Verilog/Items/ModuleInstantiation.cs` で `// @project プロジェクト名` 付きで他プロジェクトの module を parameter 付き (`#(...)`) で instance すると "not parsed yet." エラーが出る
   - 根本原因: `@project` 解決時に `instancedModule` は **他プロジェクトの `ProjectProperty.DefinitionNameSpace`** から取得していたが、parameter override 後の再解決 (`GetInstancedBuildingBlock`) と module ソースファイル取得 (`DefinitionNameSpace.GetFile`) は **自プロジェクトの `word.ProjectProperty`** のままだった。他プロジェクトの module は自プロジェクトの DefinitionNameSpace に存在せず、parameter override がある場合 `GetInstancedBuildingBlock` が常に null → `word.AddError("not parsed yet.")` になっていた (parameter なしの場合は `instancedModule` が既に非 null のため早期の if で到達しない)
