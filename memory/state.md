@@ -3,6 +3,28 @@
 
 ## 進行中タスク
 
+- CodeEditor2LiveMarkdownPlugin のプレビューで Mermaid がダークテーマのままになる問題 → 修正完了 (ビルド成功、コミット済み)
+  - ユーザ要求: プレビュー白背景化は完了したが Mermaid の描画がダークテーマのまま。プレビューだけ light テーマにしたい
+  - 根本原因: 前回の白背景化で `ThemeVariantScope(RequestedThemeVariant = Light)` を導入したが、Mermaid の色はテーマバリアントでは切り替わらなかった
+    - `avares://LiveMarkdown.Avalonia.Mermaid/Styles.axaml` の `MermaidPresenter` セッターはすべて `{DynamicResource ForegroundColor / BorderColor / CardBackgroundColor / SecondaryCardBackgroundColor / FontSize*}` を参照
+    - これらキーの実体は `avares://LiveMarkdown.Avalonia/Defaults.axaml` が持つダーク向けの固定値 (`ForegroundColor`=White / `BorderColor`=`#3dffffff` / `CardBackgroundColor`=`#15000000` / `SecondaryCardBackgroundColor`=`#99000000` / `CodeInlineColor`=`#ffd7ba7d`)
+    - `CodeEditor2/App.axaml` はこの Defaults.axaml を通常の ResourceDictionary (ThemeDictionaries ではない) としてアプリ全体にマージしているため、`ThemeVariantScope` のテーマ切替では値が変化しない
+    - さらに `MermaidPresenter` の `ArrowFill` / `LineStroke` / `ThickLineStroke` / `DottedLineStroke` は Styles.axaml で参照されておらず、コントロール既定値 (White) のまま → 白背景で矢印・コネクタ線が不可視
+  - 対応1 (`Views/PreviewControl.axaml.cs`): `markdownScope` に `Resources = CreateLightPaletteOverrides()` を追加。ThemeVariantScope 直下で同キーを light 値に上書き (スコープ限定なので Chat / 他画面の dark パレットは不変)
+    - `ForegroundColor` `#FF1F2328` / `BorderColor` `#FFD0D7DE` / `CardBackgroundColor` `#FFF6F8FA` / `SecondaryCardBackgroundColor` `#FFEAEEF2` / `CodeInlineColor` `#FF953800` / `QuoteBorderColor` `#FFD0D7DE`
+  - 対応2 (`Views/PreviewControl.axaml.cs`): `ApplyPreviewStyles(markdownScope.Styles)` を新設しコンストラクタから呼ぶ。`MermaidPresenter` の `ArrowFill` / `LineStroke` / `ThickLineStroke` / `DottedLineStroke` を `#FFB6BFCA` に設定 (Styles.axaml で未参照の既定白ブラシを補正)
+  - 対応3 (`CodeEditor2LiveMarkdownPlugin.csproj`): `LiveMarkdown.Avalonia.Mermaid` 2.4.3 の PackageReference を追加 (`MermaidPresenter` の StyledProperty を参照するため。従来は AjkAvaloniaLibs 経由の推移参照のみ)
+  - 実装上の注意: `StyledElement.Styles` は読み取り専用のため `Styles = ...` 代入は不可 (`markdownScope.Styles.Add(...)` を使う)。またプラグイン内に `pluginLiveMarkdown.Style` クラスが存在し `Avalonia.Styling.Style/Setter/Styles` と名前衝突するため完全修飾名で記述
+  - 検証 (Avalonia Headless の使い捨て検証プロジェクトを作成し、検証後に `git clean` で削除):
+    - ダークアプリ + スコープ上書きなし → `Foreground=White` / `NodeFill=#15000000` / `NodeStroke=#3dffffff` (バグ再現)
+    - ダークアプリ + `ThemeVariantScope(Light)` のみ → 同じダーク値 (テーマバリアントだけでは変わらないことを実証)
+    - ダークアプリ + 今回の構成 → `Foreground=#ff1f2328` / `NodeFill=#fff6f8fa` / `NodeStroke=#ffd0d7de` / `LineStroke`=`ArrowFill`=`#ffb6bfca` / `GroupHeaderFill=#ffeaeef2` (light パレット化を確認)
+    - キー未上書き時のアプリ既定へのフォールバックも併せて確認 (スコープ上書きは未指定キーを壊さない)
+  - ビルド成功 (CodeEditor2LiveMarkdownPlugin.slnx: 0 errors / RtlEditor2.Desktop.csproj: 0 errors)
+  - コミット: CodeEditor2LiveMarkdownPlugin `4c60078`、メイン `06cbba4` (submodule pointer 更新)
+  - メモ: `CodeEditor2` サブモジュール (modified) / `RtlEditor2.Desktop/Program.cs` / `SystemVerilogLanguageServer.Tests/DebugAssignmentPatternTests.cs` は本タスク外のため除外
+  - Next: エディタ上で .md ファイルを開き、mermaid コードブロック (flowchart / sequenceDiagram 等) が白背景に濃色文字・可視矢印で描画されることの確認
+
 - CodeEditor2LiveMarkdownPlugin のプレビューを白背景化 → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: `CodeEditor2LiveMarkdownPlugin` のプレビューのバックを白バックにする
   - 調査: プレビュー本体は `CodeEditor2LiveMarkdownPlugin/.../Views/PreviewControl.axaml.cs` が生成する `AjkAvaloniaLibs.Controls.LiveMarkdownControl` (チャット表示 `CodeEditor2/LLM/MarkdownTextItem.cs` と共用のため共通コントロール自体は変更しない方針)。アプリは `CodeEditor2/App.axaml` で `RequestedThemeVariant="Dark"` のため、背景だけ白にすると markdown の文字色が白のままで不可視になる
