@@ -3,6 +3,22 @@
 
 ## 進行中タスク
 
+- `@project` 付きで他プロジェクトの module を parameter 付きで instance したとき "not parsed yet." エラー → 修正完了 (ビルド成功、コミット済み)
+  - ユーザ報告: `CodeEditor2VerilogPlugin/.../Verilog/Items/ModuleInstantiation.cs` で `// @project プロジェクト名` 付きで他プロジェクトの module を parameter 付き (`#(...)`) で instance すると "not parsed yet." エラーが出る
+  - 根本原因: `@project` 解決時に `instancedModule` は **他プロジェクトの `ProjectProperty.DefinitionNameSpace`** から取得していたが、parameter override 後の再解決 (`GetInstancedBuildingBlock`) と module ソースファイル取得 (`DefinitionNameSpace.GetFile`) は **自プロジェクトの `word.ProjectProperty`** のままだった。他プロジェクトの module は自プロジェクトの DefinitionNameSpace に存在せず、parameter override がある場合 `GetInstancedBuildingBlock` が常に null → `word.AddError("not parsed yet.")` になっていた (parameter なしの場合は `instancedModule` が既に非 null のため早期の if で到達しない)
+  - 修正 (`Verilog/Items/ModuleInstantiation.cs`):
+    - `ProjectProperty sourceProjectProperty = word.ProjectProperty;` を新設。`@project` 解決時に `sourceProject.GetPluginProperty()` で対象プロジェクトの ProjectProperty に差し替える (`sourceProjectProperty` を以降の全解決に使用)。`ExtenralModuleLibraryPath` 参照もこれに統一
+    - `GetInstancedBuildingBlock` / `DefinitionNameSpace.GetFile` / EditParse 時の再解析後再取得 / `SyncCheck` の全呼び出しを `sourceProjectProperty` ベースに変更 (`SyncCheck` は引数追加)
+    - ループ内で `instancedModule` を破壊的に再代入していたのを `Module? effectiveModule` ローカル変数に分離。最初の instance で解決失敗すると同一文の後続 instance (`inst0(...), inst1(...)`) が解決されなくなる問題を解消。`parseListOfPortConnections` には `effectiveModule` を渡す
+    - "not parsed yet." は **parameter override 後の parse 結果がまだ無い過渡状態** で、hierarchy reparse で解消されるもの。エラーではなく `!word.Prototype && !word.IsPartialParse && word.Active` のとき `ReparseRequested = true` のみ立てるよう変更 (他の "unfound module" と同じ扱い。prototype / partial parse / 非生成 generate 分岐では何もしない)
+    - `AppendLabel` (hover の port ラベル) も `ProjectProperty.DefinitionNameSpace` で解決していたため `@project` では常に失敗していた → `GetInstancedBuildingBlockProject()` で対象プロジェクトを取得して解決するよう修正
+    - `@project` 解決成功時も無条件に `ReparseRequested = true` を立てており、編集のたびに instance 階層全体の再 parse を誘発していた → `instancedModule == null` (未 parse で解決不能) の場合のみ立てるよう変更
+  - 修正 (`Verilog/Items/ProgramInstantiation.cs`): 同一パターンの "not parsed yet." を同じ扱いに変更。`AppendLabel` の program 解決も対象プロジェクト経由に修正
+  - 検証: `dotnet build CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors (548 warnings は既存)。RtlEditor2.Desktop.csproj 全体ビルドの MSB3027/MSB3021 は稼働中の RtlEditor2.Desktop / Visual Studio による DLL ロックで本変更と無関係
+  - コミット: CodeEditor2VerilogPlugin `e10f670`、メイン `1a15699` (submodule pointer 更新)
+  - メモ: サブモジュール内 `Global.cs` の変更 (コメントアウト整理) は本タスク外のためコミットから除外 (作業ツリーに残置)
+  - Next: エディタ上で他プロジェクトの module を `#(...)` 付き + `// @project <name>` で instance したときに "not parsed yet." が出ないこと / hover で port ラベルが出ること / 編集時に不要な全階層 reparse が走らないこと の確認
+
 - read_file tool のサイズ上限をプロパティ化し、上限超過時は内容を返さずアラートのみ返す → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/Tools/ReadFile.cs` の read_file tool に「読み込みファイルサイズの上限」を決めるプロパティを持たせ、上限超過時はアラートを返してファイル内容は返さない
   - 変更前: `private const int MaxFileBytes = 10 * 1024 * 1024;` の固定値で、しかも **全体読み込み時のみ** チェック (`hasRange` があると上限チェックをスキップ) していた
