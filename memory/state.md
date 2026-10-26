@@ -3,6 +3,24 @@
 
 ## 進行中タスク
 
+- `// @project` で別プロジェクトの module を instance した RTL を simulation に流すと unfound module 扱いになる問題 → 修正完了 (ビルド成功、コミット済み)
+  - ユーザ報告: `Verilog/Items/ModuleInstantiation.cs` の `// @project <name>` で別プロジェクトの module を呼び出せるが、シミュレーション用の関連ファイル収集 (`Data/SimulationSetup.cs`) が `parsedDocument.ReferencedDefinitionNameSpace` を辿るため、別プロジェクトから参照している module が unfound module 扱いになる
+  - 根本原因1 (定義名だけでは所有者不明): `ParsedDocument.ReferencedDefinitionNameSpace` は **定義名のみ** を保持していた。`@project` 先の module は **自プロジェクトの DefinitionNameSpace に存在しない** ため、`SimulationSetup.searchHier` が `parsedDocument.Project` (= 呼び出し元プロジェクト) の DefinitionNameSpace で解決し、常に null → `addUnfoundModule` → `Create()` が null を返して simulation 起動拒否
+  - 根本原因2 (unfound 記録の誤登録): `ModuleInstantiation.ParseAsync` の `instancedModule == null` 分岐が `@project` 指定でも `AddError("unfound module")` + `UnfoundModules` 登録していた (対象プロジェクト未解析の過渡状態でも記録され、クリアされないため stale に残る)
+  - 根本原因3 (reparse の取りこぼし): `Tool/ParseHierarchy.cs` の `ReferencedDefinitionNameSpace` enqueue も自プロジェクトの DefinitionNameSpace しか見ておらず、外部プロジェクトの定義ファイルが再解析対象にならない
+  - 修正 (`Verilog/ParsedDocument.cs`): `ReferencedDefinitionNameSpaceProjects` (`Dictionary<string, List<string>>`、定義名 → 所有プロジェクト名リスト) を新設。`AddReferencedDefinitionNameSpace(name, projectName)` (自プロジェクトと同一なら記録しない) と `GetReferencedDefinitionNameSpaceProjects(name)` を追加
+  - 修正 (`Verilog/Items/*.cs`): `ModuleInstantiation` / `InterfaceInstance` / `ProgramInstantiation` / `UdpInstantiation` / `BindDirective` の `ReferencedDefinitionNameSpace.Add(...)` をすべて新 helper 経由に統一。`ModuleInstantiation` は `@project` 解決成功時に所有プロジェクト名で **再記録** し、`crossProjectReference` フラグを立てて `instancedModule == null` でも "unfound module" エラー / `UnfoundModules` 登録をしない (reparse 要求のみ)
+  - 修正 (`Data/SimulationSetup.cs`):
+    - `ReferencedDefinitionNameSpace` の解決を **ローカルプロジェクト優先 → 所有プロジェクトへフォールバック** に変更 (`getReferencedDefinitionProjects`)。外部所有ならそのプロジェクトのサブセットアップにファイルを追加して `searchHier` する
+    - 所有プロジェクト側の `ExtenralModuleLibraryPath` / `ExtenralPrimitiveLibraryPath` も考慮 (外部ライブラリ提供の場合は file 収集しない)
+    - `parsedDocument.UnfoundModules` の取り込み時に `isResolvableCrossProjectReference` で「所有プロジェクトで解決できる外部参照」をスキップ (未解析時点の stale 記録対策)
+    - 外部所有の定義ファイルはインスタンスツリー側 (`appendExternalProjectDependencies`、パラメータ上書き反映済み) で依存収集するため、`hasInstantiationItem` でインスタンス実在を判定し、実在時は base parse の `searchHier` を行わない (既定パラメータの generate 分岐の誤収集防止)
+    - `ExternalProjectEntryInstance` 登録を `Global.Projects[...]` 直参照から `TryGetValue` に変更
+  - 修正 (`Tool/ParseHierarchy.cs`): `ReferencedDefinitionNameSpace` の enqueue を、ローカルで見つからない場合に所有プロジェクトの DefinitionNameSpace で解決するよう変更
+  - 検証: `CodeEditor2VerilogPlugin.csproj` / `CodeEditor2IcarusVerilogPlugin.csproj` / `CodeEditor2VivadoPlugin.csproj` すべて 0 errors
+  - コミット: CodeEditor2VerilogPlugin / メイン (submodule pointer + state.md)
+  - Next: エディタ上で `// @project <name>` + module instance したテストベンチを simulation (Icarus / Vivado) に流し、(1) unfound module が出ないこと (2) command / .prj に外部プロジェクトのソースが含まれること (3) `#(...)` パラメータで選択される generate 分岐のファイルが収集されること の確認
+
 - SimulationSetup のファイルリスト収集で、外部プロジェクトをパラメータ指定で instance したときに正しくファイルを参照できない問題 → 修正完了 (ビルド成功、コミット済み)
   - ユーザ報告: `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Data/SimulationSetup.cs` のファイルリスト収集で、外部プロジェクトをパラメータ指定で呼んだときに正しくファイルを参照できていない
   - 根本原因1 (param 上書きの無視): `appendFile` の外部プロジェクト分岐が、インスタンスではなく **ソースファイル** で `searchHier` していた。パラメータ上書き適用済みの parsed document / Items を持つのはインスタンス (`VerilogModuleInstance` / `InterfaceInstance` の `VerilogParsedDocument`) 側なので、ソースファイルを辿ると **既定パラメータでのベタ解析** の依存 (例: `generate if (MODE == 1)` の else 側) を収集し、実際にインスタンスされるモジュールのファイルが漏れていた
