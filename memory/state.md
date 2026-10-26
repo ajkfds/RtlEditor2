@@ -3,6 +3,20 @@
 
 ## 進行中タスク
 
+- read_file tool のサイズ上限をプロパティ化し、上限超過時は内容を返さずアラートのみ返す → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/Tools/ReadFile.cs` の read_file tool に「読み込みファイルサイズの上限」を決めるプロパティを持たせ、上限超過時はアラートを返してファイル内容は返さない
+  - 変更前: `private const int MaxFileBytes = 10 * 1024 * 1024;` の固定値で、しかも **全体読み込み時のみ** チェック (`hasRange` があると上限チェックをスキップ) していた
+  - 変更 (`ReadFile.cs` のみ):
+    - `public const int DefaultMaxFileBytes = 10 * 1024 * 1024;` を新設 (既定値)
+    - `private int maxFileBytes` + `public int MaxFileBytes { get; set; }` を新設。0 以下を設定すると既定値にフォールバック
+    - 全体読み込み時: 従来どおり読む前に `FileInfo.Length` で上限判定 (`BuildTooLargeAlert(...)`)
+    - 範囲指定時: 実際に返す範囲の UTF-8 バイト数 (`Encoding.UTF8.GetByteCount(line) + 1` の累積) で上限判定し、超過時は内容を返さずアラート (従来は範囲指定なら上限チェックなしだった)
+    - `BuildTooLargeAlert(path, actualBytes, hasRange)` を新設: `[WARNING] read_file: the content was NOT returned.` + path / size / limit + 「start_line / end_line で範囲を狭める」「search_files で該当箇所を探す」という誘導文を返す (内容は一切返さない)
+    - `FormatBytes(long)` helper を新設 (bytes / KB / MB / GB 表示)
+    - LLM 向け `[Description]` にサイズ上限の存在と対処方法を追記
+  - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors (176 warnings は既存)。`RtlEditor2.Desktop.csproj` 全体ビルドの MSB3027/MSB3021 は稼働中の RtlEditor2.Desktop / Visual Studio による DLL ロックで本変更と無関係
+  - Next: エディタ上で (1) 上限を小さく設定したとき大きいファイルで警告のみ返る (2) 範囲指定でも上限超過時に警告のみ返る (3) 通常サイズのファイルは従来どおり内容が返る ことの確認
+
 - CodeEditor2LiveMarkdownPlugin のプレビューで Mermaid がダークテーマのままになる問題 → 修正完了 (ビルド成功、コミット済み)
   - ユーザ要求: プレビュー白背景化は完了したが Mermaid の描画がダークテーマのまま。プレビューだけ light テーマにしたい
   - 根本原因: 前回の白背景化で `ThemeVariantScope(RequestedThemeVariant = Light)` を導入したが、Mermaid の色はテーマバリアントでは切り替わらなかった
