@@ -3,6 +3,18 @@
 
 ## 進行中タスク
 
+- SimulationSetup の収集情報プロパティに説明コメントを整備 → 完了 (ビルド成功、コミット済み)
+  - ユーザ要求: SimulationSetup は (1) module 名称が被った複数の module instance を処理するための情報、(2) project ごとの分割コンパイルを行ってライブラリ参照するための複数 external project、を保持する。保持情報を参照しやすくするため、収集した情報の property に説明コメントを記載する
+  - 修正 (`Data/SimulationSetup.cs`・コメントのみ、ロジック変更なし):
+    - クラス自体の XML コメントを新設し、「module 名衝突を扱う役割」と「プロジェクト分割コンパイル / 外部プロジェクトのライブラリ参照の役割」の 2 つの目的と、その担当フィールドを明示
+    - `TopName` / `TopFiles` / `Files` / `IncludeFiles` / `IncludePaths` / `ImportFiles` / `ClassFiles` に説明を追加 (ルートと外部プロジェクトのセットアップでの意味の違い、instance ファイルではなく実体ソースが入ること、Files とは別管理にする理由など)
+    - `ExternalLibraryPathList` (外部ライブラリのソースパスで分割コンパイル時にライブラリとして渡す) / `UnfoundModules` ("RelativePath:Name" 形式、instance ごとに解決結果が異なりうるためセットアップ単位で記録し `collectUnfoundModules` がプロジェクト名を前置して集約) / `Project` (このセットアップが担当するプロジェクト) に説明を追加
+    - `RootSetup` / `ProjectSetups` / `ExternalProjectReferences` / `ExternalProjectEntryInstance` の説明を役割ベースに整理 (`ExternalProjectReferences` は「参照している方向だけを表すエッジ辞書」、実体は `ProjectSetups` の唯一インスタンス)
+    - `ExternalProjectEntryInstanceInfo` とその `InstancePath` / `ModuleName` / `Project` に、module 名衝突を instance path で区別する目的と分割コンパイルでのライブラリ境界決定での用途を明記
+    - `GetProjectSetup` / `GetAllProjectSetups` / `GetAllExternalProjectEntryInstances` の説明を補足 (分割コンパイルのコンパイル単位として使う、どのセットアップから呼んでも同じ結果になる、など)
+  - 検証: `CodeEditor2VerilogPlugin.csproj` → 0 errors (551 warnings は既存)
+  - Next: 特になし (ドキュメント整備のみ)。引き続き前項のエディタ上での動作確認項目は未実施
+
 - SimulationSetup を「1 プロジェクトにつき 1 セットアップ」に再構成し、ExternalProjectEntryInstance に ModuleName を保持 → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: (1) 1 プロジェクトあたり 1 つの SimulationSetup を作る (2) 外部プロジェクト参照分は `ExternalProjectReferences` に保持 (3) `ExternalProjectEntryInstance` に InstancePath と ModuleName と Project を保持 (現状 instance path ごとの module 名が分からない)
   - 変更前の問題:
