@@ -3,6 +3,23 @@
 
 ## 進行中タスク
 
+- VerilogModuleInstance を編集して Save しても NavigateNode の New (dirty/shine) マークが消えない問題 → 修正完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ報告: VerilogFile を編集すると NavigateNode に New マークが付き、Save で消える。VerilogModuleInstance を編集すると New マークは付くが Save では消えず、ノードを切り替えて戻ってきたときに消える。なぜ ModuleInstance の方が更新されないのか
+  - 原因1 (New マークの実体): `VerilogFileNode.GetIcon()` が `verilogRelatedFile.CodeDocument.IsDirty` で shine.svg バッジを付与。`VerilogModuleInstanceNode.UpdateVisual()` も `VerilogFileNode.GetIcon()` を共用するため判定は同一
+  - 原因2 (CodeDocument の共有): `VerilogModuleInstance.CodeDocument` / `InterfaceInstance` / `VerilogHeaderInstance` / `ImportedPackage` はいずれも override で **ソース VerilogFile の CodeDocument をそのまま返す**。よって FileNode と InstanceNode は同一 CodeDocument を見ており `IsDirty` の値自体は常に一致する (データは正しい)
+  - 原因3 (Save がソース側ノードしか再描画しない): Save は必ずソース `VerilogFile.SaveAsync()` に委譲され、`TextFile.SaveAsync` の `CodeDocument.Clean()` 後に呼ぶ `NavigatePanelNode.UpdateVisual()` は **SaveAsync を呼ばれた TextFile 自身のノード** (= VerilogFileNode) のみ。`IsDirty` は false になるが `VerilogModuleInstanceNode.Image` (キャッシュ済み IImage) は再生成されず shine バッジが残る
+  - 原因4 (ノード切替で消える理由): `VerilogModuleInstanceNode.OnSelected()` が `SetTextFileAsync` 後に `UpdateVisual()` を呼ぶため、その瞬間に `GetIcon` が再評価されて消える
+  - 原因5 (付与も遅い): 編集時の付与経路がインスタンス側だけ遠回り。FileNode は `AcceptParsedDocumentAsync` → `UpdateAsync` → `Post(UpdateVisual)`。InstanceNode は `Post(postUpdateAsync)` → `Controller.CodeEditor.GetTextFileAsync()` 待ち → `Updater.UpdateAsync` (`itemUpdateSemaphore` 待ち + サブ Items 再構築) → `base.UpdateAsync` → `Post(UpdateVisual)`。さらに複数 building block のソースでは `source.ReparseRequested = true` により階層 parse が追加で走り `UpdateSubNodes()` の Nodes 全再構築が繰り返される
+  - 原因6 (死んだコード): `VerilogFile.RegisterInstanceFile` / `VerilogHeaderFile.RegisterInstanceFile` と `instanceDictionary` は**呼び出し元ゼロ** (grep 0 件)。`SetOutDated()` のインスタンスへの reparse 伝搬も現状未接続
+  - 採用方針: 案A (編集対象ファイルを優先して Save + インスタンス自身のノードを再描画)
+  - 修正1 (`CodeEditor2` / `Controller_CodeEditor.cs`): `Controller.CodeEditor.SaveAsync` の保存対象を `Global.codeView.CodeDocument.TextFile` → **`Global.codeView.TextFile` (実際に編集中の item) 優先**、null 時のみ CodeDocument owner へフォールバック。`CodeDocument.TextFile` は CodeDocument を**生成した** TextFile への weak ref のためインスタンス編集中はソースを指してしまう (経緯コメント付き)
+  - 修正2 (`CodeEditor2VerilogPlugin` / `Data/InstanceTextFile.cs`): `protected async Task SaveSourceTextFileAsync()` を新設。ソースの `SaveAsync()` 後に自ノードの `NavigatePanelNode.UpdateVisual()` を呼ぶ (UI スレッドなら直接、それ以外は `Dispatcher.UIThread.Post`)。経緯コメント付き
+  - 修正3: 4 インスタンスの `SaveAsync` を `SaveSourceTextFileAsync()` 経由に統一 (`VerilogModuleInstance` / `InterfaceInstance` / `VerilogHeaderInstance` / `ImportedPackage`)。挙動は「CodeDocument 非 null チェック → ソース保存 + 自ノード再描画」で従来と等価 + 再描画追加
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors (770 warnings は既存)
+  - コミット: CodeEditor2 / CodeEditor2VerilogPlugin / メイン (submodule pointer + state.md)。`Verilog/Items/ModuleInstantiation.cs` の作業ツリー変更は本タスク外のため除外
+  - Next: エディタ上で (1) VerilogModuleInstance ノードを選択して編集 → New マーク付与 (2) Ctrl+S → New マークが即座に消えること (3) VerilogFile 直下・InterfaceInstance・ImportedPackage でも同様に消えること の確認
+
+=======
 - SimulationSetup の収集情報プロパティに説明コメントを整備 → 完了 (ビルド成功、コミット済み)
   - ユーザ要求: SimulationSetup は (1) module 名称が被った複数の module instance を処理するための情報、(2) project ごとの分割コンパイルを行ってライブラリ参照するための複数 external project、を保持する。保持情報を参照しやすくするため、収集した情報の property に説明コメントを記載する
   - 修正 (`Data/SimulationSetup.cs`・コメントのみ、ロジック変更なし):
