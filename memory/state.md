@@ -3,6 +3,22 @@
 
 ## 進行中タスク
 
+- SimulationSetup.searchHier が local の DefinitionNameSpace を優先するため、`// @project <name>` 指定時も local 側の同名定義を拾ってしまう問題 → 修正完了 (ビルド成功、コミット済み)
+  - ユーザ報告: `Data/SimulationSetup.cs` の `searchHier` 内で `localProperty.DefinitionNameSpace.GetFile(definitionName)` を先に試し、null のときだけ `ReferencedDefinitionNameSpaceProjects` にフォールバックしていたため、`// @project <name>` 指示があっても local に同名定義があるとそちらが優先されていた。本来は `// @project` 指定時は local の有無に関わらず参照先プロジェクトから取得する必要がある
+  - 根本原因1 (local 優先の解決順): `searchHier` の `ReferencedDefinitionNameSpace` ループが「local で解決 → 失敗したら cross-project」の順で、`@project` の明示指定を無視していた
+  - 根本原因2 (owner 記録の欠落): `ParsedDocument.AddReferencedDefinitionNameSpace` が **local プロジェクトと同一なら記録しない** 仕様だったため、「local 由来の参照」と「owner 未記録(旧パース結果)」を区別できず、local を優先すべきか否かを判定できなかった
+  - 根本原因3 (local 登録が先): `ModuleInstantiation.ParseAsync` が冒頭で無条件に `AddReferencedDefinitionNameSpace(moduleName, word.Project.Name)` を呼び、その後に `@project` 解決で別プロジェクト名を再記録していた。結果として map に local と target の両方が入り、SimulationSetup が「local 優先」で誤解決していた
+  - 修正 (`Data/SimulationSetup.cs`):
+    - `searchHier` のループを全面書き換え。`getReferencedDefinitionProjects(...)` で得た **記録済み owner プロジェクト全部** を順に解決し、owner が空の場合のみ local にフォールバック。これにより `@project` 先の定義が local の同名定義に置き換えられることがなくなった
+    - 外部ライブラリ判定 (`ExtenralModuleLibraryPath` / `ExtenralPrimitiveLibraryPath`) と `DefinitionNameSpace.GetFile` を **owner プロジェクトの ProjectProperty** で行うよう統一 (従来は local の property で判定していた)
+    - cross-project 定義の収集処理を `appendReferencedDefinition(defFile, ownerProject, definitionName, referrer, ids, setup, path)` に抽出。owner が setup.Project ならその場で `searchHier`、そうでなければサブセットアップへファイル追加 + `hasInstantiationItem` 判定付きで再帰 (既存のパラメータ上書き / generate 分岐の取り扱いを維持)
+    - `getReferencedDefinitionProjectNames` helper を追加 (owner 名リストの取得口を一本化)
+  - 修正 (`Verilog/ParsedDocument.cs`): `AddReferencedDefinitionNameSpace` から「自プロジェクトと同一なら記録しない」判定を削除し、**local owner も記録** するよう変更。未記録 = owner 不明(旧データ) と区別できるようになり、`@project` 優先の判断が可能になった
+  - 修正 (`Verilog/Items/ModuleInstantiation.cs`): 冒頭の無条件 `AddReferencedDefinitionNameSpace(local)` を削除し、`@project` コメント走査後に `crossProjectReference` が false のときだけ local owner を記録するよう移動。cross-project instance は参照先プロジェクトのみを owner として記録する
+  - 修正 (`Tool/ParseHierarchy.cs`): `ReferencedDefinitionNameSpace` の enqueue を「記録済み owner 全プロジェクト」に対して行うよう変更 (従来は local 優先 → 失敗時のみ cross で 1 件 break)。返却リストを `new List<string>(...)` でコピーしてから使用
+  - 検証: `CodeEditor2VerilogPlugin.csproj` → 0 errors (727 warnings は既存)
+  - Next: エディタ上で (1) local と `@project` 先の両方に同名 module を定義した状態で `// @project <name>` instance が参照先の定義/依存を収集すること (2) `@project` なしの local instance は従来どおり local 定義を収集すること (3) 同一ファイル内で local instance と `@project` instance を併用したとき両方の定義ファイルが収集されること の確認
+
 - `// @project` で別プロジェクトの module を instance した RTL を simulation に流すと unfound module 扱いになる問題 → 修正完了 (ビルド成功、コミット済み)
   - ユーザ報告: `Verilog/Items/ModuleInstantiation.cs` の `// @project <name>` で別プロジェクトの module を呼び出せるが、シミュレーション用の関連ファイル収集 (`Data/SimulationSetup.cs`) が `parsedDocument.ReferencedDefinitionNameSpace` を辿るため、別プロジェクトから参照している module が unfound module 扱いになる
   - 根本原因1 (定義名だけでは所有者不明): `ParsedDocument.ReferencedDefinitionNameSpace` は **定義名のみ** を保持していた。`@project` 先の module は **自プロジェクトの DefinitionNameSpace に存在しない** ため、`SimulationSetup.searchHier` が `parsedDocument.Project` (= 呼び出し元プロジェクト) の DefinitionNameSpace で解決し、常に null → `addUnfoundModule` → `Create()` が null を返して simulation 起動拒否
