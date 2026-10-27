@@ -1502,6 +1502,17 @@ endmodule
 
 ## 進行中タスク
 
+- 未ハンドル例外の ExceptionWindow 表示 + 名前付きポート接続 hint のガード → 実装完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ要求: 修正を commit する
+  - 修正1 (`CodeEditor2/Controller.cs`): 未ハンドル例外時に `Tools.ExceptionWindow` を表示するよう変更。`OperationCanceledException` は表示対象外 (キャンセルは例外扱いしない)。`Dispatcher.UIThread.Post(..., Background)` で `ShowDialogAsync` 経由表示
+  - 修正2 (`CodeEditor2/Controller.cs`): `ShowDialogAsync(Window dialog, Window rootWindow)` オーバーロードを新設し、従来の `ShowDialogAsync(Window)` は `Global.mainWindow` を渡す薄いラッパに整理 (mainWindow が null なら return)。`ShowWindow(Window)` (モデルレス表示、中央配置計算つき) を新設
+  - 追加 (`CodeEditor2/Tools/ExceptionWindow.cs` 新規): 例外メッセージ + スタックトレースを表示し Copy / OK ボタンを持つウィンドウ
+  - 修正3 (`CodeEditor2VerilogPlugin/Verilog/Items/ModuleInstantiation.cs`): 名前付きポート接続の EOF popup hint 条件に `instancedModule != null && instancedModule.Ports.ContainsKey(pinName)` を追加 (未解決 module / 未知 port で popup を出さない)。死んでいたコメントアウト `checkOutputPortConnection` を削除
+  - 修正4 (`RtlEditor2.Desktop/Program.cs`): OpenRouterChat の ProviderOnly を `morph/fp8` に変更 (動作確認用の設定切替)
+  - 検証: `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors (771 warnings は既存)
+  - コミット: CodeEditor2 `4ebbe55` / CodeEditor2VerilogPlugin `9dcb77b`、メイン (submodule pointer + Program.cs + state.md)
+  - Next: エディタ上で (1) 未ハンドル例外時に ExceptionWindow が表示されること (2) OperationCanceledException では表示されないこと (3) 未解決 module の named port 入力中に popup hint が出ないこと の確認
+
 - ChatControl: native (API) function call の呼び出し内容を UI 表示 + spinner が消えない問題を修正 → 実装完了 (ビルド成功、コミット済み)
   - ユーザ要求: (1) RtlEditor2.Desktop/Program.cs → ChatControl → OpenRouterChat の `enableFunctionCalling = true` 時に、function call の「呼び出し自体」も UI に表示する (2) function call 実行中に tool result と spinner が表示されるが、function call が中断 or 終了したときに spinner が消えないことがあるので直す
   - 原因1 (呼び出し内容が出ない): `ToolCallStarted` は tool 名しか受け取らず、`OpenRouterChat.RaiseToolCallNotifications` も `FunctionCallContent` の `Name` だけを通知していた。引数 (`call.Arguments`) は表示経路が存在しなかった

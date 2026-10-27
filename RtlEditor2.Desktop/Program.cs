@@ -149,7 +149,9 @@ class Program
         // api toolcall 必須
         // pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash_1017.Name, true) { ProviderOnly = "inference-net/fp8" };
         //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false) { ProviderOnly = "decart/fp4" };
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash_1017.Name, true) { ProviderOnly = "relace" };
+        //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash_1017.Name, true) { ProviderOnly = "relace" };
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash_1017.Name, true) { ProviderOnly = "morph/fp8" };
+        //
         //
         // 最も安定して長時間動作する。キャッシュヒット率高い。
         //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false, Microsoft.Extensions.AI.ReasoningEffort.Low) { ProviderOnly = "digitalocean" };
