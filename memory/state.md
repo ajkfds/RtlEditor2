@@ -3,6 +3,22 @@
 
 ## 進行中タスク
 
+- SplashWindow の History 名がよく消える問題 → 修正完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ報告: `CodeEditor2/CodeEditor2/Views/SplashWindow.axaml.cs` の History の Name がよく消える
+  - 原因1 (Rename ダイアログが空欄で開く): `Tools/InputWindow.axaml.cs` の `InputWindow(title, caption, defaultText)` → `initialize(title, caption, defaultText)` が **`defaultText` を受け取るだけで `TextBox1.Text` に代入していなかった**。SplashWindow の Rename は `new InputWindow("Rename History", "New name", history.Name)` と現在名を渡しているが、空欄表示 → 何も入力せず OK すると `newName == ""` で早期 return し、入力すると改名されるが「元の名前が消えた」ように見える
+  - 原因2 (名前なし重複エントリの生成 = 主因): `openMainWindow` の履歴検索が **`x.AbsolutePath == ... && x.Name == Global.Solution.Name` の AND 条件**。`OpenSolutionButton_Click`（Open Solution）は `Solution.Name` を設定しないため Name が空のまま → 既に名前付きエントリがある解決ファイルを Open Solution で開くと **同一 AbsolutePath で Name="" の2件目が追加**される。空名エントリが最新 `LastAccessed` を得てリスト先頭に並ぶため、ユーザには「名前が消えた」ように見える。さらに改名しても Name が変わるため `Find` が一致せず、また重複が増える
+  - 原因3 (`PinnedOrder` がシリアライズされない): `Setup.History.PinnedOrder` が **public フィールド** (`public int? PinnedOrder = null;`)。System.Text.Json は既定でフィールドを保存しないため、再起動で常に null に戻っていた
+  - 修正1 (`CodeEditor2/CodeEditor2/Views/SplashWindow.axaml.cs`): `openMainWindow` の履歴検索を **`AbsolutePath` のみ (OrdinalIgnoreCase)** に変更。`Solution.Name` が空なら `GetDefaultSolutionName` で解決ファイル名から補完。既存エントリが見つかった場合は **保存済みの名前 (`history.Name`) を `Solution.Name` に復元**（改名が維持される）
+  - 修正2 (同ファイル): `MergeHistories()` を新設し、`LoadSetup` 直後に実行。**同一 `AbsolutePath` のエントリを1件に統合**（最新 `LastAccessed` / 先頭の非空 `Name` / 先頭の非 null `PinnedOrder` を採用）し、名前が空のエントリは `GetDefaultHistoryName` で補完。旧ビルドが作った重複・空名エントリを起動時に自動修復する
+  - 修正3 (同ファイル): `SortHistories()` を新設。`PinnedOrder` 昇順 → `LastAccessed` 降順でソート（従来は `LastAccessed` 降順のみで `PinnedOrder` 未使用）
+  - 修正4 (同ファイル): `GetDefaultSolutionName` / `GetDefaultHistoryName` ヘルパーを新設。`CreateNewSolutionButton_Click` の名前導出を共通化。`createHistoryButtons` で名前が空なら `GetDefaultHistoryName` にフォールバック（空タイトル行を描画しない）
+  - 修正5 (同ファイル): `OpenSolutionButton_Click` で `Global.Solution.Name = GetDefaultSolutionName(...)` を設定（名前なしエントリの新規生成を根本から防止）
+  - 修正6 (同ファイル): Rename 時に改名対象が現在の Solution と同一パスなら `Global.Solution.Name` も同期
+  - 修正7 (`CodeEditor2/CodeEditor2/Tools/InputWindow.axaml.cs`): `initialize` で `TextBox1.Text = defaultText` を `SelectAll()` の**前**に設定（現在値が初期表示され、全選択状態で開く）
+  - 修正8 (`CodeEditor2/CodeEditor2/Setups/Setup.cs`): `PinnedOrder` をフィールド → プロパティに変更（JSON 保存対象にする）
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors (770 warnings は既存)
+  - Next: エディタ上で (1) Splash の History 右クリック → Rename で現在名が初期表示されること (2) 改名して起動し直しても名前が保持されること (3) Open Solution で既存の名前付き解決ファイルを開いても重複・空名エントリが増えないこと (4) 旧ビルドで作られた重複/空名エントリが起動時に統合されること の確認
+
 - VerilogModuleInstance を編集して Save しても NavigateNode の New (dirty/shine) マークが消えない問題 → 修正完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ報告: VerilogFile を編集すると NavigateNode に New マークが付き、Save で消える。VerilogModuleInstance を編集すると New マークは付くが Save では消えず、ノードを切り替えて戻ってきたときに消える。なぜ ModuleInstance の方が更新されないのか
   - 原因1 (New マークの実体): `VerilogFileNode.GetIcon()` が `verilogRelatedFile.CodeDocument.IsDirty` で shine.svg バッジを付与。`VerilogModuleInstanceNode.UpdateVisual()` も `VerilogFileNode.GetIcon()` を共用するため判定は同一
