@@ -149,15 +149,19 @@ class Program
         // api toolcall 必須
         // pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash_1017.Name, true) { ProviderOnly = "inference-net/fp8" };
         //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false) { ProviderOnly = "decart/fp4" };
-
+        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash_1017.Name, true) { ProviderOnly = "relace" };
+        //
         // 最も安定して長時間動作する。キャッシュヒット率高い。
         //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false, Microsoft.Extensions.AI.ReasoningEffort.Low) { ProviderOnly = "digitalocean" };
 
         // 値引き中
         //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false, Microsoft.Extensions.AI.ReasoningEffort.Low) { ProviderOnly = "deepinfra/fp8" };
 
-        //　値引き率高いBaiduの学習用サーバだが、キャッシュが弱くて実は安くない
-        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false, Microsoft.Extensions.AI.ReasoningEffort.Low) { ProviderOnly = "baidu/fp8" };
+        //　値引き率高い学習用サーバ。稼働終了。
+        //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false, Microsoft.Extensions.AI.ReasoningEffort.Low) { ProviderOnly = "baidu/fp8" };
+        //　値引き率高い学習用サーバ
+        //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, false, Microsoft.Extensions.AI.ReasoningEffort.Low) { ProviderOnly = "gmicloud/fp8" };
+
         //pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.deepseek_4_1_flash.Name, true, Microsoft.Extensions.AI.ReasoningEffort.Low) { ProviderOnly = "baidu/fp8" };
 
         //        pluginAi.OpenRouterChat chat = new OpenRouterChat(OpenRouterModels.z_ai_glm_5_3_flash.Name, false, Microsoft.Extensions.AI.ReasoningEffort.Low) { ProviderOnly = "novita/fp8" };
