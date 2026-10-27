@@ -3,6 +3,23 @@
 
 ## 進行中タスク
 
+- SimulationSetup を「1 プロジェクトにつき 1 セットアップ」に再構成し、ExternalProjectEntryInstance に ModuleName を保持 → 実装完了 (ビルド成功、コミット済み)
+  - ユーザ要求: (1) 1 プロジェクトあたり 1 つの SimulationSetup を作る (2) 外部プロジェクト参照分は `ExternalProjectReferences` に保持 (3) `ExternalProjectEntryInstance` に InstancePath と ModuleName と Project を保持 (現状 instance path ごとの module 名が分からない)
+  - 変更前の問題:
+    - サブセットアップを **参照元 setup ごとに `new SimulationSetup()`** していた (`appendFile` / `appendVerilogHeaderInstance`)。同じプロジェクトを複数箇所から参照すると同一プロジェクトのセットアップが分裂し、`Files` / `UnfoundModules` / `ClassFiles` / `RequiredForwardDeclarations` がセットアップごとにずれる
+    - `ExternalProjectEntryInstance` が `Dictionary<string, Project>` で、instance path → 所有プロジェクトしか無く、**どの module を instance しているか不明**だった
+  - 修正 (`Data/SimulationSetup.cs`):
+    - `SimulationSetup.RootSetup` と `ProjectSetups` (`Dictionary<Project, SimulationSetup>`) を新設。ルートセットアップ (Create) が自分自身を登録し、サブセットアップは **同じ Dictionary を共有**する。これで「1 プロジェクト = 1 インスタンス」が保証される
+    - `getOrCreateProjectSetup(setup, project)` を新設。`setup.RootSetup` の `ProjectSetups` から取得 or 生成 (生成時に `RootSetup` / `ProjectSetups` を共有)
+    - `getExternalProjectSetup(setup, project)` は「唯一のインスタンスを取得 + 呼び出し元 setup の `ExternalProjectReferences` に参照エッジを追加」のみ行うよう変更。`ExternalProjectReferences` は **参照関係 (有向エッジ)** を表す辞書として維持
+    - `appendFile` / `appendVerilogHeaderInstance` のサブセットアップ生成コード (3 箇所) を `getExternalProjectSetup` 呼び出しに統一。`TopFiles` / `TopName` は **未設定のときだけ**書き込むよう変更 (共有インスタンスを後続の参照が上書きしないように)
+    - `ExternalProjectEntryInstanceInfo` クラスを新設 (`InstancePath` / `ModuleName` / `Project` の required プロパティ)。`ExternalProjectEntryInstance` を `Dictionary<string, ExternalProjectEntryInstanceInfo>` に変更
+    - `addExternalProjectEntryInstance(setup, instancePath, moduleName, project)` helper を新設。`searchNameSpace` の `ModuleInstantiation` 分岐で `SourceName` (= instance 先 module 名) を渡すよう修正
+    - `appendFile` の外部モジュール / 外部インターフェース分岐でも `addExternalProjectEntryInstance(setup, path, instance.ModuleName, project)` を登録 (従来は `searchNameSpace` 経由のみで、外部 instance の全パスが拾えていなかった)
+    - `GetProjectSetup(project)` / `GetAllProjectSetups()` / `GetAllExternalProjectEntryInstances()` の取得 API を新設
+  - 検証: `CodeEditor2VerilogPlugin.csproj` 0 errors / `CodeEditor2IcarusVerilogPlugin.csproj` 0 errors / `CodeEditor2VivadoPlugin.csproj` 0 errors。Icarus / Vivado のバックエンドは `ExternalProjectReferences` / `ExternalProjectEntryInstance` / `ProjectSetups` を直接参照していない (ともに grep 0 件) ため、`GetAllFiles()` / `GetAllIncludePaths()` 経由で影響なし
+  - Next: エディタ上で (1) 同一外部プロジェクトを複数箇所から `@project` instance したとき、そのプロジェクトのソースが 1 回だけ収集されること (2) `ExternalProjectEntryInstances` で instance path ごとに module 名が取れること (3) 3 階層以上のネストした外部参照でも entry instance が登録されること の確認
+
 - SimulationSetup.searchHier が local の DefinitionNameSpace を優先するため、`// @project <name>` 指定時も local 側の同名定義を拾ってしまう問題 → 修正完了 (ビルド成功、コミット済み)
   - ユーザ報告: `Data/SimulationSetup.cs` の `searchHier` 内で `localProperty.DefinitionNameSpace.GetFile(definitionName)` を先に試し、null のときだけ `ReferencedDefinitionNameSpaceProjects` にフォールバックしていたため、`// @project <name>` 指示があっても local に同名定義があるとそちらが優先されていた。本来は `// @project` 指定時は local の有無に関わらず参照先プロジェクトから取得する必要がある
   - 根本原因1 (local 優先の解決順): `searchHier` の `ReferencedDefinitionNameSpace` ループが「local で解決 → 失敗したら cross-project」の順で、`@project` の明示指定を無視していた
