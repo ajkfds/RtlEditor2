@@ -3,6 +3,15 @@
 
 ## 進行中タスク
 
+- SimulationSetup: `@project` 指定 instance の下層 instance/object に参照先プロジェクトが適用されない問題 → 修正完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ報告: `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Data/SimulationSetup.cs` について、`@project` 指定 instance の下層の instance/object は全て `@project` 先のプロジェクトである必要があるが、下層オブジェクトに project name が適用されていない
+  - 根本原因: `searchHier` の走査全体で「参照元 setup」を引き継いでいた。`appendFile` は個々のファイルを `sourceFile.Project` で正しい setup に振り分けていたが、**走査コンテキスト (setup)** は参照元プロジェクトのまま。そのため `@project` instance 配下の下層 instance/object が、unfound module / class file / package file / entry instance を参照元 (local) プロジェクトに登録していた。呼び出し元 (`searchNameSpace` の module / interface / instance array 分岐, `appendClass` / `appendImportedPackage` / `appendReferencedDefinition` の再帰) がすべて `setup` をそのまま渡していたため、下層に project name が波及しなかった
+  - 修正: `searchHier` 冒頭の visited ガード直後で setup を正規化。`file.Project != setup.Project` の場合、(1) 参照元 setup に `addExternalProjectEntryInstance(setup, path, buildingBlockName, file.Project)` で crossing instance を記録、(2) `getExternalProjectSetup(setup, file.Project)` で参照先プロジェクトの共有サブセットアップに切り替え。全再帰経路が `searchHier` を通るため、module / interface / instance array / class / package すべてに一度で適用される
+  - 併せて `pSetup.TopFiles` / `pSetup.TopName` (文書化済みのサブセットアップ entry 情報) を、切り替え後にここで設定するよう追加 (setup を `appendFile` より先に切り替えるため `appendFile` の外部プロジェクト分岐に到達しなくなるため。共有サブセットアップを後続参照が上書きしないよう「未設定時のみ」)
+  - 検証: `dotnet build CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors (754 warnings は既存)
+  - コミット: CodeEditor2VerilogPlugin `0d44e8b`
+  - Next: エディタ上で (1) `@project` instance の下層にさらに別プロジェクトの instance / class 参照があるケースで、unfound / ファイル収集が参照先プロジェクト単位になること (2) 3 階層以上のネストした外部参照で `ExternalProjectEntryInstance` の path が正しいこと の確認
+
 - SplashWindow の History 名がよく消える問題 → 修正完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ報告: `CodeEditor2/CodeEditor2/Views/SplashWindow.axaml.cs` の History の Name がよく消える
   - 原因1 (Rename ダイアログが空欄で開く): `Tools/InputWindow.axaml.cs` の `InputWindow(title, caption, defaultText)` → `initialize(title, caption, defaultText)` が **`defaultText` を受け取るだけで `TextBox1.Text` に代入していなかった**。SplashWindow の Rename は `new InputWindow("Rename History", "New name", history.Name)` と現在名を渡しているが、空欄表示 → 何も入力せず OK すると `newName == ""` で早期 return し、入力すると改名されるが「元の名前が消えた」ように見える
