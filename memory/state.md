@@ -16,7 +16,18 @@
   - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors (203 warnings は既存)
   - メモ: `RtlEditor2.Desktop.csproj` 全体ビルドの 2 エラー (`CSharpMath` / `Typography` 未解決) は `CodeEditor2VerilogPlugin.csproj` のパッケージバージョン更新 (ユーザの作業ツリー変更、本タスク外) に起因し、本変更と無関係。`CodeEditor2.csproj` のバージョン更新差分もユーザ変更のためコミットから除外
   - コミット: CodeEditor2 `9f1165f`
-  - Next: エディタ上で大きい出力を返すコマンド (全体ビルド等) を実行し、(1) 先頭に WARNING 行が付く (2) 出力が前側のみで末尾に `--- end of truncated output ---` が付く (3) 上限未満の出力は従来どおり全量返る ことの確認
+  - 追加 (同タスクの横展開): 同じ仕組みを `LLM/Tools` 配下の各 tool に適用 → 実装完了 (ビルド成功 0 errors、コミット済み)
+    - 方針: 個別 tool ごとに重複実装せず、`LLMTool` 基底クラスへ機構を集約 (`DefaultMaxOutputBytes` / `MaxOutputBytes` プロパティ / `LimitOutput(output, toolName)` / `GetCharCountForByteBudget` / `BuildTooLargeAlert` / `FormatBytes`)
+    - `LLMTool.cs`: 上記の共通機構を新設 (ExecuteCommand にあった実装を基底へ移設)。`protected` で各 tool から利用
+    - `ExecuteCommand.cs`: 独自実装を削除し `LimitOutput(result, "execute_command")` に統一
+    - `BuildDotNet.cs`: ビルドログを `LimitOutput(result, "build_dotnet")` に適用。`[Description]` にサイズ上限の注記を追記
+    - `GetLibDefinition.cs`: ライブラリ定義を `LimitOutput(result, "get_lib_definition")` に適用。`[Description]` に注記
+    - `SearchFiles.cs`: 従来の `results.Length > 1500` の切り詰めを廃止し、内部スキャン上限 (`MaxOutputBytes * 2` 文字で走査打ち切り → メモリ保護) + 最終出力を `LimitOutput(results, "search_files")` に変更。走査打ち切り時は末尾に truncate 注記
+    - `ListFiles.cs`: 従来の 20000 文字切り詰めを廃止し、同様に内部スキャン上限 + `LimitOutput(sb, "list_files")` に変更。`[Description]` に注記
+    - 対象外: `ReadFile.cs` は「上限超過時は内容を一切返さない」独自の厳格仕様があるため変更せず。`WriteToFile.cs` / `ReplaceInFile.cs` は短い成功/失敗メッセージのみで大きな出力を返さないため対象外
+  - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors (178 warnings は既存)
+  - コミット: CodeEditor2 `7a94220`
+  - Next: エディタ上で大きい出力を返す tool (全体ビルド / 広域 search_files / 深い list_files 等) を実行し、(1) 先頭に WARNING 行が付く (2) 出力が前側のみで末尾に `--- end of truncated output ---` が付く (3) 上限未満の出力は従来どおり全量返る ことの確認
 
 - SimulationSetup: `@project` 指定 instance の下層 instance/object に参照先プロジェクトが適用されない問題 → 修正完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ報告: `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Data/SimulationSetup.cs` について、`@project` 指定 instance の下層の instance/object は全て `@project` 先のプロジェクトである必要があるが、下層オブジェクトに project name が適用されていない
