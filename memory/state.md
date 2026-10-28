@@ -3,6 +3,21 @@
 
 ## 進行中タスク
 
+- execute_command tool に出力サイズ上限を追加 (超過時はアラート + ログ前側のみ出力) → 実装完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/Tools/ReadFile.cs` には出力サイズ制限があるので、`LLM/Tools/ExecuteCommand.cs` にも同じ制限をかけ、超えた場合はアラートを出してログの前側だけを出力する
+  - 実装 (`LLM/Tools/ExecuteCommand.cs` のみ):
+    - `public const int DefaultMaxOutputBytes = 256 * 1024;` (既定 256KB) を新設。ReadFile の `DefaultMaxFileBytes` / `MaxFileBytes` と同じプロパティ形式 (`private int maxOutputBytes` + `public int MaxOutputBytes`、0 以下は既定値にフォールバック)
+    - `LimitOutput(string output)` helper を新設し、`Run` の `return result;` を `return LimitOutput(result);` に変更。UTF-8 バイト数が上限以下ならそのまま返す
+    - `GetCharCountForByteBudget` helper: 先頭から上限バイトに収まる文字数を算出 (surrogate pair を分断しない)
+    - `BuildTooLargeAlert` helper: `[WARNING] execute_command: the output is too large and was truncated. total=..., returned=... (head only), limit=..., returnedChars=...` + `--- output (head) ---` + 前側出力 + `--- end of truncated output ---` を返す
+    - `FormatBytes` helper を ReadFile と同形式で追加
+    - 設計判断: ReadFile は上限超過時に内容を一切返さないが、execute_command (ビルドログ等) は先頭に重要情報が集まるため、内容を捨てずに「前側のみ切り詰めて返す」方針とした (ユーザ要求「ログの前側だけを出力」に合わせる)
+    - tool の `[Description]` にサイズ上限の存在と「より具体的なコマンド (-clp:ErrorsOnly / git log -n <count> 等) で絞る」旨を追記
+  - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors (203 warnings は既存)
+  - メモ: `RtlEditor2.Desktop.csproj` 全体ビルドの 2 エラー (`CSharpMath` / `Typography` 未解決) は `CodeEditor2VerilogPlugin.csproj` のパッケージバージョン更新 (ユーザの作業ツリー変更、本タスク外) に起因し、本変更と無関係。`CodeEditor2.csproj` のバージョン更新差分もユーザ変更のためコミットから除外
+  - コミット: CodeEditor2 `9f1165f`
+  - Next: エディタ上で大きい出力を返すコマンド (全体ビルド等) を実行し、(1) 先頭に WARNING 行が付く (2) 出力が前側のみで末尾に `--- end of truncated output ---` が付く (3) 上限未満の出力は従来どおり全量返る ことの確認
+
 - SimulationSetup: `@project` 指定 instance の下層 instance/object に参照先プロジェクトが適用されない問題 → 修正完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ報告: `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Data/SimulationSetup.cs` について、`@project` 指定 instance の下層の instance/object は全て `@project` 先のプロジェクトである必要があるが、下層オブジェクトに project name が適用されていない
   - 根本原因: `searchHier` の走査全体で「参照元 setup」を引き継いでいた。`appendFile` は個々のファイルを `sourceFile.Project` で正しい setup に振り分けていたが、**走査コンテキスト (setup)** は参照元プロジェクトのまま。そのため `@project` instance 配下の下層 instance/object が、unfound module / class file / package file / entry instance を参照元 (local) プロジェクトに登録していた。呼び出し元 (`searchNameSpace` の module / interface / instance array 分岐, `appendClass` / `appendImportedPackage` / `appendReferencedDefinition` の再帰) がすべて `setup` をそのまま渡していたため、下層に project name が波及しなかった
