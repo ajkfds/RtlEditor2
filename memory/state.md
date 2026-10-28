@@ -11,11 +11,11 @@
     - `searchHier` を再帰ラッパに変更し、実処理を `searchHierCore` に分離。`Path` へ push → `searchHierCore` → `finally` で pop。これにより **真の循環 (module A<->B / class 循環 / bind / 外部プロジェクト循環 / 自己 instance)** は従来どおり停止しつつ、別サブツリーからの同一 building block 訪問は走査される
     - 訪問済みキーを `(参照元 setup の project) > (file 所有 project) : file.ID : buildingBlock` に拡張。参照元 project を含めるのは、そのファイル到達時に `@project` 跨ぎエントリを記録するかが `setup.Project` に依存するため
     - 性能対策: 走査前後で `countExternalEntryInstances(setup)` (セットアップ木全体の `ExternalProjectEntryInstance` 総数) を比較し、**増えなかった** サブツリーのみ `CleanSubtrees` に登録。それ以外の収集物 (ファイル / include / class / package リスト / library path / project 参照エッジ / unfound) はすべて重複排除され instance path 非依存なので、メモしても情報欠落しない。これが無いと循環ガードをパス限定にした副作用で、共有される純ローカルなサブ階層を instance ごとに再走査して指数的に膨れる
-    - `MaxSearchHierDepth = 512` (Path.Count = 再帰深度) の防御上限を追加。パラメータ違いで厳密に同一の triple を繰り返さない病的な自己参照階層は循環ガードでは止まらないため
+    - `MaxSearchHierDepth = 512` (Path.Count = 再帰深度) の防御上限を追加。パラメータ違いで厳密に同一の triple を繰り返さない病的な自己参照階層は循環ガードでは止まらないため。深さ上限で打ち切られた walk は不完全なので `CleanSubtrees` にメモ化しない (`SearchTraversal.Truncated` を呼び出しごとにスコープし、内側の truncate は外側にも伝播)
     - 引数名 `ids` (`List<string>`) を `traversal` (`SearchTraversal`) に置換。対象は `searchHier` / `searchHierCore` / `searchNameSpace` / `appendFile` / `appendExternalProjectDependencies` / `appendImportedPackage` / `appendClass` / `appendReferencedDefinition`
     - helper `getSetupProjectName(setup)` を新設 (visited key 用)
   - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors (551 warnings は既存)。`dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
-  - コミット: CodeEditor2VerilogPlugin (本コミット)、メイン (submodule pointer + state.md)
+  - コミット: CodeEditor2VerilogPlugin `afbe2f3` (本体) / `141be9d` (truncate 時のメモ化抑止)、メイン (submodule pointer + state.md)
   - Next: エディタ上で (1) project A の異なる instance D / instance E の下から同じ project B を参照したとき、`GetAllExternalProjectEntryInstances()` に **両方** の instance path が現れること (2) 各サブツリー下層の files / import / class / library が project B 側セットアップに収集されること (3) project B を 3 階層以上ネストして参照しても entry instance の path が正しいこと (4) 相互参照 module / 循環 class / 自己 instance で依然フリーズしないこと の確認
 
 - ChatControl: API tool call の呼び出し (A) と結果 (B) を別 Item に分離表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
