@@ -3,6 +3,24 @@
 
 ## 進行中タスク
 
+- ChatControl: API tool call の呼び出し (A) と結果 (B) を別 Item に分離表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の API tool call 表示について、現状 A) LLM の tool call 呼び出し と B) tool call 結果 を 1 つの Item にまとめて UI 反映しているが、これらをばらばらに表示する。A は LLM アイコンで collapse せずに表示する
+  - 変更前: `ApplyToolCallStarted` が `functionCallReturn` アイテム(hammer アイコン・collapsed)を 1 つ作り、ヘッダ(tool 名+引数)と結果テキストを同じ Item に合成していた (`toolCallHeaders`/`toolCallResults`/`toolCallNames` で body を再構築)
+  - 修正 (`LLM/MarkdownTextItem.cs`):
+    - `MessageType` に `toolCall` を追加。アイコンは LLM の `ai.svg` (YellowGreen) を使用
+  - 修正 (`LLM/ChatControl.axaml.cs`):
+    - フィールド再構成: `lastToolCallItem`(A, 呼び出しアイテム) と `lastToolResultItem`(B, 結果アイテム) に分離。`pendingToolCallItems`(callId→A) / `pendingToolResultItems`(callId→B) / `toolCallHeaders`(A のヘッダ)。不要になった `toolCallResults` / `toolCallNames` を削除
+    - `ApplyToolCallStarted`: A を `MessageType.toolCall`(LLM アイコン) で生成し、`TextColor = completeColor`、`Collapsed = false`(collapse しない)。ヘッダ(tool 名+引数)のみを本文に持つ。スピナーは A に表示
+    - `SetToolCallInvocation`: A の本文(ヘッダ)だけを更新
+    - `ToolCallEnded`: スピナーを止めた後、A の直下(次の index)に **B を新規挿入** (`functionCallReturn`、hammer アイコン、collapsed=false、本文は結果テキスト)。`lastToolResultItem`=B、`toolResultItemCreated=true`
+    - `Chat_ToolCallNotification`: start で `lastToolCallItem` をクリアして A 生成。finish で `ToolCallEnded` → B を `nativeToolResultItems`(footer 用) に登録し、`pendingToolCallItems` が空なら `lastToolCallItem=null`
+    - Reset / ターン開始時のクリアに `pendingToolResultItems` を追加、`toolCallResults`/`toolCallNames` のクリアを削除
+    - `completeWork` の重複コマンドスキップは B が結果を表示するため維持 (`toolResultItemCreated`)。コメント更新
+  - 表示順: (stream 中の response) → 分割 → **A (LLM アイコン, 引数, スピナー)** → **B (hammer, 結果)** → (続きの response)。native / pseudo 双方の経路 (`ToolCallStarted`/`ToolCallEnded`) で同一挙動
+  - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors (178 warnings は既存)
+  - コミット: CodeEditor2 `63945b9`
+  - Next: エディタ上で native API tool call 実行時に (1) A が LLM アイコン・引数付き・折りたたまれずに表示されスピナーが出る (2) B が A の直下に結果として別 Item 表示される (3) 並列 tool call で各 A/B が正しく並ぶ (4) footer (token/時間) が B に付く ことの確認
+
 - execute_command tool に出力サイズ上限を追加 (超過時はアラート + ログ前側のみ出力) → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/Tools/ReadFile.cs` には出力サイズ制限があるので、`LLM/Tools/ExecuteCommand.cs` にも同じ制限をかけ、超えた場合はアラートを出してログの前側だけを出力する
   - 実装 (`LLM/Tools/ExecuteCommand.cs` のみ):
