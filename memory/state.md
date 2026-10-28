@@ -3,6 +3,14 @@
 
 ## 進行中タスク
 
+- ChatControl: function call の結果だけを collapse して表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の function call の結果だけは collapse して返すようにする
+  - 変更 (`LLM/ChatControl.axaml.cs` のみ): `ToolCallEnded` で生成する tool-result item (B, `MessageType.functionCallReturn`、hammer アイコン) の `Collapsed` を `false` → `true` に変更。結果は長大なログ (ビルドログ / ファイル内容) になり得るため既定で折りたたむ (markdown 高さ = FontSize*3 でプレビュー)
+  - 維持した挙動: tool call 本体 (A, `MessageType.toolCall`、LLM アイコン) は `Collapsed = false` のまま (呼び出し内容 + 引数は常時表示)。ユーザは collapse ボタン / 右クリックメニューで結果を展開可能
+  - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors (178 warnings は既存)
+  - コミット: CodeEditor2 `3638c9f` "Collapse tool call result items by default"
+  - Next: エディタ上で native / pseudo 両経路の tool call 実行時に (1) 結果 item が折りたたまれて表示されること (2) 展開ボタン / 右クリック → Expand で全文表示できること (3) tool call 本体 (引数) は折りたたまれないこと の確認
+
 - 未 commit 項目の整理と commit → 完了 (コミット済み)
   - 内容: 全サブモジュール + メインリポジトリに残っていた未コミット変更を確認し、NuGet パッケージ更新 (Avalonia 12.1.3→12.1.4 / LiveMarkdown.Avalonia 2.4.3→2.5.1 / Microsoft.Extensions.AI 10.10.0→10.11.0 / Microsoft.Agents.AI 1.22.0→1.26.0 / Microsoft.ML / Microsoft.VisualStudio.Threading 18.7.23→18.12.1 / .NET 11 RC rc.1→rc.3 / Playwright 1.63.0→1.64.1 / test sdk 等) と Verilog プラグインの未使用 using 削除のみであることを確認してコミット
   - サブモジュール: AjkLibs / AvaloniaEdit / CodeEditor2 / CodeEditor2AiPlugin / CodeEditor2DrawIoPlugin / CodeEditor2IcarusVerilogPlugin / CodeEditor2LiveMarkdownPlugin / CodeEditor2MarkdownPlugin / CodeEditor2Plugin / CodeEditor2VerilogPlugin / CodeEditor2VivadoPlugin / AjkAvaloniaLibs (LiveMarkdown.Avalonia.DrawIo / WaveDrom の "fix project file" submodule pointer 更新含む)
