@@ -1585,6 +1585,18 @@ endmodule
 
 ## 進行中タスク
 
+- `CodeEditor2/CodeEditor2/Data/Project.cs` に `GetItem(string relativePath)` を追加 → 実装完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ要求: `Project.cs` に `GetItem(string relativePath)` を追加。path を分解して Items 経路を辿って対象のファイル/フォルダを取得する method を追加
+  - 背景: `Item.GetItem(string)` (Item.cs L499-) が既に存在し `Project : Folder : Item` が継承していたが、実装は `Name == relativePath` の早期 return と単一セパラント前提の再帰で、`Project` 側に明示的な実装はなかった
+  - 実装 (`Data/Project.cs` の `GetRelativePath` 直後): `public override Item? GetItem(string relativePath)` を追加
+    - `relativePath` を `'/'` / `'\\'` / `Path.DirectorySeparatorChar` で分割 (`StringSplitOptions.RemoveEmptyEntries` で `a//b`・先頭/末尾セパレータを吸収)
+    - project root (this) から `current.Items.TryGetValue(segment, out item)` で1セグメントずつ辿り、最終セグメントの Item を返す
+    - 空文字は this、`.` は読み飛ばし、`..` は project root より上へ遡れないため null、途中セグメント欠落は null
+    - 経緯コメント (相対パスが `'/'` 格納の箇所があるため両セパレータ受容) を XML コメントに記載
+  - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors (178 warnings は既存)
+  - コミット: CodeEditor2 `4458274` "Add Project.GetItem(relativePath) that walks the Items tree path segments"
+  - Next: エディタ上で (1) 深い階層のファイル相対パスで `project.GetItem(...)` が対象 File を返すこと (2) 存在しないパスで null (3) `'/'` 区切り・`'\\'` 区切りの両方で解決できること の確認
+
 - 未ハンドル例外の ExceptionWindow 表示 + 名前付きポート接続 hint のガード → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: 修正を commit する
   - 修正1 (`CodeEditor2/Controller.cs`): 未ハンドル例外時に `Tools.ExceptionWindow` を表示するよう変更。`OperationCanceledException` は表示対象外 (キャンセルは例外扱いしない)。`Dispatcher.UIThread.Post(..., Background)` で `ShowDialogAsync` 経由表示
