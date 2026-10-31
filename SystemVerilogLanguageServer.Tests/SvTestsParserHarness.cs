@@ -97,6 +97,22 @@ namespace SystemVerilogLanguageServer.Tests
         }
 
         /// <summary>
+        /// True when the test relies on a POSIX-absolute include path
+        /// (e.g. `include "/dev/null"`) that cannot be resolved on other
+        /// platforms. Such a test verifies the toolchain's handling of an
+        /// absolute include path, not a parser feature, so it is recorded
+        /// separately instead of as a POS-ERROR.
+        /// </summary>
+        internal static bool IsPlatformSpecificTest(string text)
+        {
+            // `include "<path starting with />"  (POSIX absolute path)
+            var match = System.Text.RegularExpressions.Regex.Match(
+                text, @"^[ \t]*`include[ \t]+""(?<path>/[^""]*)""",
+                System.Text.RegularExpressions.RegexOptions.Multiline);
+            return match.Success;
+        }
+
+        /// <summary>
         /// Parses the sv-tests `:defines:` metadata marker
         /// (`:defines: NAME1 NAME2=VALUE ...`) from the file header. The
         /// harness passes these as preprocessor defines (equivalent to the

@@ -158,7 +158,10 @@ endmodule
            // the partial parse must produce concrete candidates (keywords at
            // minimum; DataObject items appear for expression / LHS positions)
            Assert.NotEmpty(entries!);
-           Assert.Contains(entries!, e => e.Text == "begin");
+           // the module-level signal declared above must be offered as a
+           // DataObject candidate when typing an expression (the candidate
+           // list is filtered by the incomplete word "my")
+           Assert.Contains(entries!, e => e.Text == "mysignal");
        }
 
       [Fact]
