@@ -1585,6 +1585,27 @@ endmodule
 
 ## 進行中タスク
 
+- sv-tests のテスト用 RTL 差し替えに伴うテスト側の更新 → 完了 (ビルド成功 0 errors、テスト 1081/1081 合格、コミット済み)
+  - ユーザ要求: svtest のテスト用 rtl を差し替えたので、svtest でのテストを更新して
+  - 差し替え後の実測: `dotnet test --filter FullyQualifiedName~ParseSvTestFile` → 1025 合格 / 3 失敗 (全 1028 件、UVM skip 除く)。失敗 3 件の内訳:
+    - `6.20.2--parameter_aggregate.sv` (POS-ERROR: too many elements in an assignment pattern for a scalar / vector type)
+    - `class_test_49.sv` (同エラー + bitwidth mismatch)
+    - `5.6.4--compiler-directives-include.sv` (`include "/dev/null"` の file not found = 環境依存)
+  - 修正1 (parser、CodeEditor2VerilogPlugin `e74b2b8`): `Verilog/DataObjects/Constants/Constants.cs` の `ParseCreateDeclaration` で `param_unpacked_dimension` を `constants.UnpackedArrays` に積むタイミングが **assignment pattern の parse より後** だったため、`AssignmentPattern.CheckPattern` が `hasUnpackedArray == false` と判定して配列パターンを scalar/vector 扱いし「too many elements ...」を誤報していた。`constants.DataType` 設定直後 (初期化式 parse の前) に移動 (IEEE 1800-2017 6.20.2 / 10.9)
+    - 対象: `parameter logic [31:0] p [3:0] = '{1, 2, 3, 4};` (6.20.2--parameter_aggregate) / `localparam int arr[3] = '{1,2,3};` (class_test_49 の package 内)。既存の `Variable.ParseDeclaration` は宣言時点で UnpackedArrays を持つため影響なし
+  - 修正2 (テストハーネス、メイン `19a07ba`): `SystemVerilogLanguageServer.Tests/SvTestsParserHarness.cs` に `IsPlatformSpecificTest(text)` を新設。`include` のパスが `/` 始まり (POSIX 絶対パス) のテストを検出し、`SvTestsParserTests.ParseSvTestFile` の POS-ERROR 判定で `[PLATFORM-SPECIFIC]` として記録して fail させない (環境依存で parser 実装課題ではないため)。従来の hard-fail を廃止
+    - 対象: `5.6.4--compiler-directives-include.sv` (`include "/dev/null"`)。Windows では解決不能
+  - 修正3 (テスト、同 `19a07ba`): `SystemVerilogLanguageServer.Tests/ParserBackedAdapterTests.cs` の `InMemoryCore_CompletionFromRealParser` の assert を `e.Text == "begin"` → `e.Text == "mysignal"` に変更。差し替え後は partial parse の候補が `mysignal` (宣言済み DataObject) + keyword 3 件を返すようになっており、`begin` は候補に出ない。module body の expression 位置で宣言済み signal が DataObject 候補として出ることを検証する形に修正
+  - 検証:
+    - `dotnet build SystemVerilogLanguageServer.Tests.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet test SystemVerilogLanguageServer.Tests.csproj` (全体) → **1081 合格 / 0 失敗** (sv-tests ParseSvTestFile 1029 + その他テスト)
+    - レポート (`bin/Debug/net10.0/sv_tests_report.txt`): Error 1 (`file not found` = 5.6.4--include、`[PLATFORM-SPECIFIC]` 記録) / Warning 1 (`sync mismatch rst assigned`) / Notice 3 (`undriven`)。POS-ERROR 0 件
+  - 残 NEG-NOT-REJECTED (差し替え後): `18.17.6--aborting-productions-break-and-return_2_fail` / `8.26.6.3--diamond_relationship_parametrized` / `8.26.6.2--parameter_type_conflict_unresolved` / `11.4.14.3--unpack_stream_inv` (いずれも parser が負例を reject できていない既知課題)
+  - コミット: CodeEditor2VerilogPlugin `e74b2b8`、メイン `19a07ba` (submodule pointer + tests + state.md)
+  - Next: エディタ上で (1) `parameter logic [31:0] p [3:0] = '{1,2,3,4};` の parse エラーが出ないこと (2) パラメータ未初期化 (`parameter logic [31:0] p [3:0];`) でもエラーが出ないこと の確認。残 NEG-NOT-REJECTED 4 件は個別対応課題
+  - メモ: 差し替え前の作業ツリーにあった `Data/SimulationSetup.cs` / `Verilog/ParsedDocument.cs` (modified) と `Data/VerilogRelatedFileReference.cs` (untracked) は本タスク外のユーザ変更のためコミットから除外 (作業ツリーに残置)。`CodeEditor2` / `CodeEditor2IcarusVerilogPlugin` / `CodeEditor2VivadoPlugin` サブモジュールの modified も同様に除外
+
 - `CodeEditor2/CodeEditor2/Data/Project.cs` に `GetItem(string relativePath)` を追加 → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: `Project.cs` に `GetItem(string relativePath)` を追加。path を分解して Items 経路を辿って対象のファイル/フォルダを取得する method を追加
   - 背景: `Item.GetItem(string)` (Item.cs L499-) が既に存在し `Project : Folder : Item` が継承していたが、実装は `Name == relativePath` の早期 return と単一セパラント前提の再帰で、`Project` 側に明示的な実装はなかった
