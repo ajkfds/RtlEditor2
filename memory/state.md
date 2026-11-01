@@ -92,6 +92,42 @@
     - ネストした assignment pattern の内側の要素数は未検証 (`ParseCreate` の入れ子呼び出しが `lhs = null` で行われるため。コード上もコメントで「Nested patterns are parsed without a lhs (null) and are therefore validated only through their outermost pattern」と明記)
   - Next: 上記 2 つの未検査ケース (keyed 部分指定 / ネスト内側) をエラーにすべきか要判断。keyed は `default` キーの存在有無で判定可能、ネストは親型のメンバー型を lhs として子 pattern に渡すよう `ParseCreate` を拡張する必要がある
 
+- VSCode 拡張 (LSP) でプロジェクト内の他ファイルの module が参照できない問題 → 原因解析完了 (修正方針確定、未実装)
+  - ユーザ報告: vscode 拡張として動作したとき、プロジェクト内の他ファイルを参照できない。全ファイルを parse して他ファイルの module を参照できるようにしたい
+  - **実測 (DebugCrossFileTests.cs で検証 → 削除)**:
+    | 条件 | 結果 |
+    |---|---|
+    | 別々の CodeEditor2.Project (= 現状の LSP) | **unfound module** ✗ |
+    | **共有** Project ＋ 依存ファイル (sub.sv) を先に parse | **エラーなし** ✓ |
+    | **共有** Project ＋ 利用側 (top.sv) を先に parse | **unfound module** ✗ |
+  - **原因1 (最大の問題): `InMemoryFile.CreateVerilogFile()` がファイルごとに別インスタンスの `CodeEditor2.Data.Project` (`ParserProjectStub`) を生成する**
+    - `InMemorySystemVerilogCore.cs` L353: `private CodeEditor2.Data.Project? _project;` は `InMemoryFile` の**インスタンスフィールド**で、`CreateVerilogFile()` 内で `_project ??= new ParserProjectStub()` として**ファイルごとに 1 つ**生成される
+    - `ProjectProperty` (L416-421) は `Project.ProjectProperties["Verilog"]` から取得するため、**ファイルごとに別々の ProjectProperty = 別々の DefinitionNameSpace / PackageNameSpace / UnitNameSpace** になる
+    - module 解決 (`DefinitionNameSpace.Get` / `GetFile`) は自身の ProjectProperty の名前空間しか見ないため、他ファイルの module が見えない
+    - ファイルは `LoadWorkspaceFiles` で全件 `AddOrUpdateFile` されているが、**parse されていないファイルは `_parsedDocument` が null** なので名前空間にも登録されない
+  - **原因2: `LoadWorkspaceFiles` はファイルを登録するだけで parse しない**
+    - `AddOrUpdateFile` は `InMemoryFile` を作るだけで `ForceBuild()` を呼ばない。`_built` は遅延 (EnsureBuilt) なので、LSP クエリで触られたファイルだけが parse される
+    - 従って「全ファイル parse」は現状行われていない
+  - **原因3: parse 順序への依存 (単一パス解決)**
+    - 共有 Project でも「利用側を先に parse」すると失敗する。`ParseEngine.ParseOnceAsync` 内で Root.NamedElements を名前空間に Register するが、**依存先が未 parse だとその時点で解決できず `unfound module` になる**
+    - 逆順 (依存先を先に parse) なら解決する = **名前空間登録は機能しているが、順序保証が無い**
+    - なお `ParseEngine` は同一ファイル内の前方参照用に 2 パス実行するが、**他ファイルの再 parse は行わない**
+  - **原因4: 他ファイルの変更が反映されない**
+    - `didChange` は該当ファイルのみ再 parse。依存側 (それを参照している側) の再 parse / diagnostics 更新は行われない
+    - `didSave` / `workspace/didChangeWatchedFiles` ハンドラも未実装 (grep 0 件)
+    - 依存側ファイルの diagnostics は `PushDiagnostics` が didOpen / didChange 時のみなので、依存先を編集しても古い診断が残る
+  - **修正方針 (推奨: フェーズ分割)**
+    1. **(必須) Project を 1 つに共有する**: `InMemoryFile._project` (インスタンスフィールド) を廃止し、`InMemoryProject` が持つ単一の `CodeEditor2.Data.Project` (ParserProjectStub) + `Plugin.ProjectProperty` を全 `InMemoryFile` で共有する。これだけで「依存先が先に parse されていれば解決する」状態になる (実測で確認済み)
+       - 実装: `InMemoryProject` に `internal CodeEditor2.Data.Project PluginProject` を持たせ、`AddOrUpdateFile` 時に `file.PluginProject = this.PluginProject` を渡す。`CreateVerilogFile()` はそれを `Project` に使う
+    2. **(必須) workspace 全ファイルを初期 parse する**: `LoadWorkspaceFiles` の後に全 `InMemoryFile.ForceBuild()` を実行。ファイル数が多い場合はバックグラウンド (Task.Run) + 進捗通知、または `initialized` 通知後に非同期実行してクライアントをブロックしない
+       - parse 順序の依存を減らすには **2 周 parse** が有効 (1 周目で全ファイルの building block を名前空間に登録 → 2 周目で参照解決)。`ParseEngine` は同名 building block を上書き登録するので 2 周目で解決する
+    3. **(推奨) 依存解決のための再 parse ループ**: `unfound module` を含むファイルを、全ファイル parse 後にもう一度 parse する (エディタ側 `ParseHierarchy` の 2 パスと同じ発想)。または `ParsedDocument.ReparseRequested` が立ったファイルを再 parse するキューを設ける
+    4. **(推奨) 変更の波及**: `didChange` / `didSave` で (a) 該当ファイル再 parse → (b) 名前空間を再登録 → (c) そのファイルに依存する他ファイル (= `ReferencedDefinitionNameSpace` を持つファイル) を再 parse → (d) 影響ファイルの diagnostics を再 push。`workspace/didChangeWatchedFiles` (新規ファイル/削除) も追加
+    5. **(推奨) 設定で対象ファイルを絞る**: 大規模リポジトリでは全 .sv を舐めると重い。`initializationOptions` に `include` / `exclude` / filelist (`.f`) を用意し、テストベンチ等の対象ファイルだけ parse する選択肢を用意する
+  - 補足 (未解決の別要因): `project.FindDefinition` が `sub_mod` (モジュール名) に対して `top` を返す現象を確認。`InMemoryFile.FindElementAt` がモジュール名の位置で `top` (enclosing block) を返しているため。これはシンボル変換側 (`BuildSymbolsFromParsedDocument`) の別問題で、module 参照解決そのものとは独立
+  - 検証ファイル: `SystemVerilogLanguageServer.Tests/DebugCrossFileTests.cs` (一時作成 → 削除済み)。結果は `bin/Debug/net10.0/debug_cross_file_report.txt`
+  - Next: 方針 1 + 2 (+3) を実装するかユーザ判断待ち。実装時は `InMemorySystemVerilogCore.cs` (共有 Project / 全ファイル parse) と `LspHandler.cs` (didSave / watched files / 依存再 parse) の 2 ファイルが主な変更点
+
 - ChatControl: function call の結果だけを collapse して表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の function call の結果だけは collapse して返すようにする
   - 変更 (`LLM/ChatControl.axaml.cs` のみ): `ToolCallEnded` で生成する tool-result item (B, `MessageType.functionCallReturn`、hammer アイコン) の `Collapsed` を `false` → `true` に変更。結果は長大なログ (ビルドログ / ファイル内容) になり得るため既定で折りたたむ (markdown 高さ = FontSize*3 でプレビュー)
