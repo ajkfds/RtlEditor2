@@ -3,6 +3,27 @@
 
 ## 進行中タスク
 
+- PartialAssign.sv (`wire [3:0] aaa; assign aaa[0]..aaa[3]`) で偽の "multiple continuous assignments" エラー → 修正完了 (ビルド成功 0 errors、sv-tests 1028/1028 合格、コミット済み)
+  - ユーザ報告: `CodeEditor2VerilogPlugin/verilog_sample/mySample/PartialAssign.sv` でエラーが検出される。正しくはエラーにならないはず
+  - 再現結果: `[Error] 'aaa' has multiple continuous assignments` が `aaa[1]` / `aaa[2]` / `aaa[3]` の3箇所 (index=90/112/134)
+  - 根本原因 (`Verilog/Items/ContinuousAssign.cs` の `checkContinuousAssignmentConflict`): 同一 DataObject への **2回目以降の連続代入をビット範囲を考慮せず無条件にエラー**にしていた。`dataObject.ContinuousAssigned` (bool) だけで判定していたため、互いに素なビット選択 (`assign aaa[0]` と `assign aaa[1]`) でも違反扱い。IEEE 1800-2017 6.5 の制約は「同じビットを複数回連続代入する」場合のみ違反
+  - 修正1 (`Verilog/DataObjects/Arrays/ArraysBoolMap.cs`):
+    - `Assert(List<RangeExpression>)` の範囲計算部を `public bool TryResolveRange(List<RangeExpression>, out long start, out long last)` に抽出 (range 未指定ならマップ全体、index が定数に解決できなければ false)。`Assert` はこれを使って従来挙動を維持
+    - `public bool AssertWithOverlapCheck(long start, long last)` を新設: 既存 mapRange と重なるかを返してから範囲を追加 (連続代入の多重ドライブ判定用)
+  - 修正2 (`Verilog/DataObjects/DataObject.cs`): `public ArraysBoolMap? ContinuousAssignedMap = null;` を新設。`AssignedMap` は undriven notice 判定用 (`AssertAssigned` で全ビット選択を記録) のため **兼用できない**。連続代入されたビットだけを別マップで記録する (初回連続代入時に `AssignedMap.Clone()` で同じ次元構成の空マップを遅延生成)
+  - 修正3 (`Verilog/Items/ContinuousAssign.cs`):
+    - `isContinuousAssignmentOverlapped(netLValue, dataObject)` を新設: `DataObjectReference.RangesFromOriginal` を `ContinuousAssignedMap.TryResolveRange` で範囲化し、`AssertWithOverlapCheck` で重複判定。解決不能 / `AssignedMap == null` の場合は従来どおり `ContinuousAssigned` にフォールバック
+    - `markContinuousAssignedRange(netLValue, dataObject)` を新設 (procedural 混在エラー経路でも範囲を記録し、後続の重複報告を防ぐ)
+    - `ProceduralAssigned` の判定は従来どおり (procedural と continuous の混在は引き続きエラー)
+  - 検証 (DebugPartialAssignTests.cs を一時追加 → 検証後に削除):
+    - `PartialAssign.sv` → Error 0 (Notice "unused" のみ、これは別件)
+    - 正例: `assign aaa[0]` / `assign aaa[1..3]` / `assign aaa[3:0]` + `assign aaa[7:4]` (互いに素な part-select) → Error 0
+    - 負例 (引き続きエラー): `assign v = 12; assign v = 13;` (同一オブジェクト全体) / `assign aaa[0]` × 2 (同一ビット) / `assign aaa[3:0]` + `assign aaa[5:2]` (part-select 重複) / `assign aaa` + `assign aaa[0]` (全体の後のビット) → 各1件 Error
+    - `dotnet build CodeEditor2VerilogPlugin.csproj` → 0 errors / `dotnet build RtlEditor2.Desktop.csproj` → 0 errors
+    - sv-tests 全体 (`--filter FullyQualifiedName~ParseSvTestFile`) → **1028 合格 / 0 失敗** (regression なし、`6.5--variable_multiple_assignments` は引き続き reject)
+  - コミット: CodeEditor2VerilogPlugin `0b8b01e` "Fix false 'multiple continuous assignments' on disjoint bit-selects"
+  - Next: エディタ上で PartialAssign.sv を開いてエラー波線が出ないことの確認。関連する残課題: 同ファイルで出る `unused`/`undriven` notice (`aaa` が未使用/未ドライブ) は連続代入のビット範囲を AssignedMap に反映しているか別途確認の余地あり
+
 - ChatControl: function call の結果だけを collapse して表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の function call の結果だけは collapse して返すようにする
   - 変更 (`LLM/ChatControl.axaml.cs` のみ): `ToolCallEnded` で生成する tool-result item (B, `MessageType.functionCallReturn`、hammer アイコン) の `Collapsed` を `false` → `true` に変更。結果は長大なログ (ビルドログ / ファイル内容) になり得るため既定で折りたたむ (markdown 高さ = FontSize*3 でプレビュー)
