@@ -66,6 +66,32 @@
   - 補足: 部分代入では `used` 側が 2 (`s` と `s.memb_a` の 2 参照) になるが `assigned` 側は 0 のまま。struct member への代入参照は親 struct の `UsedReferences` に寄せられており (「unused」誤報を避けるための既存実装)、メンバー自身の `AssignedReferences` には記録されていない。assigned 参照ジャンプでメンバー代入箇所を出したい場合は別途対応が必要 (現状の要望外)
   - Next: 特になし (確認のみ)
 
+- struct への assignment pattern 代入で要素が足りない場合に warning が出るか確認 → 確認完了 (コード変更なし)
+  - ユーザ質問: struct に assignment pattern を使って代入する際、要素が足りないと warning が出ますか?
+  - 実装 (`Verilog/DataObjects/AssignmentPattern.cs` の `CheckPattern` / `addPatternError`):
+    - positional pattern (`'{a, b}`): `structWithoutKey.Expressions.Count != structType.Members.Count` で不一致を検出 (repetition `'{N{...}}` を含む場合は要素数不定のため除外)
+    - keyed pattern (`'{memb_a: x, ...}`): `checkStructurePatternKeys` でキーが構造体メンバーかを検証。**キーの個数 (＝要素数) そのものは検証していない**
+    - `addPatternError` は `Reference.AddError(message)` → **Warning ではなく Error**
+  - 実測 (DebugStructPatternTests.cs を一時追加 → 検証後に削除):
+    | ケース | 内容 | 診断 |
+    |---|---|---|
+    | 1 | `s_t s = '{4'h1};` (2 メンバーに 1 要素・宣言初期化) | **Error** "assignment pattern element count (1) does not match the structure member count (2)" |
+    | 2 | `assign s = '{4'h1};` (連続代入) | **Error** 同上 |
+    | 3 | `s = '{4'h1};` (blocking 代入) | **Error** 同上 |
+    | 4 | `s = '{memb_a: 4'h1};` (keyed で memb_b 欠落) | **診断なし** (キー検証のみで個数未検査) |
+    | 5 | `s = '{memb_a: 4'h1, memb_b: 4'h2};` (keyed 全指定) | 診断なし (正しい) |
+    | 6 | `s = '{memb_a: 4'h1, default: 4'h0};` (keyed + default) | 診断なし (正しい) |
+    | 7 | `s = '{memb_a: 4'h1, memb_x: 4'h2};` (未定義キー) | **Error** "'memb_x' is not a member of the structure type" |
+    | 8 | `s = '{4'h1, 4'h2, 4'h3};` (要素過多) | **Error** 要素数不一致 |
+    | 9 | ネスト struct の内側で要素不足 `out_t o = '{'{2'b00}, 2'b00};` (in_t に 2 要素必要) | **診断なし** (入れ子 pattern は lhs=null で parse されるため未検証) |
+    | 10 | `s = '{2{4'h0}};` (repetition) | 診断なし (要素数不定として除外、正しい) |
+    | 11 | typedef なし raw struct (`struct packed {...} s = '{4'h1};`) | **Error** 要素数不一致 |
+  - **結論1: positional pattern で要素が足りない場合は Error (warning ではない) が出る。** 宣言初期化 / 連続代入 / 手続き代入 / typedef なし raw struct すべてで機能
+  - **結論2 (未検査のケースが 2 つある)**:
+    - keyed pattern でメンバー指定が一部欠けていても **エラーにならない** (キーが正しければ個数は未検査。`default` キーとの区別が無いことによるもの)
+    - ネストした assignment pattern の内側の要素数は未検証 (`ParseCreate` の入れ子呼び出しが `lhs = null` で行われるため。コード上もコメントで「Nested patterns are parsed without a lhs (null) and are therefore validated only through their outermost pattern」と明記)
+  - Next: 上記 2 つの未検査ケース (keyed 部分指定 / ネスト内側) をエラーにすべきか要判断。keyed は `default` キーの存在有無で判定可能、ネストは親型のメンバー型を lhs として子 pattern に渡すよう `ParseCreate` を拡張する必要がある
+
 - ChatControl: function call の結果だけを collapse して表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の function call の結果だけは collapse して返すようにする
   - 変更 (`LLM/ChatControl.axaml.cs` のみ): `ToolCallEnded` で生成する tool-result item (B, `MessageType.functionCallReturn`、hammer アイコン) の `Collapsed` を `false` → `true` に変更。結果は長大なログ (ビルドログ / ファイル内容) になり得るため既定で折りたたむ (markdown 高さ = FontSize*3 でプレビュー)
