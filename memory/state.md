@@ -22,7 +22,31 @@
     - `dotnet build CodeEditor2VerilogPlugin.csproj` → 0 errors / `dotnet build RtlEditor2.Desktop.csproj` → 0 errors
     - sv-tests 全体 (`--filter FullyQualifiedName~ParseSvTestFile`) → **1028 合格 / 0 失敗** (regression なし、`6.5--variable_multiple_assignments` は引き続き reject)
   - コミット: CodeEditor2VerilogPlugin `0b8b01e` "Fix false 'multiple continuous assignments' on disjoint bit-selects"
-  - Next: エディタ上で PartialAssign.sv を開いてエラー波線が出ないことの確認。関連する残課題: 同ファイルで出る `unused`/`undriven` notice (`aaa` が未使用/未ドライブ) は連続代入のビット範囲を AssignedMap に反映しているか別途確認の余地あり
+  - Next: エディタ上で PartialAssign.sv を開いてエラー波線が出ないことの確認
+
+- PartialAssign.sv の `unused` notice (AssignedMap へのビット範囲反映) の確認 + bit-select 代入の AssignedReferences 非対称バグ修正 → 確認・修正完了 (ビルド成功 0 errors、sv-tests 1028/1028 合格、コミット済み)
+  - ユーザ要求: 前項の「`unused` notice は連続代入のビット範囲を AssignedMap に反映していない可能性」を確認する
+  - 判定ロジック (`Verilog/BuildingBlocks/BuildingBlock.cs` の `CheckVariablesUseAndDriven`): `Net` / `ValueVariable` について `AssignedMap?.IsFullMapped() != true` なら "undriven"、`UsedReferences.Count == 0` なら "unused" notice
+  - 検証 (DebugPartialAssignTests.cs を一時追加 → 検証後に削除。ParsedDocument の Messages と各 DataObject の AssignedMap / UsedReferences / AssignedReferences を出力):
+    | ケース | AssignedMap | undriven | unused |
+    |---|---|---|---|
+    | PartialAssign.sv (`aaa[0]`〜`aaa[3]`) | **True** | なし | あり |
+    | `assign aaa[0]` のみ (4bit) | False | あり | あり |
+    | `assign aaa[0..3]` (全ビット) | True | なし | あり |
+    | `assign aaa = 4'b0` | True | なし | あり |
+    | `assign aaa[3:0]` (8bit の下4bitのみ) | False | あり | あり |
+    | `aaa[3:0]` + `aaa[7:4]` | True | なし | あり |
+  - **結論1 (AssignedMap は正しい)**: 連続代入のビット範囲は `AssignedReference.AssertAssigned()` → `OrigainalDataObject.AssignedMap.Assert(RangesFromOriginal)` 経由で `AssignedMap` に正しく反映されている。PartialAssign.sv で `undriven` が出ないこと、8bit 中 4bit のみ代入すると `undriven` が出ることがその証拠。**前項の懸念は該当しない (実装は既に正しい)**
+  - **結論2 (`unused` は本件固有ではない)**: `unused` は「`aaa` が一度も読まれていない」ことによる妥当な notice で、全体代入 (`assign aaa = 4'b0`) でも同様に出る。バグではない
+  - **発見した別バグ (非対称) と修正**: `Verilog/Expressions/DataObjectReference.cs` の参照登録が非対称だった
+    - 読み出し: `originalObject.UsedReferences.Add(val.Reference)` は `partial` (bit/part-select) でも記録
+    - 代入: `if (!partial) originalObject.AssignedReferences.Add(val.Reference)` と **partial を除外** → `assign aaa[0] = 1'b1` が `AssignedReferences` に入らない (`Assigned=0` になっていた)
+    - 影響: bit-select / part-select への代入箇所が右クリックの assigned 参照ジャンプ / LSP references に出ない
+    - 修正: `partial` ガードを削除し、bit/part-select への代入も `AssignedReferences` に記録するよう変更 (経緯コメント付き)
+    - 検証: PartialAssign.sv の `aaa` で `Assigned` が 0 → **8** (4bit × 2パス parse) に。`aaa[3:0]+aaa[7:4]` で 4、`aaa[3:0]` のみで 2、`assign aaa = 4'b0` で 2 (全体参照は partial=false)
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj` 0 errors / `dotnet build RtlEditor2.Desktop.csproj` 0 errors / sv-tests 全体 (`--filter FullyQualifiedName~ParseSvTestFile`) **1028 合格 / 0 失敗** (regression なし)
+  - コミット: CodeEditor2VerilogPlugin `bda05a2` "Record AssignedReferences for bit-select / part-select assignments"
+  - Next: エディタ上で `assign aaa[0] = 1'b1;` の `aaa[0]` を右クリック → assigned 参照ジャンプで代入箇所が列挙されることの確認
 
 - ChatControl: function call の結果だけを collapse して表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の function call の結果だけは collapse して返すようにする
