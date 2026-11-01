@@ -48,6 +48,24 @@
   - コミット: CodeEditor2VerilogPlugin `bda05a2` "Record AssignedReferences for bit-select / part-select assignments"
   - Next: エディタ上で `assign aaa[0] = 1'b1;` の `aaa[0]` を右クリック → assigned 参照ジャンプで代入箇所が列挙されることの確認
 
+- struct の部分代入で `undriven` アラート (notice) が出るか確認 → 確認完了 (コード変更なし、想定どおり動作)
+  - ユーザ質問: struct の assign が一部しか assign されていない場合にはアラートが出ますか?
+  - 判定ロジック (`Verilog/BuildingBlocks/BuildingBlock.cs` の `CheckVariablesUseAndDriven`): `DataObject.AssignedMap?.IsFullMapped() != true` なら `undriven` notice
+  - struct member 代入時の親 AssignedMap 更新 (`Verilog/Expressions/DataObjectReference.cs` の `AssertAssigned`): `StructParentObject` (親 struct 変数) + `StructMemberName` を保持し、struct 定義からメンバーのビットオフセットを計算して `StructParentObject.AssignedMap.Assert(offset, offset + width - 1)` を実行。bit-select / part-select 指定時はその範囲のみ assert。逆に選択が無ければメンバー全体
+  - 実測 (`typedef struct packed { logic [3:0] memb_a; logic [3:0] memb_b; } s_t;`、DebugStructAssignTests.cs を一時追加 → 検証後に削除):
+    | ケース | 代入内容 | AssignedMap | undriven |
+    |---|---|---|---|
+    | A | `assign s.memb_a = 4'h1;` (memb_a のみ) | **False** | **あり** |
+    | B | memb_a + memb_b 両方 | True | なし |
+    | C | `assign s = '{...};` (struct 全体) | True | なし |
+    | D | `assign s.memb_a[0] = 1'b1;` (メンバー内の 1bit のみ) | **False** | **あり** |
+    | E | `always_comb s.memb_a = 4'h1;` (手続き・部分) | **False** | **あり** |
+    | F | unpacked struct で memb_a のみ | **False** | **あり** |
+    | G | 代入なし (基準) | False | あり |
+  - **結論: 一部メンバーだけでは `undriven` notice (警告) が出る。全メンバー (または struct 全体) を代入すると出ない。実装は想定どおり正しく動作している** (コード変更なし)
+  - 補足: 部分代入では `used` 側が 2 (`s` と `s.memb_a` の 2 参照) になるが `assigned` 側は 0 のまま。struct member への代入参照は親 struct の `UsedReferences` に寄せられており (「unused」誤報を避けるための既存実装)、メンバー自身の `AssignedReferences` には記録されていない。assigned 参照ジャンプでメンバー代入箇所を出したい場合は別途対応が必要 (現状の要望外)
+  - Next: 特になし (確認のみ)
+
 - ChatControl: function call の結果だけを collapse して表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の function call の結果だけは collapse して返すようにする
   - 変更 (`LLM/ChatControl.axaml.cs` のみ): `ToolCallEnded` で生成する tool-result item (B, `MessageType.functionCallReturn`、hammer アイコン) の `Collapsed` を `false` → `true` に変更。結果は長大なログ (ビルドログ / ファイル内容) になり得るため既定で折りたたむ (markdown 高さ = FontSize*3 でプレビュー)
