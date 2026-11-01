@@ -128,6 +128,30 @@
   - 検証ファイル: `SystemVerilogLanguageServer.Tests/DebugCrossFileTests.cs` (一時作成 → 削除済み)。結果は `bin/Debug/net10.0/debug_cross_file_report.txt`
   - Next: 方針 1 + 2 (+3) を実装するかユーザ判断待ち。実装時は `InMemorySystemVerilogCore.cs` (共有 Project / 全ファイル parse) と `LspHandler.cs` (didSave / watched files / 依存再 parse) の 2 ファイルが主な変更点
 
+- LSP で他ファイルの module を参照できない問題 → 方針 1 + 2 (+3 の 2 パス) を実装完了 (ビルド成功 0 errors、テスト 1081/1081 合格、publish 更新、コミット済み)
+  - ユーザ要求: まず 1 (Project 共有) + 2 (全ファイル parse) を実装
+  - **実装1 (`Server/InMemorySystemVerilogCore.cs`): Project を 1 つに共有**
+    - `ParserProjectStub` (UI フリーな `CodeEditor2.Data.Project` スタブ) を `InMemoryFile` の入れ子クラスから**トップレベル**へ移動 (1 プロジェクトで 1 インスタンスを共有するため)
+    - `InMemoryProject.PluginProject` プロパティを新設。コンストラクタで `Plugin.Install` 相当 (`CodeEditor2.Global.FileTypes` 空なら `pluginVerilog.Plugin().Register()`) を行い、`ParserProjectStub` + `ProjectProperty` を 1 度だけ生成
+    - `InMemoryFile.CreateVerilogFile()` はインスタンスフィールド `_project` を廃止し、`ProjectOwner.PluginProject` (共有インスタンス) を使う。`ProjectOwner` が null の場合は例外 (必ず `InMemoryProject.AddOrUpdateFile` 経由で生成させる)
+    - これで全 `InMemoryFile` が同じ `DefinitionNameSpace` / `PackageNameSpace` / `UnitNameSpace` を共有する
+  - **実装2 (`Server/LspHandler.cs`): workspace 全ファイルの初期 parse**
+    - `LoadWorkspaceFiles` の最後で `ParseWorkspaceFiles(project, cancellationToken)` を呼ぶ
+    - `ParseWorkspaceFiles` は (a) 全ファイルを `ForceBuild()` (building block を名前空間へ登録)、(b) その後、エラーを持つファイルのみ `RebuildIfHasErrors()` で再 parse (依存先登録後の 2 パス目 = 順序依存の解消)。完了時にファイル数を stderr へログ
+  - **実装2b (`Server/InMemorySystemVerilogCore.cs`): 再 parse 用 API**
+    - `RebuildIfHasErrors()`: 手動シンボル登録 (`_manualSymbols`) / 未 parse (`!_built`) / エラー無しの場合は何もしない。エラーがある場合のみ `Rebuild()`
+    - `Rebuild()`: `_allElements` / `_byName` / `_buildingBlocks` / `_members` / `_diagnostics` / `_parsedDocument` / `_document` / `_verilogFile` をクリアして `_built = false` にし `EnsureBuilt()` で再 parse
+    - `HasErrors()`: `_diagnostics` に Error severity が 1 つでもあるか
+  - **検証 (DebugWorkspaceTests.cs を一時追加 → 削除)**:
+    - 共有 Project + workspace parse (全ファイル ForceBuild → エラーありのみ RebuildIfHasErrors) で `top.sv` (sub_mod を instance) が **エラーなしで解決** (修正前は `unfound module`)
+    - 逆順 (利用側を先に parse) でも 2 パス目 (`RebuildIfHasErrors`) で `ERROR` → `ok` に解消することを確認
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj` 0 errors / `dotnet build RtlEditor2.Desktop.csproj` 0 errors / テスト全体 **1081 合格 / 0 失敗** (regression なし) / `dotnet publish` で publish 更新済み
+  - コミット: SystemVerilogLanguageServer + メイン (submodule pointer + state.md)
+  - **残課題 (方針 3〜5、未実装)**:
+    - didChange / didSave 時の依存側ファイル再 parse と diagnostics 再 push (`workspace/didChangeWatchedFiles` も未実装)
+    - `initializationOptions` による対象ファイル絞り込み (大規模リポジトリでは全 .sv parse が重い)
+    - `project.FindDefinition` が module 名の位置で enclosing block (`top`) を返す問題 (シンボル変換側の別問題)
+
 - ChatControl: function call の結果だけを collapse して表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の function call の結果だけは collapse して返すようにする
   - 変更 (`LLM/ChatControl.axaml.cs` のみ): `ToolCallEnded` で生成する tool-result item (B, `MessageType.functionCallReturn`、hammer アイコン) の `Collapsed` を `false` → `true` に変更。結果は長大なログ (ビルドログ / ファイル内容) になり得るため既定で折りたたむ (markdown 高さ = FontSize*3 でプレビュー)
