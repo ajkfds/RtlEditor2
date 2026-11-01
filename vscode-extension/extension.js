@@ -2,6 +2,7 @@
 
 const vscode = require('vscode');
 const { spawn } = require('child_process');
+const { registerHierarchy } = require('./hierarchy');
 
 let log = null;
 function initLog(context) {
@@ -399,6 +400,31 @@ function activate(context) {
     context_ = context;
     initLog(context);
     logLine('extension activated');
+
+    // RTL Hierarchy tree view (NavigatePanel equivalent). The standard File
+    // Explorer cannot be extended with instance children, so the hierarchy is
+    // rendered in a Custom Tree View inside the Explorer container.
+    const hierarchyProvider = registerHierarchy(context, () => ensureClient());
+    context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument(async (doc) => {
+            const lang = doc && doc.languageId;
+            if (lang !== 'systemverilog' && lang !== 'verilog') return;
+            // the server re-parses on didChange; refresh the hierarchy so the
+            // instance tree reflects the saved file
+            try {
+                const c = await ensureClient();
+                if (c) {
+                    c.send('textDocument/didSave', {
+                        textDocument: { uri: doc.uri.toString() },
+                        text: doc.getText(),
+                    });
+                }
+            } catch (e) {
+                logLine('didSave send ERROR: ' + (e && e.message));
+            }
+            hierarchyProvider.refresh();
+        })
+    );
 
     // configurationDefaults does not reliably apply to already-open
     // workspaces; force-enable semantic highlighting programmatically

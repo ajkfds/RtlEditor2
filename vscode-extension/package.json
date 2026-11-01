@@ -13,10 +13,67 @@
   ],
   "activationEvents": [
     "onLanguage:systemverilog",
-    "onLanguage:verilog"
+    "onLanguage:verilog",
+    "onView:systemverilogLsp.hierarchy"
   ],
   "main": "./extension.js",
   "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "systemverilogLsp.hierarchy",
+          "name": "RTL Hierarchy",
+          "icon": "$(type-hierarchy)",
+          "contextualTitle": "RTL Hierarchy"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "systemverilogLsp.hierarchy",
+        "contents": "No SystemVerilog / Verilog files found in the workspace.\nOpen a folder that contains .sv/.svh/.v/.vh files."
+      }
+    ],
+    "commands": [
+      {
+        "command": "systemverilogLsp.refreshHierarchy",
+        "title": "Refresh Hierarchy",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "systemverilogLsp.openHierarchyNode",
+        "title": "Open"
+      },
+      {
+        "command": "systemverilogLsp.copyHierarchyPath",
+        "title": "Copy Instance Path"
+      },
+      {
+        "command": "systemverilogLsp.revealInEditor",
+        "title": "Reveal in Editor"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "systemverilogLsp.refreshHierarchy",
+          "when": "view == systemverilogLsp.hierarchy",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "systemverilogLsp.revealInEditor",
+          "when": "view == systemverilogLsp.hierarchy && viewItem == rtlInstance",
+          "group": "inline"
+        },
+        {
+          "command": "systemverilogLsp.copyHierarchyPath",
+          "when": "view == systemverilogLsp.hierarchy && viewItem == rtlInstance",
+          "group": "1_copy"
+        }
+      ]
+    },
     "languages": [
       {
         "id": "systemverilog",

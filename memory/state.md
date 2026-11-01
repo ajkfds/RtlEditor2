@@ -152,6 +152,35 @@
     - `initializationOptions` による対象ファイル絞り込み (大規模リポジトリでは全 .sv parse が重い)
     - `project.FindDefinition` が module 名の位置で enclosing block (`top`) を返す問題 (シンボル変換側の別問題)
 
+- VS Code 拡張に NavigatePanel 相当の「RTL Hierarchy」Custom Tree View を追加 → 実装完了 (ビルド成功 0 errors、テスト 1081/1081 合格、publish 更新、コミット済み)
+  - ユーザ要求: ファイルツリー配下に SystemVerilog のインスタンス階層をインライン展開したい。ただし VS Code 標準 File Explorer は外部拡張から子ノードを差し込む Provider API が無いため、自前の Custom Tree View で「ファイル + インスタンス」混在の階層を表示し、NavigatePanel 相当の内容にしたい
+  - **サーバ側: 独自 LSP リクエスト `rtl/hierarchy` を追加** (`Server/LspHandler.cs`)
+    - `_requestHandlers["rtl/hierarchy"]` を追加。LSP は実装定義メソッドを許容するためベンダープレフィックス `rtl/` を使用
+    - パラメータ `{ "uri": "file:///...", "nodePath": [0,1,0] }`。`nodePath` は親ノードの `children` 配列への**インデックス列**で、拡張は展開したノードごとに 1 リクエスト投げる**遅延ロード**方式 (全体を一度にシリアライズしない)
+    - `nodePath` が空かつ `uri` が無い → ワークスペースのファイル一覧 (`BuildWorkspaceNodes`: パス順、`detail` にワークスペース相対パス、`hasChildren` は `GetHierarchyRootCount() > 0`)
+    - `uri` あり → `BuildFileNodes`。`nodePath` が空ならファイルの第1階層、それ以外は `ResolveChildren` で `nodePath` を辿って該当ノードの子を返す
+    - レスポンス `{ "nodes": [ { label, kind("file"|"instance"), uri, detail, startLine, startCharacter, hasChildren } ] }`。DTO は新規ファイル `RtlHierarchy.cs` (`HierarchyResult` / `HierarchyNode` / `HierarchyNodeKind` / `HierarchyNodeDescriptor`)
+    - `didSave` 通知ハンドラ `HandleDidSave` を新設 (`textDocument/didSave` の `text` があれば `SetText` で差し替えて `Rebuild()` → `PushDiagnostics`)
+    - `InMemoryProject.WorkspaceRoots` を新設し `LoadWorkspaceFiles` で初期化 (相対パス表示用)
+  - **サーバ側: 階層構築** (`Server/InMemorySystemVerilogCore.cs`)
+    - `InMemoryFile.GetHierarchyRootCount()` / `GetHierarchyRoots()` を新設。`ParsedDocument.Root.BuildingBlocks` が 1 つならその building block の `GetBuildingBlockInstantiations()` を第1階層に、複数なら building block ごとに 1 ノード (エディタの `Updater.addSubItemsMultiBuildingBlock` と同じ規則)
+    - `CreateInstanceNode(inst, visiting)` が `IBuildingBlockInstantiation` を再帰展開。`GetInstancedBuildingBlock()` で実体を取得し、その `GetBuildingBlockInstantiations()` を子にする。`visiting` (HashSet) で**再帰インスタンス (自己参照 / 相互参照) を打ち切り**
+    - 位置は `BeginIndexReference.Index` を `CodeDocument.GetLineAt` / `GetLineStartIndex` で line/character に変換
+    - `CodeDocumentText` / `SetText(text)` を新設 (`CodeDocument` を private backing field 化)。`Rebuild()` は `_codeDocument` を差し替え
+  - **拡張側: Custom Tree View** (`vscode-extension/hierarchy.js` 新規 + `extension.js`)
+    - `package.json`: `contributes.views.explorer` に `systemverilogLsp.hierarchy` (name "RTL Hierarchy", icon `$(type-hierarchy)`) を追加 (= 標準 Explorer コンテナ内に自前ビューを置く)。`viewsWelcome` / `commands` (refreshHierarchy / openHierarchyNode / copyHierarchyPath / revealInEditor) / `menus` (view/title に refresh、view/item/context にインライン reveal + copy) を追加。`activationEvents` に `onView:systemverilogLsp.hierarchy`
+    - `HierarchyProvider` (TreeDataProvider): ルートは `rtl/hierarchy {nodePath:[]}`、ファイルは `{uri, nodePath:[]}`、インスタンスは `{uri, nodePath}`。`TreeItem` はファイル= `ThemeIcon.File` + `resourceUri`、インスタンス= `ThemeIcon('symbol-class')`、`contextValue` を `rtlFile` / `rtlInstance` に設定
+    - インスタンスの `instancePath` (`u_mid.u_leaf`) を組み立ててツールチップ表示・`copyHierarchyPath` でクリップボードへ
+    - インスタンスクリックで `openAt(uri, startLine, startCharacter)` → `openTextDocument` + `showTextDocument` + `revealRange`
+    - `onDidSaveTextDocument` で `didSave` 送信 + `provider.refresh()` (保存でインスタンス階層を更新)
+  - **検証** (DebugHierarchyTests.cs を一時追加 → 削除):
+    - top.sv (`mid u_mid()`) / mid.sv (`leaf u_leaf()`) / sub.sv (`module leaf`) の 3 ファイルで、ルート一覧 → `u_mid` (hasChildren=true) → `u_leaf` → 空 と正しく辿れることを確認
+    - 実装途中で `nodePath: []` が空になるバグ (親ノード解決ループが空パスで `parent == null` のまま) を発見し `ResolveChildren` を分離して修正
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj` 0 errors (※ `bin` の DLL ロックは VS Code が起動した LSP サーバプロセスによるもの。`-p:BaseOutputPath=obj/tmpbuild/` で確認) / テスト全体 **1081 合格 / 0 失敗** / `dotnet publish` で publish 更新済み
+  - コミット: SystemVerilogLanguageServer + メイン (submodule pointer + vscode-extension + state.md)
+  - **Next**: VS Code 上で (1) Explorer 内に "RTL Hierarchy" ビューが出る (2) ワークスペースの .sv ファイルが一覧される (3) ファイルを展開すると instance 階層が遅延ロードされる (4) インスタンスクリックで宣言位置にジャンプする (5) Copy Instance Path が `u_mid.u_leaf` をコピーする (6) ファイル保存でツリーが更新される ことを確認
+  - **既知の制限**: インスタンス配列 (`inst[3:0]`) は 1 ノードに集約され展開されない (parser の `CreateArray` 経由の個別展開は未実装)。interface instance は `IBuildingBlockInstantiation` として列挙されるが、`GetInstancedBuildingBlock()` がモジュール限定の場合 interface 配下は展開されない可能性あり
+
 - ChatControl: function call の結果だけを collapse して表示 → 実装完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ要求: `CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs` の function call の結果だけは collapse して返すようにする
   - 変更 (`LLM/ChatControl.axaml.cs` のみ): `ToolCallEnded` で生成する tool-result item (B, `MessageType.functionCallReturn`、hammer アイコン) の `Collapsed` を `false` → `true` に変更。結果は長大なログ (ビルドログ / ファイル内容) になり得るため既定で折りたたむ (markdown 高さ = FontSize*3 でプレビュー)
