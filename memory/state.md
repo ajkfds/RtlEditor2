@@ -3,6 +3,19 @@
 
 ## 進行中タスク
 
+- struct 型 parameter の内部要素を参照できない問題 → 修正完了 (ビルド成功 0 errors、テスト 1082/1082 合格、コミット済み)
+  - ユーザ報告: struct 型の parameter の内部要素を参照できない (例: `parameter s_t P = '{...}; assign x = P.a;` で `P.a` が "unfound object")
+  - 根本原因 (`Verilog/DataObjects/Constants/Constants.cs`): `Constants` (parameter/localparam/specparam) が `NamedElements` を override しておらず、基底 `DataObject.NamedElements` (常に空) を継承していた。`NameReference.searchElement` は `p.member` の member を `constants.NamedElements` から解決するため、struct/union/user-defined 型 parameter のメンバー参照が常に "unfound object" になっていた。`Struct` / `UserDefinedVariable` は DataType から `NamedElements` を遅延構築しているが `Constants` は未対応だった
+  - 修正: `Constants` に `NamedElements` override を追加。`DataType.AppendChiledNamedElements(namedElements)` で宣言型の子要素 (struct メンバー等) を遅延構築 (UserDefinedVariable / Struct と同一パターン)
+  - 検証 (DebugStructParamTests.cs を一時追加 → 検証後に削除):
+    - `typedef struct packed {...} s_t; parameter s_t P = '{...}; assign x = P.a;` → Error 0 (Notice "unused" のみ)
+    - `localparam s_t P = '{...}; assign x = P.b;` → Error 0
+    - inline struct parameter (`parameter struct packed {...} P = '{...}; assign x = P.a;`) → Error 0
+    - 負例 `assign x = P.zzz;` (存在しないメンバー) → "unfound object" を引き続き報告 (正しい挙動を維持)
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj` 0 errors / `dotnet build RtlEditor2.Desktop.csproj` 0 errors / sv-tests 全体 (`--filter FullyQualifiedName~ParseSvTestFile`) **1028 合格 / 0 失敗** / テスト全体 **1082 合格 / 0 失敗** (regression なし)
+  - コミット: CodeEditor2VerilogPlugin `9df0219` "Resolve struct-typed parameter member access (p.member)"
+  - Next: エディタ上で struct 型 parameter の `P.a` 参照にエラー波線が出ないこと、autocomplete (`P.` 直後) でメンバー候補が出ることの確認
+
 - PartialAssign.sv (`wire [3:0] aaa; assign aaa[0]..aaa[3]`) で偽の "multiple continuous assignments" エラー → 修正完了 (ビルド成功 0 errors、sv-tests 1028/1028 合格、コミット済み)
   - ユーザ報告: `CodeEditor2VerilogPlugin/verilog_sample/mySample/PartialAssign.sv` でエラーが検出される。正しくはエラーにならないはず
   - 再現結果: `[Error] 'aaa' has multiple continuous assignments` が `aaa[1]` / `aaa[2]` / `aaa[3]` の3箇所 (index=90/112/134)
