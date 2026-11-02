@@ -3,6 +3,38 @@
 
 ## 進行中タスク
 
+- 初期化子なし struct 型 parameter (`parameter STRUCT_BUS aaa;`) の `aaa.AA` が "unfound object" → 修正完了 (ビルド成功 0 errors、sv-tests 1028/1028 合格、コミット済み)
+  - ユーザ報告:
+    ```systemverilog
+    module TEST_RTL();
+    typedef struct packed{ logic [7:0] AA; logic [7:0] BB; } STRUCT_BUS;
+    parameter STRUCT_BUS aaa;
+    wire [7:0] test_wire = aaa.AA;   // ← AA でエラー
+    endmodule
+    ```
+  - 再現結果 (`SystemVerilogLanguageServer.Tests/DebugStructParamMemberTests.cs` を一時追加 → 検証後に削除):
+    | ケース | 診断 |
+    |---|---|
+    | `parameter STRUCT_BUS aaa;` (初期化子なし) | **Error "unfound object"** + Warning "Size mismatch 8 <-" |
+    | `parameter STRUCT_BUS aaa = '{8'h1, 8'h2};` | エラーなし (既存修正 (9df0219) で対応済み) |
+    | `localparam STRUCT_BUS aaa;` | **Error "unfound object"** |
+    | unpacked struct (`typedef struct { ... }`) + 初期化子なし | **Error "unfound object"** |
+  - 根本原因 (`Verilog/DataObjects/Constants/Constants.cs` の `ParseCreateDeclaration`): `param_assignment ::= parameter_identifier { unpacked_dimension } [ = constant_param_expression ]` は初期化子が **optional** だが、実装は `if (word.Text != "=") break;` で **`=` が無いと名前空間への登録処理に到達せずにループを抜けていた**。そのため初期化子なしの parameter は `NamedElements` に一切登録されず、`aaa` 参照自体が解決できず `aaa.AA` が "unfound object" になっていた (初期化子付きは既存の `Constants.NamedElements` override で解決していた)
+  - 修正1 (`Constants.ParseCreateDeclaration`): `bool hasInitializer = word.Text == "=";` を導入し、初期化子なしの場合も登録処理まで到達するよう変更 (`!= "="` の即 break を廃止)。式解析部分は `!hasInitializer` / `= '{...}` (assignment pattern) / 通常式 の3分岐に整理。`if (expression == null) break;` は `if (hasInitializer && expression == null) break;` に変更。「should be constant」/ specparam 参照チェックは `expression != null` のときのみ実行
+  - 修正2 (`Constants.BitWidth`): `Expression.BitWidth` を無条件参照しており初期化子なしで NullReferenceException になるため `Expression != null ? Expression.BitWidth : DataType?.BitWidth` に変更 (宣言型の幅にフォールバック)
+  - 修正3 (`Constants.AppendLabel`): `" = "` の出力も `Expression != null` の内側に移動 (初期化子なしで " = " が宙に浮かないように)
+  - 検証:
+    - `parameter STRUCT_BUS aaa;` + `aaa.AA` → Error 0 (Notice "unused" のみ = `test_wire` が読まれていない妥当な notice)
+    - 初期化子付き / localparam 初期化子なし / unpacked struct 初期化子なし → すべて Error 0
+    - `parameter STRUCT_BUS a, b;` (複数宣言 + 初期化子なし) → `a.AA` / `b.BB` とも Error 0
+    - 負例: 存在しないメンバー `aaa.ZZ` → "unfound object" を引き続き報告 / 未定義型 `parameter STRUCT_BUS aaa;` (typedef 無し) → "; expected" を引き続き報告 (正しい挙動を維持)
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - sv-tests 全体 (`--filter FullyQualifiedName~ParseSvTestFile`) **1028 合格 / 0 失敗** (regression なし)
+  - コミット: CodeEditor2VerilogPlugin `b23be12` "Register parameters declared without an initializer - fixes aaa.AA unfound object"、メイン `5562eca` (submodule pointer 更新)
+  - Next: エディタ上で初期化子なし struct 型 parameter の `aaa.AA` にエラー波線が出ないこと、hover / autocomplete (`aaa.` 直後) でメンバー候補が出ることの確認
+  - メモ: `SystemVerilogLanguageServer.Tests/DebugStructParamMemberTests.cs` は検証用のためコミットから除外 (作業ツリーに残置)。サブモジュール内の `Data/SimulationSetup.cs` / `Data/VerilogRelatedFileReference.cs` / `Tool/ParseHierarchy.cs` / `Verilog/Items/*.cs` / `Verilog/ParsedDocument.cs` と `CodeEditor2` サブモジュールの変更は本タスク外のため除外
+=======
+
 - struct 型 parameter の内部要素を参照できない問題 → 修正完了 (ビルド成功 0 errors、テスト 1082/1082 合格、コミット済み)
   - ユーザ報告: struct 型の parameter の内部要素を参照できない (例: `parameter s_t P = '{...}; assign x = P.a;` で `P.a` が "unfound object")
   - 根本原因 (`Verilog/DataObjects/Constants/Constants.cs`): `Constants` (parameter/localparam/specparam) が `NamedElements` を override しておらず、基底 `DataObject.NamedElements` (常に空) を継承していた。`NameReference.searchElement` は `p.member` の member を `constants.NamedElements` から解決するため、struct/union/user-defined 型 parameter のメンバー参照が常に "unfound object" になっていた。`Struct` / `UserDefinedVariable` は DataType から `NamedElements` を遅延構築しているが `Constants` は未対応だった
