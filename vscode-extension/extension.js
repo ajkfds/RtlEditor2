@@ -422,8 +422,27 @@ function activate(context) {
             } catch (e) {
                 logLine('didSave send ERROR: ' + (e && e.message));
             }
-            hierarchyProvider.refresh();
+            // the save only changed the parse result of a file the server
+            // already knows: redraw without re-scanning the workspace roots
+            hierarchyProvider.refreshTree();
         })
+    );
+
+    // Files created / deleted / renamed on disk (outside the editor) change the
+    // workspace tree, so re-scan the workspace roots when a .sv/.svh/.v/.vh is
+    // added or removed.
+    const sourceWatcher = vscode.workspace.createFileSystemWatcher(
+        '**/*.{sv,svh,v,vh}'
+    );
+    context.subscriptions.push(sourceWatcher);
+    context.subscriptions.push(
+        sourceWatcher.onDidCreate(() => hierarchyProvider.refresh())
+    );
+    context.subscriptions.push(
+        sourceWatcher.onDidDelete(() => hierarchyProvider.refresh())
+    );
+    context.subscriptions.push(
+        vscode.workspace.onDidRenameFiles(() => hierarchyProvider.refresh())
     );
 
     // configurationDefaults does not reliably apply to already-open

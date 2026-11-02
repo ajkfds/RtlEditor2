@@ -4,18 +4,23 @@
 //
 // VS Code's built-in File Explorer cannot be extended with extra child nodes
 // (there is no provider API for it), so the instance hierarchy is rendered in
-// its own Custom Tree View placed inside the Explorer container. The tree is
-// lazy: one `rtl/hierarchy` request per expanded node, addressed by a
-// "nodePath" (the sequence of child indexes from the workspace root).
+// its own Custom Tree View placed inside the Explorer container.
+//
+// The top level is the WHOLE workspace (every .sv/.svh/.v/.vh file found under
+// the workspace roots by the server), grouped into folders, not just the
+// documents that happen to be open. The tree is lazy: one `rtl/hierarchy`
+// request per expanded node — `folderPath` for folders, `uri` + `nodePath`
+// for file / instance nodes — so the server never has to serialise the whole
+// workspace hierarchy at once.
 
 const vscode = require('vscode');
-const path = require('path');
 
 /** One node of the RTL hierarchy tree. */
 class HierarchyItem {
     constructor(options) {
         this.label = options.label;
-        // 'file' (workspace file) | 'instance' (building block instance)
+        // 'folder' (workspace folder) | 'file' (workspace file)
+        // | 'instance' (building block instance)
         this.kind = options.kind;
         this.uri = options.uri;
         this.detail = options.detail;
@@ -26,6 +31,8 @@ class HierarchyItem {
         this.nodePath = options.nodePath;
         // readable instance path, used by "Copy Instance Path"
         this.instancePath = options.instancePath;
+        // workspace-relative folder path, used to expand a 'folder' node
+        this.folderPath = options.folderPath;
     }
 }
 
@@ -38,14 +45,46 @@ class HierarchyProvider {
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
         this.lastError = null;
+        // set by refresh(): the next top-level fetch asks the server to
+        // re-scan the workspace roots from disk (picking up files created or
+        // deleted since initialize). Plain expands skip the rescan so the tree
+        // does not enumerate the whole workspace on every render.
+        this.pendingRescan = false;
     }
 
+    /**
+     * Re-reads the whole workspace from disk (files created / deleted since the
+     * last scan) and redraws the tree. Bound to the view's refresh button.
+     */
     refresh() {
+        this.lastError = null;
+        this.pendingRescan = true;
+        this._onDidChangeTreeData.fire(undefined);
+    }
+
+    /**
+     * Redraws the tree without touching the disk, for events that only changed
+     * the parse result of files already known to the server (e.g. didSave).
+     */
+    refreshTree() {
         this.lastError = null;
         this._onDidChangeTreeData.fire(undefined);
     }
 
     getTreeItem(element) {
+        if (element.kind === 'folder') {
+            const item = new vscode.TreeItem(
+                element.label,
+                element.hasChildren
+                    ? vscode.TreeItemCollapsibleState.Collapsed
+                    : vscode.TreeItemCollapsibleState.None
+            );
+            item.iconPath = vscode.ThemeIcon.Folder;
+            item.contextValue = 'rtlFolder';
+            item.tooltip = element.folderPath;
+            return item;
+        }
+
         if (element.kind === 'file') {
             const item = new vscode.TreeItem(
                 element.label,
@@ -93,12 +132,24 @@ class HierarchyProvider {
             if (!client) return [];
 
             if (element === undefined) {
-                // top level: workspace file list
-                const result = await client.request('rtl/hierarchy', { nodePath: [] });
+                // top level: the whole workspace (folder tree + files)
+                const params = { nodePath: [] };
+                if (this.pendingRescan) {
+                    params.rescan = true;
+                    this.pendingRescan = false;
+                }
+                const result = await client.request('rtl/hierarchy', params);
                 return this._toItems(result, [], '');
             }
 
             if (!element.hasChildren) return [];
+
+            if (element.kind === 'folder') {
+                const result = await client.request('rtl/hierarchy', {
+                    folderPath: element.folderPath,
+                });
+                return this._toItems(result, [], '');
+            }
 
             if (element.kind === 'file') {
                 const result = await client.request('rtl/hierarchy', {
@@ -138,6 +189,7 @@ class HierarchyProvider {
                 hasChildren: !!node.hasChildren,
                 nodePath,
                 instancePath,
+                folderPath: node.folderPath,
             });
         });
     }

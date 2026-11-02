@@ -39,13 +39,22 @@ provider API for third-party child nodes, so this extension contributes its own
 information as RtlEditor2's NavigatePanel: workspace files, and under each file
 the module/interface instance hierarchy.
 
-- The tree is lazy: expanding a node issues one `rtl/hierarchy` request with a
-  `nodePath` (the sequence of child indexes from the workspace root), so large
-  projects are not serialised in one go.
+- The top level is the **whole workspace**: every `.sv` / `.svh` / `.v` / `.vh`
+  file under the workspace folders, grouped into a folder tree — not only the
+  documents that happen to be open. Files are loaded from disk by the server at
+  `initialize`, so unopened files still appear with their instance hierarchy.
+- Build output / VCS directories (`obj`, `bin`, `publish`, `node_modules`,
+  `.git`, `.svn`, `.hg`) are skipped.
+- The tree is lazy: expanding a node issues one `rtl/hierarchy` request —
+  `folderPath` for a folder, `uri` + `nodePath` (the sequence of child indexes
+  from the workspace root) for a file / instance — so large projects are not
+  serialised in one go.
 - Clicking an instance reveals its instantiation site in the editor.
 - **Copy Instance Path** (context menu / inline button) copies e.g.
   `u_mid.u_leaf`.
-- The tree refreshes automatically when a SystemVerilog/Verilog file is saved,
-  or manually from the view title (refresh icon).
+- The tree refreshes automatically when a SystemVerilog/Verilog file is saved
+  (redraw only) or when source files are created / deleted / renamed on disk
+  (workspace re-scan). The refresh icon in the view title forces a full
+  re-scan of the workspace folders.
 - The instance hierarchy comes from the parser, so unresolved instances appear
   as leaf nodes and recursive instantiation is cut off at the repeated module.
