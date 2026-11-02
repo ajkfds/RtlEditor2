@@ -3,6 +3,38 @@
 
 ## 進行中タスク
 
+- VS Code 拡張の RTL Hierarchy で開いているファイルだけでなくワークスペース全体を表示 → 実装完了 (ビルド成功 0 errors、テスト 1091/1091 合格、publish 更新、コミット済み)
+  - ユーザ要求: vscode 拡張機能で RTL tree 表示を workspace 全体にしたい (開いたファイルだけではなく)
+  - 症状の根本原因 (コード確認 + 再現テストで特定):
+    - `HandleDidClose` が `project.RemoveFile(uri)` でプロジェクトからファイルを削除していた → タブを閉じるたびにツリーからファイルが消え「開いているファイルだけ」になっていた (これが主因)
+    - トップレベル (`BuildWorkspaceNodes`) が**フラットなファイル一覧**で、ワークスペースのフォルダ構造を表現していなかった
+    - `didClose` 時に unsaved の編集内容がそのまま残る (ディスクと乖離する) 問題も併せて存在
+  - サーバ側修正 (`SystemVerilogLanguageServer` サブモジュール `2b1ffc8`):
+    - `RtlHierarchy.cs`: `HierarchyNodeKind.Folder` ("folder") と `HierarchyNode.FolderPath` を追加
+    - `LspHandler.HandleHierarchy`: `folderPath` パラメータでフォルダ展開、`{ "rescan": true }` でワークスペース再スキャン
+    - `BuildWorkspaceNodes` → `BuildFolderNodes(project, "")` の薄いラッパに変更。`BuildFolderNodes` はフォルダ (`SortedSet` で名前順) → ファイル (名前順) の順で返し、`HasChildren` は `nonEmptyFolders` (そのフォルダ配下にファイルが存在するか) で決定
+    - `AddChildFolder`: `folderPath` 配下でないファイルは寄与しない (prefix 判定)。`remainder` の最初の `/` までが子フォルダ名。※ 初回実装は祖先を辿るだけだったため `src/tb` 展開時に `src/rtl` のファイルが `src` というゴーストフォルダを作るバグがあり、prefix 判定方式に修正
+    - `ScanWorkspaceFiles`: 走査を `LoadWorkspaceFiles` から分離し、追加/変更ファイルのリストを返す。`IsInSkippedDirectory` を新設し **任意の深さ**の `obj`/`bin`/`publish`/`node_modules`/`.git`/`.svn`/`.hg` を除外 (従来は親ディレクトリ名のみ判定のため `build/obj/x.sv` を拾っていた)
+    - `RescanWorkspaceFiles`: `ScanWorkspaceFiles` + 変更分のみ `ParseFiles` (全再パースしない)
+    - `PruneDeletedWorkspaceFiles` / `IsUnderWorkspaceRoot`: ディスクから消えたファイルをツリーから除去 (オープン中 / ワークスペース外 / パス未設定は対象外)
+    - `HandleDidClose`: `_openUris` から外した上で **プロジェクトから削除しない**。ディスクから再読込して `ForceBuild` (unsaved 編集を破棄してディスク内容に戻す)。ファイルが存在しない場合のみ `RemoveFile`
+    - `HandleDidOpen`: `_openUris` に登録 (rescan 時の上書き防止)
+    - `InMemoryProject.AddOrUpdateFileIfChanged` / `InMemoryFile.IsBuilt`: 内容不変なら既存インスタンスを再利用 (refresh のたびに全ファイル再パースするのを回避)
+    - `ParseWorkspaceFiles` の 2 パス処理を `ParseFiles` helper に抽出 (rescan と共用)
+  - 拡張側修正 (`vscode-extension`):
+    - `hierarchy.js`: `HierarchyItem.folderPath` 追加。`getTreeItem` に `folder` 分岐 (`ThemeIcon.Folder`、`contextValue='rtlFolder'`)。`getChildren` で `folder` は `{ folderPath }` を投げる。トップレベルは `pendingRescan` 時のみ `rescan: true` を付与 (`refresh()` で立てる)。`refreshTree()` を新設 (ディスク走査なしの再描画)。未使用の `path` require を削除。ヘッダコメントを「トップレベル = ワークスペース全体」に更新
+    - `extension.js`: `didSave` は `refreshTree()` (ディスク走査不要)。`createFileSystemWatcher('**/*.{sv,svh,v,vh}')` の `onDidCreate` / `onDidDelete` と `workspace.onDidRenameFiles` で `refresh()` (ワークスペース再スキャン)
+    - `README.md`: RTL Hierarchy 節を「トップレベルはワークスペース全体 (フォルダツリー、未オープンファイルも instance 展開可)」「build output / VCS ディレクトリは skip」「リフレッシュは保存時=再描画 / ファイル増減時=再スキャン / 更新アイコン=強制再スキャン」に更新
+  - 検証:
+    - 再現テスト (一時ファイル `DebugWorkspaceHierarchyTests.cs`、コミット除外) で修正前は「開いたファイルのみ」だったことを確認 → 修正後は root に `src` フォルダ + `top.sv`、`src` 配下に `rtl`/`tb`、`src/rtl` 配下にファイル、`build/obj/generated.sv` は非表示、一度も開いていない `mid.sv` の instance (`u_leaf`) も展開できることを確認
+    - 回帰テスト新設 `SystemVerilogLanguageServer.Tests/WorkspaceHierarchyTests.cs` (9 件): 未オープンでのワークスペース一覧 / フォルダ展開 (祖先フォルダのゴーストが無いこと) / build output 非表示 / 未オープンファイルの instance ツリー / rescan で新規ファイル取得 / rescan で削除ファイル除去 / didClose でツリーに残る / didClose でディスク削除済みなら消える
+    - `dotnet build SystemVerilogLanguageServer.csproj` 0 errors / `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj` 0 errors (797 warnings は既存)
+    - `dotnet test SystemVerilogLanguageServer.Tests.csproj` → **1091 合格 / 0 失敗** (regression なし)
+    - `dotnet publish SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish` で publish 更新済み
+  - コミット: SystemVerilogLanguageServer `2b1ffc8`、メイン `97d067d` (vscode-extension 3 ファイル + WorkspaceHierarchyTests.cs + submodule pointer)
+  - Next: VS Code 上で (1) RTL Hierarchy のトップレベルにワークスペースのフォルダツリーと全 .sv ファイルが出る (開いていないファイルも含む) (2) フォルダを展開して配下のファイルが出る (3) 未オープンファイルを展開すると instance 階層が出る (4) ファイルを新規作成/削除すると自動でツリーが更新される (5) タブを閉じてもツリーからファイルが消えない (6) リフレッシュアイコンで強制再スキャンされる ことを確認
+  - メモ: `SystemVerilogLanguageServer.Tests/DebugWorkspaceHierarchyTests.cs` (検証用プローブ) と `DebugStructParamMemberTests.cs` はコミットから除外し作業ツリーに残置。`CodeEditor2` (modified) / `CodeEditor2VerilogPlugin` (modified content) は本タスク外のユーザ変更のため除外
+
 - 初期化子なし struct 型 parameter (`parameter STRUCT_BUS aaa;`) の `aaa.AA` が "unfound object" → 修正完了 (ビルド成功 0 errors、sv-tests 1028/1028 合格、コミット済み)
   - ユーザ報告:
     ```systemverilog
