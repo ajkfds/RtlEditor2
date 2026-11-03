@@ -51,12 +51,26 @@
       {
         "command": "systemverilogLsp.revealInEditor",
         "title": "Reveal in Editor"
+      },
+      {
+        "command": "systemverilogLsp.showLog",
+        "title": "SystemVerilog LSP: Show Log",
+        "icon": "$(output)"
+      },
+      {
+        "command": "systemverilogLsp.showLogFilePath",
+        "title": "SystemVerilog LSP: Copy Log File Path"
       }
     ],
     "menus": {
       "view/title": [
         {
           "command": "systemverilogLsp.refreshHierarchy",
+          "when": "view == systemverilogLsp.hierarchy",
+          "group": "navigation"
+        },
+        {
+          "command": "systemverilogLsp.showLog",
           "when": "view == systemverilogLsp.hierarchy",
           "group": "navigation"
         }

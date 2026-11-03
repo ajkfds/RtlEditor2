@@ -40,10 +40,15 @@ class HierarchyProvider {
     /**
      * @param {() => Promise<any>} ensureClient resolves the LSP client
      * @param {(msg: string) => void} [log] optional logger (OutputChannel)
+     * @param {() => void} [revealLog] optional: reveal the log output channel
      */
-    constructor(ensureClient, log) {
+    constructor(ensureClient, log, revealLog) {
         this.ensureClient = ensureClient;
         this.log = log || (() => {});
+        this.revealLog = revealLog || (() => {});
+        // set once we auto-revealed the log for an empty top level, so we do
+        // not steal focus on every redraw
+        this.revealedLogOnce = false;
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
         this.lastError = null;
@@ -98,6 +103,20 @@ class HierarchyProvider {
     }
 
     getTreeItem(element) {
+        if (element.kind === 'info') {
+            // Diagnostic node shown when the tree would otherwise be empty, so
+            // the user (and the log) can see WHY nothing was listed instead of
+            // a silent blank view.
+            const item = new vscode.TreeItem(
+                element.label,
+                vscode.TreeItemCollapsibleState.None
+            );
+            item.iconPath = new vscode.ThemeIcon('warning');
+            item.contextValue = 'rtlInfo';
+            item.tooltip = element.detail || element.label;
+            return item;
+        }
+
         if (element.kind === 'folder') {
             const item = new vscode.TreeItem(
                 element.label,
@@ -159,8 +178,12 @@ class HierarchyProvider {
 
     async getChildren(element) {
         try {
+            this.log('getChildren: ' + (element === undefined ? '<root>' : element.kind + ':' + element.label));
             const client = await this.ensureClient();
-            if (!client) return [];
+            if (!client) {
+                this.log('getChildren: no client');
+                return [];
+            }
 
             if (element === undefined) {
                 // top level: the whole workspace (folder tree + files)
@@ -199,6 +222,24 @@ class HierarchyProvider {
                 }
                 this.log('hierarchy top level: ' + items.length + ' node(s)'
                     + (params.rescan ? ' (rescan)' : ''));
+                if (items.length === 0) {
+                    // Never leave the view silently blank: surface the reason
+                    // as a single diagnostic node, and reveal the log once so
+                    // the user can see what the server actually did.
+                    if (!this.revealedLogOnce) {
+                        this.revealedLogOnce = true;
+                        this.revealLog();
+                    }
+                    return [new HierarchyItem({
+                        label: 'No SystemVerilog files found (click refresh)',
+                        kind: 'info',
+                        detail: 'The server returned an empty workspace tree. '
+                            + 'Open a folder containing .sv/.svh/.v/.vh files, '
+                            + 'or press the refresh button in the view title.',
+                        hasChildren: false,
+                        nodePath: [],
+                    })];
+                }
                 return items;
             }
 
@@ -226,6 +267,7 @@ class HierarchyProvider {
             return this._toItems(result, element.nodePath, element.instancePath);
         } catch (err) {
             this.lastError = err;
+            this.log('getChildren ERROR: ' + (err && err.stack ? err.stack : err));
             throw err;
         }
     }
@@ -261,14 +303,17 @@ class HierarchyProvider {
  * @param {() => Promise<any>} ensureClient
  * @param {(msg: string) => void} [log] optional logger (OutputChannel)
  */
-function registerHierarchy(context, ensureClient, log) {
-    const provider = new HierarchyProvider(ensureClient, log);
+function registerHierarchy(context, ensureClient, log, revealLog) {
+    const provider = new HierarchyProvider(ensureClient, log, revealLog);
     const view = vscode.window.createTreeView('systemverilogLsp.hierarchy', {
         treeDataProvider: provider,
         showCollapseAll: true,
     });
     context.subscriptions.push(view);
     context.subscriptions.push(provider._onDidChangeTreeData);
+    // The view title shows "No ... files" (viewsWelcome) only when the provider
+    // returns nothing; keep the message visible by revealing the view itself.
+    try { view.badge = undefined; } catch (e) { /* ignore */ }
 
     context.subscriptions.push(
         vscode.commands.registerCommand('systemverilogLsp.refreshHierarchy', () => provider.refresh())

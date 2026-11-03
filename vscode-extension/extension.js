@@ -5,15 +5,51 @@ const { spawn } = require('child_process');
 const { registerHierarchy } = require('./hierarchy');
 
 let log = null;
+let logFilePath = null;
 function initLog(context) {
     if (!log) {
         log = vscode.window.createOutputChannel('SystemVerilog LSP');
         context.subscriptions.push(log);
+        // Mirror every line to a file as well. The RTL Hierarchy view renders
+        // silently empty when a request fails, and the OutputChannel is easy to
+        // miss, so a plain file is the reliable way to diagnose it. Prefer the
+        // extension's own log folder (context.logUri); fall back to the temp
+        // directory when it is unavailable.
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            let dir = null;
+            if (context && context.logUri) {
+                dir = context.logUri.fsPath;
+            } else if (context && context.globalStorageUri) {
+                dir = context.globalStorageUri.fsPath;
+            }
+            if (dir) {
+                fs.mkdirSync(dir, { recursive: true });
+                logFilePath = path.join(dir, 'svlsp-extension.log');
+            } else {
+                logFilePath = path.join(require('os').tmpdir(), 'svlsp-extension.log');
+            }
+            fs.writeFileSync(logFilePath, '');
+        } catch (e) {
+            logFilePath = null;
+        }
     }
     return log;
 }
 function logLine(msg) {
-    if (log) log.appendLine('[' + new Date().toISOString() + '] ' + msg);
+    const line = '[' + new Date().toISOString() + '] ' + msg;
+    if (log) log.appendLine(line);
+    if (logFilePath) {
+        try { require('fs').appendFileSync(logFilePath, line + '\n'); } catch (e) { /* ignore */ }
+    }
+}
+/** Reveals the OutputChannel (and reports the log file path). */
+function showLog() {
+    if (log) log.show(true);
+    if (logFilePath) {
+        vscode.window.setStatusBarMessage('SystemVerilog LSP log: ' + logFilePath, 8000);
+    }
 }
 
 // ---- raw JSON-RPC (LSP over stdio) client, no external dependencies ----
@@ -29,7 +65,14 @@ class RawLspClient {
 
         this.proc.stdout.on('data', (chunk) => this.onData(chunk));
         this.proc.stderr.on('data', (chunk) => {
-            console.error('[svlsp server stderr]', chunk.toString());
+            // Route the server's stderr (workspace scan progress, parse
+            // failures, full stack traces) into the extension log file so the
+            // user can see exactly what the server did.
+            const text = chunk.toString();
+            console.error('[svlsp server stderr]', text);
+            for (const line of text.split(/\r?\n/)) {
+                if (line.trim().length > 0) logLine('[server] ' + line);
+            }
         });
         this.proc.on('exit', (code) => {
             this.closed = true;
@@ -79,10 +122,21 @@ class RawLspClient {
         this.write(JSON.stringify({ jsonrpc: '2.0', method, params }));
     }
 
-    request(method, params) {
+    request(method, params, timeoutMs) {
         const id = this.nextId++;
         return new Promise((resolve, reject) => {
             this.pending.set(id, { resolve, reject });
+            if (timeoutMs && timeoutMs > 0) {
+                // A request that never gets an answer would otherwise leave the
+                // caller (e.g. the RTL Hierarchy getChildren) awaiting forever,
+                // which renders as a silently empty tree view.
+                setTimeout(() => {
+                    if (this.pending.has(id)) {
+                        this.pending.delete(id);
+                        reject(new Error('request timed out: ' + method));
+                    }
+                }, timeoutMs);
+            }
             this.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
         });
     }
@@ -230,6 +284,12 @@ function ensureClient() {
     proc.on('error', (err) => logLine('server spawn error: ' + err.message));
     proc.on('exit', (code) => logLine('server exited with code ' + code));
     client = new RawLspClient(proc);
+    // A spawn failure (missing binary, permission) must reject the pending
+    // initialize instead of leaving the promise pending forever.
+    const spawnFailed = new Promise((_, reject) => {
+        proc.on('error', (err) => reject(new Error('server spawn failed: ' + err.message)));
+    });
+    spawnFailed.catch(() => { /* handled below via Promise.race */ });
     client.onNotification('textDocument/publishDiagnostics', (params) => {
         const uri = vscode.Uri.parse(params.uri);
         const diags = (params.diagnostics || []).map((d) => {
@@ -249,12 +309,15 @@ function ensureClient() {
         collection.set(uri, diags);
     });
 
-    initPromise = client.request('initialize', {
-        processId: process.pid,
-        rootUri: workspaceRootUri(),
-        workspaceFolders: workspaceFolderParams(),
-        capabilities: {},
-    }).then((result) => {
+    initPromise = Promise.race([
+        client.request('initialize', {
+            processId: process.pid,
+            rootUri: workspaceRootUri(),
+            workspaceFolders: workspaceFolderParams(),
+            capabilities: {},
+        }, 120000),
+        spawnFailed,
+    ]).then((result) => {
         logLine('initialize succeeded');
         client.send('initialized', {});
         // sync already-open documents
@@ -473,11 +536,29 @@ function activate(context) {
     context_ = context;
     initLog(context);
     logLine('extension activated');
+    logLine('log file: ' + (logFilePath || '<unavailable>'));
+    logLine('workspaceFolders: ' + JSON.stringify(workspaceFolderParams()));
+    logLine('rootUri: ' + workspaceRootUri());
+
+    // Let the user open the log without hunting through the Output dropdown.
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.showLog', () => showLog())
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.showLogFilePath', async () => {
+            if (!logFilePath) {
+                vscode.window.showWarningMessage('SystemVerilog LSP: log file unavailable');
+                return;
+            }
+            await vscode.env.clipboard.writeText(logFilePath);
+            vscode.window.showInformationMessage('Log file path copied: ' + logFilePath);
+        })
+    );
 
     // RTL Hierarchy tree view (NavigatePanel equivalent). The standard File
     // Explorer cannot be extended with instance children, so the hierarchy is
     // rendered in a Custom Tree View inside the Explorer container.
-    const hierarchyProvider = registerHierarchy(context, () => ensureClient(), logLine);
+    const hierarchyProvider = registerHierarchy(context, () => ensureClient(), logLine, showLog);
     hierarchyProviderRef = hierarchyProvider;
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument(async (doc) => {
