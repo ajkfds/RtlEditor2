@@ -99,8 +99,34 @@ public class WorkspaceHierarchyTests : IDisposable
         LspHandler handler = CreateInitializedHandler();
         JsonElement result = Query(handler, new { nodePath = Array.Empty<int>() });
 
-        Assert.Empty(Labels(result, "folder"));
+        // the tree mirrors the project layout (NavigateView), so the ordinary
+        // "build" folder is listed - but the build output directory inside it
+        // ("obj") is not
+        Assert.Equal(new[] { "build", "src" }, Labels(result, "folder"));
         Assert.Equal(new[] { "top.sv" }, Labels(result, "file"));
+
+        JsonElement build = Query(handler, new { folderPath = "build" });
+        Assert.Empty(Labels(build, "folder"));
+        Assert.Empty(Labels(build, "file"));
+    }
+
+    /// <summary>
+    /// The tree mirrors the project layout like RtlEditor2's NavigateView: every
+    /// file and folder is listed, not only the SystemVerilog sources.
+    /// </summary>
+    [Fact]
+    public void TopLevel_ListsEveryFileAndFolder_NotOnlySystemVerilog()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "README.md"), "# readme\n");
+        File.WriteAllText(Path.Combine(_root, "notes.txt"), "notes\n");
+        Directory.CreateDirectory(Path.Combine(_root, "docs"));
+
+        LspHandler handler = CreateInitializedHandler();
+        JsonElement result = Query(handler, new { nodePath = Array.Empty<int>() });
+
+        Assert.Equal(new[] { "docs", "src" }, Labels(result, "folder"));
+        Assert.Equal(new[] { "notes.txt", "README.md", "top.sv" }, Labels(result, "file"));
     }
 
     [Fact]
@@ -245,7 +271,10 @@ public class WorkspaceHierarchyTests : IDisposable
         });
 
         JsonElement result = Query(handler, new { nodePath = Array.Empty<int>() });
-        Assert.Equal(new[] { "extra" }, Labels(result, "folder"));
+        // two roots are open now, so each root is listed as a folder node
+        string[] folders = Labels(result, "folder");
+        Assert.Contains("extra", folders);
+        Assert.Contains(Path.GetFileName(_root), folders);
     }
 
     private static void SendNotification(LspHandler handler, string method, object parameters)

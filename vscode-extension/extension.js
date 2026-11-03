@@ -130,9 +130,16 @@ function resolveServerCommand(context) {
     let serverPath = config.get('serverPath', '');
 
     if (!serverPath) {
+        // Prefer the published binary. The extension lives inside the
+        // repository (vscode-extension/), so the server is a sibling folder;
+        // falling back to `dotnet run` would execute bin/Debug, which is often
+        // stale (an already-running server keeps the DLL locked, so the rebuild
+        // silently fails and the old binary keeps serving old behaviour).
         const candidates = [
             vscode.Uri.joinPath(context.extensionUri, 'SystemVerilogLanguageServer', 'publish', 'SystemVerilogLanguageServer.exe').fsPath,
             vscode.Uri.joinPath(context.extensionUri, 'SystemVerilogLanguageServer', 'publish', 'SystemVerilogLanguageServer').fsPath,
+            vscode.Uri.joinPath(context.extensionUri, '..', 'SystemVerilogLanguageServer', 'publish', 'SystemVerilogLanguageServer.exe').fsPath,
+            vscode.Uri.joinPath(context.extensionUri, '..', 'SystemVerilogLanguageServer', 'publish', 'SystemVerilogLanguageServer').fsPath,
         ];
         for (const candidate of candidates) {
             if (require('fs').existsSync(candidate)) {

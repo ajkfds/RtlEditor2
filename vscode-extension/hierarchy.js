@@ -50,6 +50,9 @@ class HierarchyProvider {
         // deleted since initialize). Plain expands skip the rescan so the tree
         // does not enumerate the whole workspace on every render.
         this.pendingRescan = false;
+        // set once the first top-level fetch has asked for a rescan, so a
+        // folder-less window does not re-scan the disk on every redraw
+        this.initialRescanDone = false;
     }
 
     /**
@@ -92,9 +95,14 @@ class HierarchyProvider {
                     ? vscode.TreeItemCollapsibleState.Collapsed
                     : vscode.TreeItemCollapsibleState.None
             );
-            item.iconPath = vscode.ThemeIcon.File;
+            // resourceUri drives the real file icon; unknown schemes (a file the
+            // server could not turn into a URI) fall back to the generic one
+            try {
+                item.resourceUri = vscode.Uri.parse(element.uri);
+            } catch (e) {
+                item.iconPath = vscode.ThemeIcon.File;
+            }
             item.description = element.detail || undefined;
-            item.resourceUri = vscode.Uri.parse(element.uri);
             item.contextValue = 'rtlFile';
             item.tooltip = element.uri;
             // opening the file itself is the default action for leaf files
@@ -134,9 +142,16 @@ class HierarchyProvider {
             if (element === undefined) {
                 // top level: the whole workspace (folder tree + files)
                 const params = { nodePath: [] };
-                if (this.pendingRescan) {
+                // A window that has no folder open ("File > Open File") sends no
+                // workspace root at initialize, so the server cannot scan the
+                // project. Ask for a rescan on the first render: the server then
+                // infers the root from the opened document instead of showing
+                // only that one file.
+                const noFolderOpen = !(vscode.workspace.workspaceFolders || []).length;
+                if (this.pendingRescan || (noFolderOpen && !this.initialRescanDone)) {
                     params.rescan = true;
                     this.pendingRescan = false;
+                    this.initialRescanDone = true;
                 }
                 const result = await client.request('rtl/hierarchy', params);
                 return this._toItems(result, [], '');

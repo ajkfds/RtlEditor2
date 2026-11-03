@@ -3,7 +3,19 @@
 
 ## 進行中タスク (最新)
 
-- VS Code 拡張の RTL Hierarchy が「最初に開いたファイルしか表示されない」→ 修正完了 (ビルド成功 0 errors、テスト 1093/1093 合格、publish 更新、コミット済み)
+- VS Code 拡張の RTL Hierarchy が「最初に開いたファイルしか表示されない」→ 第2次修正完了 (ビルド成功 0 errors、テスト 1094/1094 合格、publish 更新)
+  - ユーザ再報告: 単一ファイルとその下層インスタンスしか表示されない
+  - 追加原因1 (**最重要**): 拡張が `dotnet run` フォールバックで `bin/Debug` のサーバを起動していた。`vscode-extension/` 配下には `SystemVerilogLanguageServer/publish` が無いため publish 候補が全て不一致 → `dotnet run --project` にフォールバック。さらに稼働中サーバが `bin/Debug` と `obj/Debug` の DLL をロックして**リビルドが静かに失敗**し、古いバイナリが動き続けていた (ビルドログが `MSB3027/MSB3021 ... locked by SystemVerilogLanguageServer (29036)` で実証)
+  - 追加原因2: ツリーが `project.Files` (= サーバが読み込んだ **SV ファイルのみ**) から構築されていた。ユーザ要望は「RtlEditor の NavigateView の内容をそのまま表示」= **全ファイル・全フォルダ**
+  - 修正1 (拡張 `extension.js` `resolveServerCommand`): publish 候補に `../SystemVerilogLanguageServer/publish/...` (リポジトリ兄弟フォルダ) を追加し、`dotnet run` フォールバックより publish を優先 (stale な bin/Debug を掴まないように)
+  - 修正2 (拡張 `extension.js` `initialize`): 全ワークスペースフォルダを `workspaceFolders` として送信 (`workspaceFolderParams` / `workspaceRootUri` helper)、`onDidChangeWorkspaceFolders` で `workspace/didChangeWorkspaceFolders` 送信
+  - 修正3 (拡張 `hierarchy.js`): フォルダ未オープン時は初回トップレベル取得で `rescan: true` を付与 (`initialRescanDone` フラグ)
+  - 修正4 (サーバ `LspHandler.cs`): `BuildFolderNodes` を **ディスク走査ベース**に全面書き換え。`BuildDirectoryNodes` が実ディレクトリの全サブフォルダ + 全ファイルを列挙 (NavigateView 相当)。`obj`/`bin`/`publish`/`node_modules`/`.git`/`.svn`/`.hg` は除外。単一ルートなら中身を直下に、複数ルートなら各ルートをフォルダノードに。SV ファイルでパース済みのものだけ `HasChildren=true` (インスタンス階層を展開可)、それ以外は leaf
+  - 修正5 (サーバ): `HandleDidChangeWorkspaceFolders` 新設、`EnsureWorkspaceRootFromFile` (didOpen 時) / `EnsureWorkspaceRootFromKnownFiles` (hierarchy/rescan 時の自己修復) / `FindProjectRoot` (`.git`/`.svn`/`.hg`/`*.sln`/`*.slnx`/`*.code-workspace`/`*.csproj`/`*.f` を最大 8 階層上まで探索)、`RescanWorkspaceFiles` もルート未確定時に推定を試行
+  - 修正6 (サーバ): `PathToUri` の `UriFormatException` を try/catch でフォールバック (スキャンが 1 エントリで落ちない)
+  - テスト: `WorkspaceHierarchyTests` を新仕様に更新 + 2 件追加 (`TopLevel_ListsEveryFileAndFolder_NotOnlySystemVerilog` / `TopLevel_InfersWorkspaceRootFromOpenedFile_WhenNoFolderWasOpened`)。`dotnet test` → **1094 合格 / 0 失敗**
+  - 注意: 稼働中 LSP サーバが `bin/Debug` / `obj/Debug` / `obj/Release` の DLL をロックするため、ビルド/テストは `-p:BaseOutputPath=obj/tmpbuild/`、publish は `-p:BaseOutputPath=obj/tmppublish/` で回避。ロックで失敗したら再実行すると成功する
+  - Next: VS Code で **Reload Window** (または拡張ホスト再起動) → RTL Hierarchy に workspace の全ファイル・フォルダが出る / SV ファイルだけインスタンス展開できる / フォルダ追加削除に追従する ことを確認
   - ユーザ報告: vscode extension で最初に開いたファイルしか RTL Hierarchy ビューに出ない。workspace の全ファイル・フォルダを表示したい (RtlEditor の NavigateView 相当)
   - 原因: `initialize` の `rootUri` / `workspaceFolders` が空のまま (VS Code でフォルダを開かずファイル単体を開いた場合) だとサーバの `_workspaceRoots` が空になり、`LoadWorkspaceFiles` のワークスペーススキャンが一切走らない。結果 `BuildFolderNodes` は `project.Files` にある「開いたファイル」だけを列挙していた (サーバ側のフォルダツリー機構自体は既に完成しており、既存の `WorkspaceHierarchyTests` 9 件は全合格 = ロジックは正常)
   - 修正1 (拡張 `extension.js`): `workspaceFolderParams()` / `workspaceRootUri()` helper を新設し、`initialize` に **全ワークスペースフォルダ**を `workspaceFolders` として送信 (`rootUri` は先頭フォルダ)。従来は `workspaceFolders[0]` のみを `rootUri` に渡していた

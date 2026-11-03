@@ -39,10 +39,12 @@ provider API for third-party child nodes, so this extension contributes its own
 information as RtlEditor2's NavigatePanel: workspace files, and under each file
 the module/interface instance hierarchy.
 
-- The top level is the **whole workspace**: every `.sv` / `.svh` / `.v` / `.vh`
-  file under the workspace folders, grouped into a folder tree — not only the
-  documents that happen to be open. Files are loaded from disk by the server at
-  `initialize`, so unopened files still appear with their instance hierarchy.
+- The top level mirrors the project layout exactly like RtlEditor2's
+  NavigateView: **every file and folder** of the workspace is listed (not only
+  the `.sv` / `.svh` / `.v` / `.vh` sources), grouped into a folder tree — not
+  only the documents that happen to be open. A SystemVerilog / Verilog file can
+  be expanded into its instance hierarchy; every other file is a leaf that opens
+  in the editor.
 - Every workspace folder is reported to the server, and adding / removing a
   folder in the window extends / trims the tree
   (`workspace/didChangeWorkspaceFolders`).
