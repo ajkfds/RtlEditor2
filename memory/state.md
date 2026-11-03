@@ -3,7 +3,22 @@
 
 ## 進行中タスク (最新)
 
-- VS Code 拡張の RTL Hierarchy が空 + documentSymbol で provider FAILED → 修正完了 (ビルド成功 0 errors、テスト 1099/1099 合格、publish 更新)
+- **RTL Hierarchy が空の真の原因 = VS Code の URI 形式 (`file:///d%3A/...`) をサーバが解決できず 0 files** → 修正完了 (ビルド成功 0 errors、テスト 1101/1101 合格)
+  - ユーザ提供の拡張ログで確定:
+    - `[server] workspace roots: /d:/Document/RtlEditor2/.../mySample`
+    - `[server] workspace: 0 SystemVerilog/Verilog files parsed`
+  - 原因: VS Code は workspace folder を **`file:///d%3A/Document/...`** (ドライブレター小文字 + コロンを `%3A` にエスケープ) で送る。`new Uri(uri).LocalPath` はこれを **`/d:/Document/...`** (先頭スラッシュ付き・フォワードスラッシュ) に変換するが、Windows にそんなパスは存在しないため `ScanWorkspaceFiles` が 0 件、`rtl/hierarchy` が空を返し、ツリーが空になっていた
+  - 過去の検証プローブ (`DebugRealRepoTreeTests` / `DebugSpawnServerTests`) は `new Uri(root).AbsoluteUri` で **`file:///D:/...`** を作っていたため、この不具合を再現できていなかった (検証方法の穴)
+  - 修正 (`SystemVerilogLanguageServer/Server/LspHandler.cs` `UriToAbsolutePath`):
+    - `%` を含む場合は `Uri.UnescapeDataString` でデコード
+    - Windows では先頭の `/` (ドライブレター前) を除去、ドライブレターを大文字化、`/` → `\` に正規化
+    - `file://` でない入力 (rootPath / 合成テスト ID) はそのまま返す早帰りに整理
+  - 回帰テスト追加 (`WorkspaceHierarchyTests.LowerCasePercentEncodedDriveLetter_ListsTheWholeWorkspace`): 実際に VS Code が送る形式 `file:///<小文字ドライブ>%3A/...` を組み立てて initialize → `rtl/hierarchy` が `top.sv` を返すことを検証。**修正前は失敗 (Actual: [])、修正後は合格** を stash で実証
+  - 検証: `dotnet test` → **1101 合格 / 0 失敗**
+  - 残作業: publish 更新が起動中の VS Code サーバ (PID 6024) にロックされて失敗。**VS Code を閉じる (または Reload Window) → `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish`** が必要
+  - Next: publish 更新後 VS Code で RTL Hierarchy に mySample 配下のフォルダ/ファイルが出ること、SV ファイル展開でインスタンス階層が出ることを確認
+
+- 旧: VS Code 拡張の RTL Hierarchy が空 + documentSymbol で provider FAILED → 修正完了 (ビルド成功 0 errors、テスト 1099/1099 合格)
   - ユーザ報告: 拡張を実行しても RTL Hierarchy に何も表示されない。ログに `TypeError: Cannot read properties of undefined (reading 'line')` at `positionParams` ← `provideDocumentSymbols` (extension.js:288/328/544)
   - 原因1 (**documentSymbol のクラッシュ**): `provideDocumentSymbols(doc)` が `positionParams(doc)` を呼んでいたが、`positionParams(doc, pos, extra)` は第2引数 `pos` を必須とし `pos.line` を参照する。documentSymbol リクエストに position は無いため `pos === undefined` で TypeError → provider FAILED
     - 修正 (`vscode-extension/extension.js`): `textDocument/documentSymbol` には `{ textDocument: { uri } }` のみを送るよう変更 (positionParams を使わない)

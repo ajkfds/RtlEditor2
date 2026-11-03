@@ -41,6 +41,54 @@ public class WorkspaceHierarchyTests : IDisposable
         return handler;
     }
 
+    /// <summary>
+    /// VS Code reports the workspace folder with a lower-case, percent-encoded
+    /// drive letter (file:///d%3A/Document/x). Uri.LocalPath kept that as
+    /// "/d:/Document/x", which does not exist on Windows: the scan found 0
+    /// files and the RTL Hierarchy tree was always empty. This is the exact
+    /// form the real client sends, so it must list the workspace.
+    /// </summary>
+    [Fact]
+    public void LowerCasePercentEncodedDriveLetter_ListsTheWholeWorkspace()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; endmodule\n");
+
+        // Emulate the exact URI VS Code sends: "file:///" + path where the
+        // drive letter is lower-case and its colon is percent-encoded
+        // (file:///c%3A/Users/...). Uri.LocalPath turns that into
+        // "/c:/Users/..." which does not exist on Windows.
+        string forward = _root.Replace('\\', '/');
+        string vscodeUri = "file:///" + forward;
+        if (forward.Length >= 2 && forward[1] == ':')
+        {
+            vscodeUri = "file:///"
+                + char.ToLowerInvariant(forward[0])
+                + "%3A"
+                + forward.Substring(2);
+        }
+        // sanity: on Windows this must really carry the escaped colon
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.DoesNotContain("file:///C:", vscodeUri, StringComparison.OrdinalIgnoreCase);
+        }
+
+        LspHandler handler = new(new InMemorySystemVerilogCore());
+        string initialize = JsonSerializer.Serialize(new
+        {
+            processId = 1,
+            rootUri = vscodeUri,
+            workspaceFolders = new[] { new { uri = vscodeUri, name = "mySample" } },
+            capabilities = new { },
+        });
+        using (JsonDocument doc = JsonDocument.Parse(initialize))
+        {
+            handler.TryHandleRequest("initialize", doc.RootElement, default, out _);
+        }
+
+        JsonElement result = Query(handler, new { nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "top.sv" }, Labels(result, "file"));
+    }
+
     private static JsonElement Query(LspHandler handler, object parameters)
     {
         using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(parameters));
