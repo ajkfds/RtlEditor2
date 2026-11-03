@@ -3,7 +3,27 @@
 
 ## 進行中タスク (最新)
 
-- VS Code 拡張の RTL Hierarchy が「何も表示されない (No ... files in the workspace のまま)」→ 修正完了 (ビルド成功 0 errors、テスト 1099/1099 合格)
+- VS Code 拡張の RTL Hierarchy が空 + documentSymbol で provider FAILED → 修正完了 (ビルド成功 0 errors、テスト 1099/1099 合格、publish 更新)
+  - ユーザ報告: 拡張を実行しても RTL Hierarchy に何も表示されない。ログに `TypeError: Cannot read properties of undefined (reading 'line')` at `positionParams` ← `provideDocumentSymbols` (extension.js:288/328/544)
+  - 原因1 (**documentSymbol のクラッシュ**): `provideDocumentSymbols(doc)` が `positionParams(doc)` を呼んでいたが、`positionParams(doc, pos, extra)` は第2引数 `pos` を必須とし `pos.line` を参照する。documentSymbol リクエストに position は無いため `pos === undefined` で TypeError → provider FAILED
+    - 修正 (`vscode-extension/extension.js`): `textDocument/documentSymbol` には `{ textDocument: { uri } }` のみを送るよう変更 (positionParams を使わない)
+  - 原因2 (**RTL Hierarchy が空のまま確定**): サーバ側は正常であることを publish バイナリを stdio 起動するプローブ (`DebugSpawnServerTests`) で実測確認 (initialize 691ms / rtl/hierarchy 14ms / フォルダ多数 + 1100 files)。空になるのは拡張側の初期化競合:
+    - フォルダ未オープン (ファイル単体を開いた) 場合、`initialize` の `rootUri` が `null` になり、サーバは didOpen されたファイルからルートを推定する。しかし RTL Hierarchy ビューの初回描画 (`getChildren`) は拡張 activate 直後に走るため、didOpen 処理より先に `rtl/hierarchy` が届くと空リストが返る
+    - 旧実装はその空の結果で `initialRescanDone = true` を立てていたため、以降リフレッシュされず永久に空
+    - 修正 (`vscode-extension/extension.js`):
+      - `inferRootFromOpenDocuments()` 新設。フォルダ未オープン時は開いている SV/V ファイルの親ディレクトリを `rootUri` / `workspaceFolders` として送信 (サーバが最初からワークスペースをスキャンできる)
+      - `hierarchyProviderRef` を新設し、LSP `initialize` 成功時に `refreshIfEmpty()` を呼ぶ
+      - `onDidOpenTextDocument` で SV/V を開いたときも `refreshIfEmpty()` を呼ぶ
+    - 修正 (`vscode-extension/hierarchy.js`):
+      - `initialRescanDone` は **ツリーが非空を返したときだけ** 立てるよう変更 (空応答で確定しない)
+      - `refreshIfEmpty()` 新設 (未 populated のときだけ再取得。`setTimeout(0)` で遅延し、`ensureClient()` の promise チェーン内から同期発火してデッドロックするのを回避)
+      - フォルダ未オープンで空だった場合の 2 秒後 1 回リトライ (`retryScheduled`)
+      - `log` コールバックを受け取り、トップレベル取得結果 (ノード数 / rescan 有無) を OutputChannel に記録
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj` 0 errors / `dotnet test` **1099 合格 / 0 失敗** / `dotnet publish` 更新 / publish バイナリを stdio 起動して initialize 691ms・rtl/hierarchy 14ms・フォルダ多数返却を再確認
+  - Next: VS Code で Reload Window 後、(1) RTL Hierarchy にワークスペースのフォルダツリーと全ファイルが出る (2) フォルダ未オープン (ファイル単体) でも出る (3) Outline (documentSymbol) がエラーにならない ことを確認
+  - メモ: `SystemVerilogLanguageServer.Tests/Debug*.cs` (検証用プローブ) はコミットから除外し作業ツリーに残置
+
+### 旧: VS Code 拡張の RTL Hierarchy が「何も表示されない (No ... files in the workspace のまま)」→ 修正完了 (ビルド成功 0 errors、テスト 1099/1099 合格)
   - ユーザ報告: 前回修正後も何も表示されない。新規にファイルを開いても表示されない
   - **根本原因の特定方法**: 検証用プローブ (`DebugRealRepoTreeTests` / `DebugSpawnServerTests`、コミット除外) を作成。(1) インプロセスで実リポジトリに対し initialize + rtl/hierarchy を実行 → 正常 (ツリー 6608 バイト返却)、(2) **publish バイナリを stdio 経由で実際に起動** (拡張と同一手順) → `initialize` が `{"error":{"code":-32603,"message":"Internal error: Object reference not set to an instance of an object."}}` を返していた
   - 原因1 (**主因**): `initialize` 内の `LoadWorkspaceFiles` が、1000〜2200 件の .sv を**同期で全件読み込み＋パース**していた。その過程で例外 (NRE) が発生すると `initialize` 応答自体がエラーになり、拡張の `ensureClient` が reject → ツリーが永久に空。`--selftest` はルート未指定でこの経路を通らないため検出できなかった

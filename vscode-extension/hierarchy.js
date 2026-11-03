@@ -39,9 +39,11 @@ class HierarchyItem {
 class HierarchyProvider {
     /**
      * @param {() => Promise<any>} ensureClient resolves the LSP client
+     * @param {(msg: string) => void} [log] optional logger (OutputChannel)
      */
-    constructor(ensureClient) {
+    constructor(ensureClient, log) {
         this.ensureClient = ensureClient;
+        this.log = log || (() => {});
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
         this.lastError = null;
@@ -50,9 +52,12 @@ class HierarchyProvider {
         // deleted since initialize). Plain expands skip the rescan so the tree
         // does not enumerate the whole workspace on every render.
         this.pendingRescan = false;
-        // set once the first top-level fetch has asked for a rescan, so a
-        // folder-less window does not re-scan the disk on every redraw
+        // set once the first top-level fetch has returned a non-empty tree, so
+        // a folder-less window does not re-scan the disk on every redraw
         this.initialRescanDone = false;
+        // guards the one-shot retry scheduled when the first render came back
+        // empty because the server had no workspace root yet
+        this.retryScheduled = false;
     }
 
     /**
@@ -72,6 +77,24 @@ class HierarchyProvider {
     refreshTree() {
         this.lastError = null;
         this._onDidChangeTreeData.fire(undefined);
+    }
+
+    /**
+     * Re-fetches the tree only while it has never been populated. Used when a
+     * SystemVerilog document is opened: the server may have had no workspace
+     * root when the view first rendered, so the first fetch came back empty.
+     * Once the tree has content this is a no-op (a full rescan on every
+     * document open would be wasteful on a large workspace).
+     */
+    refreshIfEmpty() {
+        if (this.initialRescanDone) return;
+        // Defer: this is called from inside the LSP initialize promise chain,
+        // and getChildren awaits ensureClient() (the same promise). Firing the
+        // tree change synchronously would make the re-fetch wait on a promise
+        // that only resolves after the current callback returns.
+        setTimeout(() => {
+            if (!this.initialRescanDone) this.refresh();
+        }, 0);
     }
 
     getTreeItem(element) {
@@ -151,10 +174,32 @@ class HierarchyProvider {
                 if (this.pendingRescan || (noFolderOpen && !this.initialRescanDone)) {
                     params.rescan = true;
                     this.pendingRescan = false;
-                    this.initialRescanDone = true;
                 }
                 const result = await client.request('rtl/hierarchy', params);
-                return this._toItems(result, [], '');
+                const items = this._toItems(result, [], '');
+                // Only latch the "initial rescan done" flag once the server
+                // actually returned something. The view is created (and
+                // getChildren runs) as soon as the extension activates, which
+                // can be before any SystemVerilog document has been opened: the
+                // server then has no workspace root yet and answers with an
+                // empty list. Latching on that empty answer left the tree blank
+                // forever, because nothing re-triggered a rescan afterwards.
+                if (items.length > 0) {
+                    this.initialRescanDone = true;
+                } else if (noFolderOpen && !this.retryScheduled) {
+                    // The server had no workspace root yet (no folder open and
+                    // no SystemVerilog document opened so far). Retry once the
+                    // client has had a chance to open a document, so the tree
+                    // fills in without the user pressing refresh.
+                    this.retryScheduled = true;
+                    setTimeout(() => {
+                        this.retryScheduled = false;
+                        this.refresh();
+                    }, 2000);
+                }
+                this.log('hierarchy top level: ' + items.length + ' node(s)'
+                    + (params.rescan ? ' (rescan)' : ''));
+                return items;
             }
 
             if (!element.hasChildren) return [];
@@ -214,9 +259,10 @@ class HierarchyProvider {
  * Registers the tree view plus its commands.
  * @param {vscode.ExtensionContext} context
  * @param {() => Promise<any>} ensureClient
+ * @param {(msg: string) => void} [log] optional logger (OutputChannel)
  */
-function registerHierarchy(context, ensureClient) {
-    const provider = new HierarchyProvider(ensureClient);
+function registerHierarchy(context, ensureClient, log) {
+    const provider = new HierarchyProvider(ensureClient, log);
     const view = vscode.window.createTreeView('systemverilogLsp.hierarchy', {
         treeDataProvider: provider,
         showCollapseAll: true,

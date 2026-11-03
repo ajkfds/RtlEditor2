@@ -114,15 +114,46 @@ function workspaceFoldersList() {
 }
 
 function workspaceFolderParams() {
-    return workspaceFoldersList().map((folder) => ({
-        uri: folder.uri.toString(),
-        name: folder.name,
-    }));
+    const folders = workspaceFoldersList();
+    if (folders.length > 0) {
+        return folders.map((folder) => ({
+            uri: folder.uri.toString(),
+            name: folder.name,
+        }));
+    }
+    // No folder open: report the inferred root so the server can scan the
+    // project (see workspaceRootUri).
+    const inferred = inferRootFromOpenDocuments();
+    return inferred ? [{ uri: inferred.toString(), name: 'workspace' }] : [];
 }
 
 function workspaceRootUri() {
     const folders = workspaceFoldersList();
-    return folders.length > 0 ? folders[0].uri.toString() : null;
+    if (folders.length > 0) return folders[0].uri.toString();
+    // No folder open ("File > Open File"): report the directory of an open
+    // SystemVerilog document as the root. Without this the server has no
+    // workspace root at initialize, cannot scan the project, and the RTL
+    // Hierarchy view renders empty until a document is opened (and even then
+    // only if the tree is re-fetched).
+    const inferred = inferRootFromOpenDocuments();
+    return inferred ? inferred.uri.toString() : null;
+}
+
+/**
+ * Directory of the first open SystemVerilog / Verilog document, used as a
+ * workspace root when the window has no folder open.
+ */
+function inferRootFromOpenDocuments() {
+    for (const doc of vscode.workspace.textDocuments) {
+        if (doc.uri.scheme !== 'file') continue;
+        const lang = doc.languageId;
+        if (lang !== 'systemverilog' && lang !== 'verilog') continue;
+        // Uri.joinPath(uri, '..') is not normalised, so build the parent
+        // directory explicitly from the filesystem path.
+        const dir = require('path').dirname(doc.uri.fsPath);
+        return vscode.Uri.file(dir);
+    }
+    return null;
 }
 
 function resolveServerCommand(context) {
@@ -169,6 +200,10 @@ function resolveServerCommand(context) {
 let client = null;
 let initPromise = null;
 const openedDocs = new Map(); // uri -> open count
+// set by activate(); used to re-fetch the RTL Hierarchy tree once the LSP
+// session is ready (the view can render before the client has started, in
+// which case the first fetch comes back empty).
+let hierarchyProviderRef = null;
 
 function withClient(fn) {
     return ensureClient().then(fn, (err) => {
@@ -226,6 +261,11 @@ function ensureClient() {
         for (const doc of vscode.workspace.textDocuments) {
             maybeOpenDocument(doc);
         }
+        // The RTL Hierarchy view may have rendered before the session existed
+        // (getChildren awaits ensureClient, but the very first render can race
+        // the workspace scan). Re-fetch now that the server is ready; this is a
+        // no-op once the tree has content.
+        if (hierarchyProviderRef) hierarchyProviderRef.refreshIfEmpty();
         const openDisposable = vscode.workspace.onDidOpenTextDocument((doc) => { logLine('didOpen: ' + doc.uri.toString()); maybeOpenDocument(doc); });
         const changeDisposable = vscode.workspace.onDidChangeTextDocument((e) => {
             if (e.document && openedDocs.has(e.document.uri.toString())) {
@@ -325,7 +365,12 @@ function provideReferences(doc, pos, opts) {
 
 function provideDocumentSymbols(doc) {
     logLine('provideDocumentSymbols');
-    return client.request('textDocument/documentSymbol', positionParams(doc)).then((result) => {
+    // documentSymbol takes only the textDocument (no position). Using
+    // positionParams() here would dereference an undefined position and throw
+    // "Cannot read properties of undefined (reading 'line')".
+    return client.request('textDocument/documentSymbol', {
+        textDocument: { uri: doc.uri.toString() },
+    }).then((result) => {
         logLine('documentSymbol result count: ' + (result ? result.length : 'null'));
         if (!result) return [];
         return result.map(toSymbol).filter((s) => s);
@@ -432,7 +477,8 @@ function activate(context) {
     // RTL Hierarchy tree view (NavigatePanel equivalent). The standard File
     // Explorer cannot be extended with instance children, so the hierarchy is
     // rendered in a Custom Tree View inside the Explorer container.
-    const hierarchyProvider = registerHierarchy(context, () => ensureClient());
+    const hierarchyProvider = registerHierarchy(context, () => ensureClient(), logLine);
+    hierarchyProviderRef = hierarchyProvider;
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument(async (doc) => {
             const lang = doc && doc.languageId;
@@ -593,6 +639,14 @@ function activate(context) {
     context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((doc) => {
         if (isMatchingDoc(doc)) {
             ensureClient().catch((err) => logLine('ERROR: ' + (err && err.stack ? err.stack : err.message)));
+            // The server infers a workspace root from the first opened
+            // SystemVerilog document when the window has no folder open. The
+            // hierarchy view is rendered as soon as the extension activates,
+            // which can be before that didOpen has been processed, so the first
+            // fetch may come back empty. Re-fetch once the document is open so
+            // the tree fills in without the user pressing refresh (no-op once
+            // the tree has content).
+            hierarchyProvider.refreshIfEmpty();
         }
     }));
 }
