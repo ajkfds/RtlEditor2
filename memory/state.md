@@ -3,7 +3,35 @@
 
 ## 進行中タスク (最新)
 
-- **RTL Hierarchy が空の真の原因 = VS Code の URI 形式 (`file:///d%3A/...`) をサーバが解決できず 0 files** → 修正完了 (ビルド成功 0 errors、テスト 1101/1101 合格)
+- **VS Code 拡張 (LSP) で `include` が "file not found" になる (RtlEditor では解決できる)** → 修正完了 (ビルド成功 0 errors、テスト 1105/1105 合格、publish 更新)
+  - ユーザ報告: vscode extension として使うと Verilog の `include` 文で file not found。RtlEditor で読むと正しく include 先を参照できる
+  - 根本原因 (**LSP ホストが plugin の item tree を構築していなかった**):
+    - `WordScanner.parseInclude` は include 先を **plugin の `CodeEditor2.Data.Project` の item tree** 経由でしか解決しない
+      - 同一フォルダ検索: `Project.FindItems` で `TextFile.RelativePath == sameFolderPath` を照合
+      - プロジェクト全体検索: `Project.SearchFile` でファイル名一致
+      - 実際の読み込み: `VerilogHeaderInstance.Create` → `project.GetItem(relativePath)`
+    - エディタは `Folder.UpdateAsync` がディスクを走査して item tree を構築するため解決できる
+    - LSP ホスト (`InMemoryProject`) は独自の `InMemoryFile` テーブルしか持たず、**plugin の item tree を一切作っていなかった** → 常に "file not found"
+  - 副次原因 (**`RelativePath` に URI を入れていた**): `InMemoryFile.CreateVerilogFile` が `RelativePath = Id` (= `file:///d%3A/...`) にしていた。`parseInclude` は include 元の `RelativePath` から同一フォルダパスを組み立てるため、URI では絶対に一致せず、プロジェクト全体検索 (ファイル名のみ) のフォールバックしか効かなかった → 同名ヘッダが複数フォルダにあると誤解決
+  - 修正 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`):
+    - `_pluginItems` (`Dictionary<string, TextFile>`, Ordinal) + `_pluginItemLock` を新設
+    - `GetProjectRelativePath(absolutePath)`: workspace root 配下なら workspace 相対パス (`/` 区切り) を返す。root 外 (untitled / root 確定前) は null
+    - `RegisterPluginItem(file)`: 相対パスで `VerilogFile` / `VerilogHeaderFile` を生成し、中間 `Folder` を `EnsurePluginFolder` で作成して `PluginProject` の item tree に登録。`CodeDocument` は reflection で設定 (UI レスホストでは `FileCheckAsync` が動かないため。`CoreBridge.ParseEngine` / sv-tests ハーネスと同一手法)
+    - `RebuildPluginItemTree()`: root が後から判明したときに全ファイルを再キーイング
+    - `AddOrUpdateFile` から `RegisterPluginItem` を呼び、`RemoveFile` から `RemovePluginItem` で item tree も削除
+    - `CreateVerilogFile` の `RelativePath` を URI → workspace 相対パスに修正 (同一フォルダ include 解決のため)
+  - 修正 (`SystemVerilogLanguageServer/Server/LspHandler.cs`): root が確定/変更される 4 箇所で `project.RebuildPluginItemTree()` を呼ぶ (`LoadWorkspaceFiles` / `HandleDidChangeWorkspaceFolders` / `EnsureWorkspaceRootFromFile` / `EnsureWorkspaceRootFromKnownFiles`)
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/IncludeResolutionTests.cs`, 3 件):
+    - `IncludeInSameFolder_Resolves` (同一フォルダの `.svh`)
+    - `IncludeWithRelativePath_Resolves` (`../include/defs.svh` の相対パス)
+    - `MissingInclude_StillReportsFileNotFound` (存在しない include は引き続きエラー = 何でも解決して黙らせていないことの確認)
+    - **修正前は 2 件失敗 ("file not found" を検出)、修正後は 3 件合格** を stash で実証
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test` **1105 合格 / 0 失敗** (1102 + 新規 3) / `dotnet publish` 更新 + `--selftest` 正常
+  - コミット: SystemVerilogLanguageServer (本体) / メイン (submodule pointer + IncludeResolutionTests.cs + state.md)
+  - Next: VS Code で Reload Window 後、`include` 行の "file not found" 波線が消えること / include 先のマクロが展開されること を確認
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/Debug*.cs`) は従来どおりコミットから除外 (作業ツリーに残置)
+
+- 旧: **RTL Hierarchy が空の真の原因 = VS Code の URI 形式 (`file:///d%3A/...`) をサーバが解決できず 0 files** → 修正完了 (ビルド成功 0 errors、テスト 1101/1101 合格)
   - ユーザ提供の拡張ログで確定:
     - `[server] workspace roots: /d:/Document/RtlEditor2/.../mySample`
     - `[server] workspace: 0 SystemVerilog/Verilog files parsed`
