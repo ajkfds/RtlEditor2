@@ -15,8 +15,11 @@
     - `file://` でない入力 (rootPath / 合成テスト ID) はそのまま返す早帰りに整理
   - 回帰テスト追加 (`WorkspaceHierarchyTests.LowerCasePercentEncodedDriveLetter_ListsTheWholeWorkspace`): 実際に VS Code が送る形式 `file:///<小文字ドライブ>%3A/...` を組み立てて initialize → `rtl/hierarchy` が `top.sv` を返すことを検証。**修正前は失敗 (Actual: [])、修正後は合格** を stash で実証
   - 検証: `dotnet test` → **1101 合格 / 0 失敗**
-  - 残作業: publish 更新が起動中の VS Code サーバ (PID 6024) にロックされて失敗。**VS Code を閉じる (または Reload Window) → `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish`** が必要
-  - Next: publish 更新後 VS Code で RTL Hierarchy に mySample 配下のフォルダ/ファイルが出ること、SV ファイル展開でインスタンス階層が出ることを確認
+  - publish 更新: ユーザが VS Code を閉じてロック解除 → `dotnet publish ... -o SystemVerilogLanguageServer/publish` 成功。**publish 済みバイナリを stdio 起動し、VS Code と同一 URI (`file:///d%3A/...`) で実測** → `workspace roots: D:\Document\...\mySample` / `workspace: 1 files` / `tree: PartialAssign.sv` を返却 (修正前は `workspace roots: /d:/...` / `0 files` / 空)
+  - コミット: SystemVerilogLanguageServer `e9d0d46` (UriToAbsolutePath 修正)、メイン `81c545a` (回帰テスト + state.md) / `885a4d2` (submodule pointer)
+  - Next: VS Code で RTL Hierarchy に mySample 配下のフォルダ/ファイルが出ること、SV ファイル展開でインスタンス階層が出ることを確認
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/Debug*.cs`) はコミットから除外 (作業ツリーに残置)。`SystemVerilogLanguageServer/publish2` (検証用 publish) は削除済み
+  - 教訓: 実クライアント (VS Code) と同じ URI 形式でテストしないと、パス変換の不具合を見逃す (`new Uri(path).AbsoluteUri` は `file:///D:/...` を作るため、VS Code の `file:///d%3A/...` を再現できなかった)
 
 - 旧: VS Code 拡張の RTL Hierarchy が空 + documentSymbol で provider FAILED → 修正完了 (ビルド成功 0 errors、テスト 1099/1099 合格)
   - ユーザ報告: 拡張を実行しても RTL Hierarchy に何も表示されない。ログに `TypeError: Cannot read properties of undefined (reading 'line')` at `positionParams` ← `provideDocumentSymbols` (extension.js:288/328/544)
