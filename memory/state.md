@@ -13,8 +13,8 @@
   - 修正3 (`LspHandler.cs` `HandleInitialize`): `LoadWorkspaceFiles` を try/catch で包み、**ワークスペース準備の失敗で initialize を失敗させない** (セッションを確立し capabilities を返す)
   - 修正4 (`Program.cs`): リクエスト処理例外時に **フルスタックトレースを stderr に出力** (従来はクライアントにメッセージしか返らず原因不明だった)
   - 検証: 新 publish バイナリを stdio で起動 → `initialize` 成功 (836ms) / `rtl/hierarchy` 12ms / ノード多数返却 / `workspace roots: D:\Document\RtlEditor2` (重複解消) / `workspace: 1100 files, parsing in background`。`dotnet test` → **1099 合格 / 0 失敗** (重複ルート回帰テスト追加)
-  - **注意 (ユーザ作業が必要)**: `SystemVerilogLanguageServer/publish/SystemVerilogLanguageServer.dll` が**稼働中の LSP サーバ (PID 4424) にロック**されており publish の更新が失敗する。VS Code を完全終了してから publish を実行する必要がある
-  - Next: (1) VS Code を完全終了 (2) `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish` (3) VS Code 起動 → RTL Hierarchy に全ファイル・フォルダが出ることを確認
+  - publish 更新: ユーザがロックを解除した後 `dotnet publish ... -o SystemVerilogLanguageServer/publish` が成功。**publish 済みバイナリを stdio で実測** → initialize 727ms 成功 / rtl/hierarchy 14ms / フォルダ多数返却 / ルート重複なし / `workspace: 1100 files, parsing in background`
+  - Next: VS Code を起動し、RTL Hierarchy に全ファイル・フォルダが出ること / SV ファイルを展開するとインスタンス階層が出ること を確認
 
 ### 旧: VS Code 拡張の RTL Hierarchy が「何も表示されなくなった」→ 修正完了 (ビルド成功 0 errors、テスト 1096/1096 合格、publish 更新)
   - ユーザ報告: 前回修正後、RTL Hierarchy に何も表示されなくなった
