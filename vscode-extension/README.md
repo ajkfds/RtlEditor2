@@ -59,7 +59,8 @@ the module/interface instance hierarchy.
 - The tree is lazy: expanding a node issues one `rtl/hierarchy` request —
   `folderPath` for a folder, `uri` + `nodePath` (the sequence of child indexes
   from the workspace root) for a file / instance — so large projects are not
-  serialised in one go.
+  serialised in one go. A source file is read and parsed only when it is
+  expanded, so the top level answers immediately even for a very large project.
 - Clicking an instance reveals its instantiation site in the editor.
 - **Copy Instance Path** (context menu / inline button) copies e.g.
   `u_mid.u_leaf`.

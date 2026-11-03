@@ -3,7 +3,20 @@
 
 ## 進行中タスク (最新)
 
-- VS Code 拡張の RTL Hierarchy が「最初に開いたファイルしか表示されない」→ 第2次修正完了 (ビルド成功 0 errors、テスト 1094/1094 合格、publish 更新)
+- VS Code 拡張の RTL Hierarchy が「何も表示されなくなった」→ 修正完了 (ビルド成功 0 errors、テスト 1096/1096 合格、publish 更新)
+  - ユーザ報告: 前回修正後、RTL Hierarchy に何も表示されなくなった
+  - 原因1 (**主因・性能**): 前回追加した `EnsureWorkspaceRootFromFile` が didOpen 時に `ScanWorkspaceFiles` + `ParseFiles` で**ワークスペース全体を同期スキャン＋全件パース**していた。このリポジトリは `verilog_sample/sv_tests` に 1000 件以上の .sv を持つため、`rtl/hierarchy` 要求が返るまで分単位でブロック → タイムアウトしてツリーが空に。`RescanWorkspaceFiles` も同様に全件パースしていた
+  - 原因2 (例外安全性): `BuildDirectoryNodes` が `Directory.EnumerateDirectories/EnumerateFiles` (遅延評価) を `try` 内で受けて `foreach` を `try` 外で回していた。列挙中に `UnauthorizedAccessException` 等が出ると `rtl/hierarchy` 全体がエラーになりツリーが空に
+  - 修正1 (`LspHandler.cs` `EnsureWorkspaceRootFromFile` / `EnsureWorkspaceRootFromKnownFiles`): ルート推定のみ行い、**スキャン/パースを行わない**ように変更。ツリーはディスク列挙から作れるため不要
+  - 修正2 (`LspHandler.cs` `RescanWorkspaceFiles`): 全件 `ParseFiles` をやめ、`ScanWorkspaceFiles` (ファイル一覧の更新) のみに。新規ファイルは展開時に遅延パース
+  - 修正3 (`LspHandler.cs` `TryLoadFileFromDisk` 新設): ファイル展開時に、未パースならディスクから読んで `ForceBuild` して返す遅延ロード。`rtl/hierarchy` のファイル展開経路をこれ経由に変更
+  - 修正4 (`LspHandler.cs` `BuildDirectoryNodes`): 列挙結果を `ToList()` で `try` 内に実体化 (遅延評価の例外漏れ防止)。未パースでも SV 拡張子なら `HasChildren=true` にして展開可能にする
+  - 修正5 (`LspHandler.cs` `HandleHierarchy`): ノード構築全体を `try/catch (IOException / UnauthorizedAccessException)` で保護し、1 ディレクトリの失敗でツリー全体が空にならないように
+  - テスト追加 (`WorkspaceHierarchyTests`): `TopLevel_IsFast_EvenWithManySourceFiles` (300 ファイルでもトップレベルが 3 秒以内) / `ExpandingFile_LoadsAndParsesItLazily` (未オープンファイルの展開でインスタンス階層が出る)。`dotnet test` → **1096 合格 / 0 失敗**
+  - 検証: `dotnet SystemVerilogLanguageServer/publish/SystemVerilogLanguageServer.dll --selftest` 正常
+  - Next: VS Code で Reload Window 後、RTL Hierarchy に全ファイル・フォルダが出ること、SV ファイルを展開するとインスタンス階層が出ること、操作が軽快であることを確認
+
+### 旧: VS Code 拡張の RTL Hierarchy が「最初に開いたファイルしか表示されない」→ 第2次修正完了 (ビルド成功 0 errors、テスト 1094/1094 合格、publish 更新)
   - ユーザ再報告: 単一ファイルとその下層インスタンスしか表示されない
   - 追加原因1 (**最重要**): 拡張が `dotnet run` フォールバックで `bin/Debug` のサーバを起動していた。`vscode-extension/` 配下には `SystemVerilogLanguageServer/publish` が無いため publish 候補が全て不一致 → `dotnet run --project` にフォールバック。さらに稼働中サーバが `bin/Debug` と `obj/Debug` の DLL をロックして**リビルドが静かに失敗**し、古いバイナリが動き続けていた (ビルドログが `MSB3027/MSB3021 ... locked by SystemVerilogLanguageServer (29036)` で実証)
   - 追加原因2: ツリーが `project.Files` (= サーバが読み込んだ **SV ファイルのみ**) から構築されていた。ユーザ要望は「RtlEditor の NavigateView の内容をそのまま表示」= **全ファイル・全フォルダ**

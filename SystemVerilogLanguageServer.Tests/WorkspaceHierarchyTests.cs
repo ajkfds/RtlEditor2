@@ -249,6 +249,76 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// Inferring the workspace root from the opened file must not parse the
+    /// whole project synchronously: the hierarchy request has to answer quickly
+    /// even for a large tree, otherwise the view renders empty while the scan
+    /// runs. Files are parsed lazily when a node is expanded instead.
+    /// </summary>
+    [Fact]
+    public void TopLevel_IsFast_EvenWithManySourceFiles()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        // a few hundred sources would take a long time to parse eagerly
+        for (int i = 0; i < 300; i++)
+        {
+            File.WriteAllText(
+                Path.Combine(_root, "src", "rtl", $"m{i}.sv"),
+                $"module m{i}; leaf u_leaf(); endmodule\n");
+        }
+
+        LspHandler handler = new(new InMemorySystemVerilogCore());
+        using (JsonDocument doc = JsonDocument.Parse("{\"processId\":1,\"capabilities\":{}}"))
+        {
+            handler.TryHandleRequest("initialize", doc.RootElement, default, out _);
+        }
+
+        string uri = new Uri(Path.Combine(_root, "src", "rtl", "m0.sv")).AbsoluteUri;
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri, languageId = "systemverilog", version = 1, text = "module m0; endmodule\n" },
+        });
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        JsonElement result = Query(handler, new { nodePath = Array.Empty<int>() });
+        stopwatch.Stop();
+
+        Assert.Equal(new[] { "src" }, Labels(result, "folder"));
+        // generous bound: an eager scan+parse of 300 files takes several seconds
+        Assert.True(stopwatch.ElapsedMilliseconds < 3000,
+            $"top level took {stopwatch.ElapsedMilliseconds} ms");
+    }
+
+    /// <summary>
+    /// Expanding a file that was never opened must load and parse it on demand
+    /// and return its instance hierarchy.
+    /// </summary>
+    [Fact]
+    public void ExpandingFile_LoadsAndParsesItLazily()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        string path = Path.Combine(_root, "src", "rtl", "mid.sv");
+        File.WriteAllText(path, "module mid; leaf u_leaf(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "src", "rtl", "leaf.sv"), "module leaf; endmodule\n");
+
+        LspHandler handler = CreateInitializedHandler();
+        JsonElement folders = Query(handler, new { nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "src" }, Labels(folders, "folder"));
+
+        // walk down to the file and expand it
+        JsonElement rtl = Query(handler, new { folderPath = "src/rtl" });
+        JsonElement mid = default;
+        foreach (JsonElement node in rtl.GetProperty("nodes").EnumerateArray())
+        {
+            if (node.GetProperty("label").GetString() == "mid.sv") mid = node.Clone();
+        }
+        Assert.Equal("mid.sv", mid.GetProperty("label").GetString());
+        Assert.True(mid.GetProperty("hasChildren").GetBoolean());
+
+        JsonElement instances = Query(handler, new { uri = mid.GetProperty("uri").GetString(), nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "u_leaf" }, Labels(instances, "instance"));
+    }
+
+    /// <summary>
     /// Adding a folder to the window must extend the tree to that folder.
     /// </summary>
     [Fact]
