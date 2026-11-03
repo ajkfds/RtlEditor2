@@ -3,7 +3,20 @@
 
 ## 進行中タスク (最新)
 
-- VS Code 拡張の RTL Hierarchy が「何も表示されなくなった」→ 修正完了 (ビルド成功 0 errors、テスト 1096/1096 合格、publish 更新)
+- VS Code 拡張の RTL Hierarchy が「何も表示されない (No ... files in the workspace のまま)」→ 修正完了 (ビルド成功 0 errors、テスト 1099/1099 合格)
+  - ユーザ報告: 前回修正後も何も表示されない。新規にファイルを開いても表示されない
+  - **根本原因の特定方法**: 検証用プローブ (`DebugRealRepoTreeTests` / `DebugSpawnServerTests`、コミット除外) を作成。(1) インプロセスで実リポジトリに対し initialize + rtl/hierarchy を実行 → 正常 (ツリー 6608 バイト返却)、(2) **publish バイナリを stdio 経由で実際に起動** (拡張と同一手順) → `initialize` が `{"error":{"code":-32603,"message":"Internal error: Object reference not set to an instance of an object."}}` を返していた
+  - 原因1 (**主因**): `initialize` 内の `LoadWorkspaceFiles` が、1000〜2200 件の .sv を**同期で全件読み込み＋パース**していた。その過程で例外 (NRE) が発生すると `initialize` 応答自体がエラーになり、拡張の `ensureClient` が reject → ツリーが永久に空。`--selftest` はルート未指定でこの経路を通らないため検出できなかった
+  - 原因2: `CollectWorkspaceRoots` が `rootUri` と `workspaceFolders` の**同一フォルダを重複登録**していた (実測ログ `workspace roots: D:\Document\RtlEditor2, D:\Document\RtlEditor2`)。複数ルート扱いになりツリー構造も崩れる
+  - 修正1 (`LspHandler.cs` `LoadWorkspaceFiles`): `ScanWorkspaceFiles` (一覧取得、軽い) のみ実行し、パースは **200 ファイル以下なら同期 / 超なら `Task.Run` でバックグラウンド** (`MaxEagerParseFiles = 200`)。initialize が即答するようになり 836ms に短縮
+  - 修正2 (`LspHandler.cs` `CollectWorkspaceRoots` + `AddWorkspaceRoot` 新設): 正規化した絶対パスで**重複排除**して登録
+  - 修正3 (`LspHandler.cs` `HandleInitialize`): `LoadWorkspaceFiles` を try/catch で包み、**ワークスペース準備の失敗で initialize を失敗させない** (セッションを確立し capabilities を返す)
+  - 修正4 (`Program.cs`): リクエスト処理例外時に **フルスタックトレースを stderr に出力** (従来はクライアントにメッセージしか返らず原因不明だった)
+  - 検証: 新 publish バイナリを stdio で起動 → `initialize` 成功 (836ms) / `rtl/hierarchy` 12ms / ノード多数返却 / `workspace roots: D:\Document\RtlEditor2` (重複解消) / `workspace: 1100 files, parsing in background`。`dotnet test` → **1099 合格 / 0 失敗** (重複ルート回帰テスト追加)
+  - **注意 (ユーザ作業が必要)**: `SystemVerilogLanguageServer/publish/SystemVerilogLanguageServer.dll` が**稼働中の LSP サーバ (PID 4424) にロック**されており publish の更新が失敗する。VS Code を完全終了してから publish を実行する必要がある
+  - Next: (1) VS Code を完全終了 (2) `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish` (3) VS Code 起動 → RTL Hierarchy に全ファイル・フォルダが出ることを確認
+
+### 旧: VS Code 拡張の RTL Hierarchy が「何も表示されなくなった」→ 修正完了 (ビルド成功 0 errors、テスト 1096/1096 合格、publish 更新)
   - ユーザ報告: 前回修正後、RTL Hierarchy に何も表示されなくなった
   - 原因1 (**主因・性能**): 前回追加した `EnsureWorkspaceRootFromFile` が didOpen 時に `ScanWorkspaceFiles` + `ParseFiles` で**ワークスペース全体を同期スキャン＋全件パース**していた。このリポジトリは `verilog_sample/sv_tests` に 1000 件以上の .sv を持つため、`rtl/hierarchy` 要求が返るまで分単位でブロック → タイムアウトしてツリーが空に。`RescanWorkspaceFiles` も同様に全件パースしていた
   - 原因2 (例外安全性): `BuildDirectoryNodes` が `Directory.EnumerateDirectories/EnumerateFiles` (遅延評価) を `try` 内で受けて `foreach` を `try` 外で回していた。列挙中に `UnauthorizedAccessException` 等が出ると `rtl/hierarchy` 全体がエラーになりツリーが空に

@@ -50,6 +50,36 @@ public class WorkspaceHierarchyTests : IDisposable
         return JsonDocument.Parse(json).RootElement.Clone();
     }
 
+    /// <summary>
+    /// A client reports the same folder through both rootUri and
+    /// workspaceFolders. The root must be registered once, otherwise every root
+    /// is listed once per duplicate report.
+    /// </summary>
+    [Fact]
+    public void DuplicateRootReports_ListTheRootOnce()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; endmodule\n");
+
+        LspHandler handler = new(new InMemorySystemVerilogCore());
+        string rootUri = new Uri(_root).AbsoluteUri;
+        string initialize = JsonSerializer.Serialize(new
+        {
+            processId = 1,
+            rootUri,
+            workspaceFolders = new[] { new { uri = rootUri, name = "root" } },
+            capabilities = new { },
+        });
+        using (JsonDocument doc = JsonDocument.Parse(initialize))
+        {
+            handler.TryHandleRequest("initialize", doc.RootElement, default, out _);
+        }
+
+        JsonElement result = Query(handler, new { nodePath = Array.Empty<int>() });
+        // single root: its contents are listed directly, not a root node
+        Assert.Equal(new[] { "top.sv" }, Labels(result, "file"));
+        Assert.Equal(new[] { "src" }, Labels(result, "folder"));
+    }
+
     private static string[] Labels(JsonElement result, string kind)
     {
         List<string> labels = new();
