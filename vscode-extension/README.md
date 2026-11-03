@@ -43,6 +43,15 @@ the module/interface instance hierarchy.
   file under the workspace folders, grouped into a folder tree — not only the
   documents that happen to be open. Files are loaded from disk by the server at
   `initialize`, so unopened files still appear with their instance hierarchy.
+- Every workspace folder is reported to the server, and adding / removing a
+  folder in the window extends / trims the tree
+  (`workspace/didChangeWorkspaceFolders`).
+- If a file is opened **without** opening a folder (File > Open File), the
+  server has no workspace root from `initialize`. It then infers one from the
+  opened file: the nearest enclosing project directory (a `.git` / `.svn` /
+  `.hg` entry, or a `*.sln` / `*.slnx` / `*.code-workspace` / `*.csproj` /
+  `*.f` file) and scans it, so the whole project shows up instead of only the
+  opened document.
 - Build output / VCS directories (`obj`, `bin`, `publish`, `node_modules`,
   `.git`, `.svn`, `.hg`) are skipped.
 - The tree is lazy: expanding a node issues one `rtl/hierarchy` request —

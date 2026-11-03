@@ -1,6 +1,20 @@
 
 # 作業状態 (State)
 
+## 進行中タスク (最新)
+
+- VS Code 拡張の RTL Hierarchy が「最初に開いたファイルしか表示されない」→ 修正完了 (ビルド成功 0 errors、テスト 1093/1093 合格、publish 更新、コミット済み)
+  - ユーザ報告: vscode extension で最初に開いたファイルしか RTL Hierarchy ビューに出ない。workspace の全ファイル・フォルダを表示したい (RtlEditor の NavigateView 相当)
+  - 原因: `initialize` の `rootUri` / `workspaceFolders` が空のまま (VS Code でフォルダを開かずファイル単体を開いた場合) だとサーバの `_workspaceRoots` が空になり、`LoadWorkspaceFiles` のワークスペーススキャンが一切走らない。結果 `BuildFolderNodes` は `project.Files` にある「開いたファイル」だけを列挙していた (サーバ側のフォルダツリー機構自体は既に完成しており、既存の `WorkspaceHierarchyTests` 9 件は全合格 = ロジックは正常)
+  - 修正1 (拡張 `extension.js`): `workspaceFolderParams()` / `workspaceRootUri()` helper を新設し、`initialize` に **全ワークスペースフォルダ**を `workspaceFolders` として送信 (`rootUri` は先頭フォルダ)。従来は `workspaceFolders[0]` のみを `rootUri` に渡していた
+  - 修正2 (拡張 `extension.js`): `workspace.onDidChangeWorkspaceFolders` を購読し、`workspace/didChangeWorkspaceFolders` を送信 + `refresh()`
+  - 修正3 (サーバ `LspHandler.cs`): `HandleDidChangeWorkspaceFolders` を新設。added を `_workspaceRoots` / `project.WorkspaceRoots` に追加、removed を削除して `RescanWorkspaceFiles`
+  - 修正4 (サーバ `LspHandler.cs`): `EnsureWorkspaceRootFromFile` を新設し `HandleDidOpen` から呼ぶ。`_workspaceRoots` が空 (= フォルダ未オープン) のとき、開いたファイルのディレクトリから `FindProjectRoot` でプロジェクトルート (`.git` / `.svn` / `.hg` / `*.sln` / `*.slnx` / `*.code-workspace` / `*.csproj` / `*.f`、最大 8 階層上まで) を推定し、`ScanWorkspaceFiles` + `ParseFiles` で全ファイルを取り込む。ファイルが実在しない (untitled バッファ) 場合は何もしない
+  - 修正5 (サーバ `LspHandler.cs`): `PathToUri` が相対パスで `UriFormatException` を投げていたのを try/catch で raw 文字列 fallback に変更 (スキャンが 1 エントリで落ちないように)
+  - 検証: `SystemVerilogLanguageServer.Tests` に回帰テスト 2 件追加 (`TopLevel_InfersWorkspaceRootFromOpenedFile_WhenNoFolderWasOpened` / `DidChangeWorkspaceFolders_AddsTheNewRootToTheTree`)。`dotnet test` → **1093 合格 / 0 失敗**。`dotnet build RtlEditor2.Desktop.csproj` → 0 errors (797 warnings は既存)
+  - 注意: VS Code が起動中の LSP サーバ (PID 29036) が `bin/Debug/net10.0` の DLL をロックするため、ビルド/テストは `-p:BaseOutputPath=obj/tmpbuild/` で回避した
+  - Next: VS Code で Reload Window 後、(1) フォルダを開いた状態で RTL Hierarchy に workspace 全体のフォルダツリー + 未オープンファイルが出る (2) ファイル単体を開いただけでもプロジェクトルートが推定され全体が出る (3) フォルダ追加/削除でツリーが追従する ことを確認
+
 ## 進行中タスク
 
 - VS Code 拡張の RTL Hierarchy で開いているファイルだけでなくワークスペース全体を表示 → 実装完了 (ビルド成功 0 errors、テスト 1091/1091 合格、publish 更新、コミット済み)

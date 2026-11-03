@@ -104,6 +104,27 @@ class RawLspClient {
     }
 }
 
+// --- workspace root reporting -------------------------------------------
+
+// The RTL Hierarchy view lists the WHOLE workspace, so the server has to know
+// every workspace root - not just the first one. Without this the tree only
+// ever contains the documents the client opened.
+function workspaceFoldersList() {
+    return vscode.workspace.workspaceFolders || [];
+}
+
+function workspaceFolderParams() {
+    return workspaceFoldersList().map((folder) => ({
+        uri: folder.uri.toString(),
+        name: folder.name,
+    }));
+}
+
+function workspaceRootUri() {
+    const folders = workspaceFoldersList();
+    return folders.length > 0 ? folders[0].uri.toString() : null;
+}
+
 function resolveServerCommand(context) {
     const config = vscode.workspace.getConfiguration('systemverilogLsp');
     let serverPath = config.get('serverPath', '');
@@ -188,8 +209,8 @@ function ensureClient() {
 
     initPromise = client.request('initialize', {
         processId: process.pid,
-        rootUri: vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]
-            ? vscode.workspace.workspaceFolders[0].uri.toString() : null,
+        rootUri: workspaceRootUri(),
+        workspaceFolders: workspaceFolderParams(),
         capabilities: {},
     }).then((result) => {
         logLine('initialize succeeded');
@@ -425,6 +446,20 @@ function activate(context) {
             // the save only changed the parse result of a file the server
             // already knows: redraw without re-scanning the workspace roots
             hierarchyProvider.refreshTree();
+        })
+    );
+
+    // A folder added to / removed from the window changes the workspace tree.
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeWorkspaceFolders((e) => {
+            if (!client) return;
+            client.send('workspace/didChangeWorkspaceFolders', {
+                event: {
+                    added: (e.added || []).map((f) => ({ uri: f.uri.toString(), name: f.name })),
+                    removed: (e.removed || []).map((f) => ({ uri: f.uri.toString(), name: f.name })),
+                },
+            });
+            hierarchyProvider.refresh();
         })
     );
 

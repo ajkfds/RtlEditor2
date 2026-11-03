@@ -188,6 +188,66 @@ public class WorkspaceHierarchyTests : IDisposable
         Assert.Empty(Labels(result, "file"));
     }
 
+    /// <summary>
+    /// A client that opens a single file without opening a folder sends no
+    /// rootUri / workspaceFolders. The hierarchy must still cover the project
+    /// the file belongs to, otherwise the tree only ever shows the opened
+    /// document.
+    /// </summary>
+    [Fact]
+    public void TopLevel_InfersWorkspaceRootFromOpenedFile_WhenNoFolderWasOpened()
+    {
+        // a project marker so the root is recognised above the file's folder
+        Directory.CreateDirectory(Path.Combine(_root, ".git"));
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "src", "rtl", "leaf.sv"), "module leaf; endmodule\n");
+
+        LspHandler handler = new(new InMemorySystemVerilogCore());
+        // initialize without any workspace root, like "File > Open File"
+        using (JsonDocument doc = JsonDocument.Parse("{\"processId\":1,\"capabilities\":{}}"))
+        {
+            handler.TryHandleRequest("initialize", doc.RootElement, default, out _);
+        }
+
+        string uri = new Uri(Path.Combine(_root, "src", "rtl", "leaf.sv")).AbsoluteUri;
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri, languageId = "systemverilog", version = 1, text = "module leaf; endmodule\n" },
+        });
+
+        JsonElement result = Query(handler, new { nodePath = Array.Empty<int>() });
+
+        // the whole project is listed, not just the opened file
+        Assert.Equal(new[] { "src" }, Labels(result, "folder"));
+        Assert.Equal(new[] { "top.sv" }, Labels(result, "file"));
+    }
+
+    /// <summary>
+    /// Adding a folder to the window must extend the tree to that folder.
+    /// </summary>
+    [Fact]
+    public void DidChangeWorkspaceFolders_AddsTheNewRootToTheTree()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        Assert.Empty(Labels(Query(handler, new { nodePath = Array.Empty<int>() }), "file"));
+
+        string extra = Path.Combine(_root, "extra");
+        Directory.CreateDirectory(extra);
+        File.WriteAllText(Path.Combine(extra, "added.sv"), "module added; endmodule\n");
+
+        SendNotification(handler, "workspace/didChangeWorkspaceFolders", new
+        {
+            @event = new
+            {
+                added = new[] { new { uri = new Uri(extra).AbsoluteUri, name = "extra" } },
+                removed = Array.Empty<object>(),
+            },
+        });
+
+        JsonElement result = Query(handler, new { nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "extra" }, Labels(result, "folder"));
+    }
+
     private static void SendNotification(LspHandler handler, string method, object parameters)
     {
         using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(parameters));
