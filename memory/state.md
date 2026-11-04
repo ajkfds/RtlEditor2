@@ -3,6 +3,17 @@
 
 ## 進行中タスク (最新)
 
+- **Send 不可の状態を可視化 (入力エリアを濃いダークグリーンに)** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ要求: user が send できる状態かどうか分かりにくいので、send できない状態では inputItem の入力エリアの色を濃い目のダークグリーンに変える
+  - 修正 (`CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs`):
+    - `bool inputAcceptable` フィールドを `inputAcceptableValue` + `InputAcceptable` プロパティに変更し、setter で変化時のみ `ApplyInputAcceptableVisual()` を呼ぶ
+    - `InputAcceptableBackground` (255,40,40,40 = 従来のダークグレー) / `InputLockedBackground` (255,0,70,30 = 濃いダークグリーン) を新設
+    - `ApplyInputAcceptableVisual(bool)` 新設: `inputItem.TextEditor.Background` を切替。ストリーミング/バックグラウンドスレッドからも書かれるため `Dispatcher.UIThread.CheckAccess()` で分岐 (Post でマーシャル)
+    - 既存の 5 箇所の `inputAcceptable = ...` を `InputAcceptable = ...` に置換 (UserComplete ガード / finally 復帰 / ResetAsync / completeWithFunctionCall のロック取得・解放)
+  - 初期値 `true` かつ既定色が `InputAcceptableBackground` と同一のため、初期化時の追加呼び出しは不要
+  - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors / `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+  - Next: エディタ上で LLM 実行中 (Send 不可) に入力エリアが濃いダークグリーンになり、完了/Abort で元のダークグレーに戻ることを確認
+
 - **LLM が何も返さず終了したとき、"waiting" 表示を消して自動で「つづけて」を送る** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: LLM の戻りが空のまま終了すると "waiting ..." 表示が出たままユーザ入力状態に戻ってしまう
   - 要望: その場合は "waiting" を消して自動で「つづけて」という応答を LLM に返す。ただし**連続 2 回**戻りが無かった場合は永久ループ防止のため行わずユーザに制御を返す
