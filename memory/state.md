@@ -3,6 +3,35 @@
 
 ## 進行中タスク (最新)
 
+- **LLM の tool call 実行中に Abort すると、その後 Send できなくなる** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: LLM で execute_command 等の tool call 実行中に abort ボタンを押すと tool call を中断するが、その後次の command を send できなくなる
+  - 根本原因 (**Abort が UI 上のスピナー停止しか行っておらず、実行中の tool を実際には中断できていなかった**):
+    - `AbortButton_Click` は `cancellationTokenSource.Cancel()` を呼ぶが、tool 側がトークンを無視して待機し続けるため `completeWithFunctionCall` の `await` が返らない
+    - `completeWithFunctionCall` は turn 全体を `inputAcceptable = false` でロックしており、`finally` で `true` に戻すのは `await` が返ってから
+    - 結果 `inputAcceptable == false` のまま残り、`UserComplete` 冒頭の `if (!inputAcceptable) return;` で Send が黙って捨てられる
+  - 個別原因:
+    - `CommandParser.ExecutePipeChainAsync`: `lastProc.StandardOutput.ReadToEndAsync()` がキャンセル非対応でプロセス終了までブロック。`RunCommandAsync` もキャンセル時に "Canceled" を返して正常終了扱いにしていた
+    - `BuildDotNet.Run`: `CancellationToken` を一切受け取らず、`ReadToEndAsync()` + `WaitForExit()` で完全に非キャンセル
+    - 各 tool の `catch (Exception ex)`: `OperationCanceledException` を握りつぶして「成功」文字列を返すため、キャンセルが tool loop に伝播しない
+    - `LLMAgent.ParseExecutePersudoFunctionCallAsync`: `catch (Exception ex)` が `OperationCanceledException` を飲み込み、中断後も次の tool を実行し続ける
+  - 修正1 (`LLM/Tools/CommandParser.cs`):
+    - `RunCommandAsync` のループ前後に `cancellationToken.ThrowIfCancellationRequested()` を追加し、"Canceled" を返す正常終了を廃止 (キャンセルは例外で伝播)
+    - `ExecutePipeChainAsync` の stdout 読み取りを `stdoutTask.WaitAsync(cancellationToken)` に変更 (待機のみキャンセル可能に)。`Task.WhenAll(backgroundTasks)` も `.WaitAsync(token)` 化
+    - `stdoutTask` を try 外で宣言し、`finally` でプロセス Kill 後に `await stdoutTask` して未観測例外 (UnobservedTaskException) を防ぐ
+  - 修正2 (`LLM/Tools/BuildDotNet.cs`):
+    - `Run(CancellationToken cancellationToken)` に変更し、`OperationCanceledException` は再 throw
+    - `RunDotnetBuildAsync(projectPath, cancellationToken)` に変更。stdout/stderr を同時に読み取りタスク化 (片方ずつ ReadToEnd するとバッファ満杯でデッドロックし得る)、`WaitForExitAsync(token)` + `WaitAsync(token)` でキャンセル可能に。`finally` でプロセスツリー Kill + 読み取りタスクの例外観測
+  - 修正3 (`LLM/Tools/ExecuteCommand.cs`): `catch (OperationCanceledException) { throw; }` を追加 (キャンセルを正常終了扱いにしない)
+  - 修正4 (`LLM/Tools/SearchFiles.cs`): `CancellationToken` 引数を追加し、ファイルループ先頭で `ThrowIfCancellationRequested()`、`ReadAllLinesAsync(file, token)` 化、`catch (OperationCanceledException) { throw; }` を追加
+  - 修正5 (`LLM/Tools/ListFiles.cs`): `CancellationToken` 引数 (既定値 `default`) を追加し、列挙ループ先頭で `ThrowIfCancellationRequested()`、`catch (OperationCanceledException) { throw; }` を追加
+  - 修正6 (`LLM/LLMAgent.cs`): `ParseExecutePersudoFunctionCallAsync` の tool 実行 catch に `catch (OperationCanceledException) { throw; }` を追加 (finally のスピナー停止 / ToolCallEnded は維持)
+  - 修正7 (`LLM/ChatControl.axaml.cs`):
+    - `UserComplete` に `catch (OperationCanceledException)` を追加し、Abort をエラー扱いしない (黄ログのみ)。`finally` の `inputAcceptable = true` は維持
+    - `ResetAsync` で `inputAcceptable = true` を明示的に復帰 (Clear を「中断してやり直す」復旧経路として機能させる)
+  - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors (206 warnings は既存) / `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors (590 warnings は既存)。ソリューション全体ビルドの 16 エラーは稼働中の RtlEditor2.Desktop (22432) / Visual Studio (20080) による DLL ロック (MSB3027/MSB3021) のみでコンパイルエラーではない
+  - Next: エディタ上で (1) execute_command / build_dotnet 実行中に Abort → 即座に中断され次の Send が通ること (2) Abort 後に赤いエラーログではなく黄の "Operation cancelled" が出ること (3) Clear で復旧できること の確認
+  - メモ: `ReadFile` / `WriteToFile` / `ReplaceInFile` / `GetLibDefinition` は同期処理でキャンセルポイントがないため変更なし
+
 - **VS Code 拡張 (LSP) で `include` が "file not found" になる (RtlEditor では解決できる)** → 修正完了 (ビルド成功 0 errors、テスト 1105/1105 合格、publish 更新)
   - ユーザ報告: vscode extension として使うと Verilog の `include` 文で file not found。RtlEditor で読むと正しく include 先を参照できる
   - 根本原因 (**LSP ホストが plugin の item tree を構築していなかった**):
