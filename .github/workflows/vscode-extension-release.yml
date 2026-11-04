@@ -18,10 +18,19 @@ jobs:
   build-vsix:
     runs-on: windows-latest
     steps:
-      - name: Checkout (with submodules)
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+
+      # The .gitmodules URLs are SSH (git@github.com:...); the runner has no SSH
+      # key, so checkout cannot recurse into them. Rewrite the URLs to HTTPS and
+      # fetch the submodules explicitly (the workflow token authorises them).
+      - name: Init submodules over HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+          git submodule update --init --recursive
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
