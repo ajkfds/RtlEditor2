@@ -3,6 +3,23 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy の右クリックメニューに Copy Instance Path しか出ない (NavigatePanelNode 相当のメニューを追加)** → 実装完了 (拡張のみ、コミット済み)
+  - ユーザ要求: module instance を右クリックしたとき Copy Instance Path しか出ない。NavigatePanelNode.cs で追加している Add 等のメニューも表示してほしい
+  - 参照したエディタ側メニュー (`CodeEditor2/CodeEditor2/NavigatePanel/NavigatePanelNode.cs` の `createContextMenu`): Add(Folder / Blank File) / Delete / (separator) / カスタム / Open in Explorer / CopyPath / Property
+  - 修正1 (`vscode-extension/package.json`):
+    - `contributes.commands` に `addFolder` / `addBlankFile` / `deleteNode` / `openInExplorer` / `copyPath` / `showProperty` を追加
+    - `contributes.menus.view/item/context` に、`rtlFolder` / `rtlFile` / `rtlInstance` それぞれに応じた項目を group 付きで追加 (`0_open` / `1_add` / `2_edit` / `3_copy`(copyPath + copyHierarchyPath) / `4_explorer` / `5_property`)。`revealInEditor` は rtlInstance の inline を維持 + rtlFile/rtlInstance のコンテキストにも追加
+  - 修正2 (`vscode-extension/hierarchy.js`): 各コマンドを実装 (サーバ API は使わず、ノードが表すディスクパスに対するファイル操作 + `provider.refresh()`)
+    - `resolveFsPath(node)`: `uri` → fsPath。folder ノード等 uri 無しは workspace folder + `folderPath` から解決
+    - `resolveDirPath(node)` (Add 用の親ディレクトリ): folder は自身、file/instance は所属ファイルの親
+    - `addFolder` / `addBlankFile`: `vscode.workspace.fs.createDirectory` / `writeFile` → refresh (blank file は開く)
+    - `deleteNode`: 確認ダイアログ後 `vscode.workspace.fs.delete(recursive, useTrash)` → refresh
+    - `copyPath`: `detail` (workspace 相対, エディタの CopyPath 相当) を優先、無ければ fsPath
+    - `openInExplorer`: `revealFileInOS`
+    - `showProperty`: ノードの label/kind/uri/detail/instancePath/startLine/startCharacter を情報ダイアログ表示
+  - メモ: VS Code のサブメニュー化は `submenus` 貢献が必要なため、Add は「Add Folder」「Add Blank File」のフラット項目とした。Property は簡易情報表示 (エディタの ItemPropertyForm 相当の編集 UI は無し)
+  - Next: VS Code を Reload Window 後、RTL Hierarchy の右クリックに Add Folder / Add Blank File / Delete / Open in Explorer / Copy Path / Property / Reveal in Editor / Copy Instance Path が出ること、各操作が動作することを確認
+
 - **RTL Hierarchy のノードをクリックして parse しても階層が更新されない (展開可能ノードはクリックで command が走らない)** → 修正完了 (拡張のみ、コミット済み)
   - ユーザ報告: rtl hierarchy のノードをクリックして parse した結果が hierarchy が更新されない
   - サーバ側は正常であることを実測で確認 (プローブ `DebugClickUpdateProbe`): `top`→`mid`(u_old) を編集(didChange)+`rtl/reparse` すると、`top` から階層を展開すると `u_new` に更新される。サーバロジックは問題なし
