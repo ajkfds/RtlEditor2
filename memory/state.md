@@ -45,7 +45,18 @@
     - publish 更新 + `--selftest` 正常
     - **publish 済みバイナリを stdio 起動し、VS Code と同じ URI (`file:///c%3A/...`) で実測**: workspace top=`rtl` / rtl folder=`leaf.sv`(leaf) `mid.sv`(expand) `top.sv`(expand) / top level0=`u_mid`(startLine=1, startCharacter=12, hasChildren=true) / top level1=`u_leaf`(同位置, leaf)。ネスト展開・位置・URI すべて正常
   - コミット: CodeEditor2 `61190e6` / CodeEditor2VerilogPlugin `5dd6bea` / SystemVerilogLanguageServer `95cf79e`、メイン `7627b05` (submodule pointer + WorkspaceHierarchyTests.cs)
-  - Next: エディタ上で VS Code を Reload Window し、RTL Hierarchy の (1) インスタンス展開矢印が正しいこと (2) ネストしたインスタンス階層が出ること (3) クリックで宣言位置にジャンプすること を確認
+  - 追加対応 (parse hierarchy 後の RTL Hierarchy 更新、ユーザ質問への対応) → 実装完了 (テスト 1113 合格、コミット済み)
+    - 質問: parse hierarchy が走ったとき (LSP では didChange / didSave) の RTL Hierarchy 更新は動作しているか
+    - 実測 (プローブ): **自分のファイル編集**は `u_a` → `u_b,u_c` に正しく反映。しかし **依存モジュール (mid.sv) を編集して親から展開**すると `u_old` のまま更新されない問題を発見
+    - 根本原因: `InstanceTextFile.ParsedDocument` はソースファイルの parse 結果を **インスタンスキーでキャッシュ** する (`VerilogFile.instancedParsedDocumentRefs`)。ソースを編集してもキャッシュが残り、親の展開が古いインスタンス一覧を表示。`CheckDirty()` も CodeDocument が didChange で新規作成され Version 0 に戻るため差分検出できず
+    - 修正1 (`CodeEditor2VerilogPlugin/Data/VerilogFile.cs`): `ClearInstancedParsedDocuments()` を新設 (インスタンス parse キャッシュを全破棄)
+    - 修正2 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`):
+      - `RegisterPluginItem` でテキスト設定後に `ClearInstancedParsedDocuments()` を呼ぶ (didChange/didSave 経路で必ず通る)
+      - `EnsureInstanceParsed` で `item.CheckDirty()` + `ReparseRequested` を見て陳腐化インスタンスを再 parse (`VerilogParsedDocument != null && !ReparseRequested` のときだけ skip)
+    - 回帰テスト追加 (`WorkspaceHierarchyTests`): `Hierarchy_UpdatesAfterDidChange` (自ファイル編集) / `Hierarchy_RefreshesNestedInstancesAfterDependencyEdit` (依存編集後のネスト展開)
+    - 検証: 全 1113 テスト合格 / ビルド 0 errors / publish 更新
+    - コミット: CodeEditor2VerilogPlugin `b458a90` / SystemVerilogLanguageServer `4546039`、メイン `e7c0544`
+  - Next: エディタ上で VS Code を Reload Window し、RTL Hierarchy の (1) インスタンス展開矢印が正しいこと (2) ネストしたインスタンス階層が出ること (3) クリックで宣言位置にジャンプすること (4) ファイル編集・保存後にツリーが最新化されること を確認
   - メモ: 検証用プローブ (`DebugHierarchyNestProbe.cs` / `DebugSpawnNestedProbe.cs` / `DebugNavigateTreeProbe.cs` ほか Debug*.cs) は従来どおりコミットから除外し作業ツリーに残置。`CodeEditor2/Data/DataAccess.cs` のユーザ変更も除外 (CodeEditor2 サブモジュールは `m` = modified content として残る)
 
 =======
