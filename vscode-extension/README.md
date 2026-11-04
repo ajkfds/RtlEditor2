@@ -70,6 +70,29 @@ To package without rebuilding the server (e.g. CI that already published it):
 npm run package:nobundle
 ```
 
+### Release to GitHub
+
+A GitHub Actions workflow is provided at
+`.github/workflows/vscode-extension-release.yml`. It builds the server, packages
+the `.vsix` and attaches it to a GitHub Release when you push a `v*` tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+You can also run the workflow manually (Actions → "Release VS Code extension" →
+Run workflow); the `.vsix` is uploaded as a downloadable artifact.
+
+### Icon (optional)
+
+To show an icon on the Marketplace / Extensions list, add a 128x128 `icon.png`
+under `vscode-extension/` and reference it from `package.json`:
+
+```json
+"icon": "icon.png"
+```
+
 ## Configuration
 
 | Setting | Description |
