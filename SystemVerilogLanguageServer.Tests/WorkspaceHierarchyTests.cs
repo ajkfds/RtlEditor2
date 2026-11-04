@@ -355,6 +355,37 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// A large workspace (> MaxEagerParseFiles) is parsed in the background at
+    /// initialize, so a dependency may still be unparsed when the user expands a
+    /// node. The expand must force the remaining files to be built; otherwise
+    /// the Updater silently drops the unresolved instantiation and the level is
+    /// empty (and only fills in after a second expand).
+    /// </summary>
+    [Fact]
+    public void ExpandBeforeBackgroundParseFinishes_ShowsInstances()
+    {
+        // push the workspace over the eager-parse threshold so initialize
+        // parses in the background and the first expand races it
+        for (int i = 0; i < 250; i++)
+        {
+            File.WriteAllText(Path.Combine(_root, "src", "rtl", $"m{i}.sv"), $"module m{i}; endmodule\n");
+        }
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; mid u_mid(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "mid.sv"), "module mid; leaf u_leaf(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        LspHandler handler = CreateInitializedHandler();
+
+        // expand IMMEDIATELY, while the background parse may still be running
+        JsonElement level0 = Query(handler, new { uri = topUri, nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "u_mid" }, Labels(level0, "instance"));
+        Assert.True(level0.GetProperty("nodes")[0].GetProperty("hasChildren").GetBoolean());
+
+        Assert.Equal(new[] { "u_leaf" }, Labels(Query(handler, new { uri = topUri, nodePath = new[] { 0 } }), "instance"));
+    }
+
+    /// <summary>
     /// A client that opens a single file without opening a folder sends no
     /// rootUri / workspaceFolders. The hierarchy must still cover the project
     /// the file belongs to, otherwise the tree only ever shows the opened
