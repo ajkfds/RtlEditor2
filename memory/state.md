@@ -3,6 +3,23 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張を GitHub リリース可能にする (サーバ同梱で自己完結化)** → 実装完了 (拡張のみ、コミット済み)
+  - ユーザ要求: この拡張を GitHub にリリースできるようにする。方針 = (A) サーババイナリを .vsix に同梱 + GitHub Releases (.vsix 添付)
+  - 変更1 (`vscode-extension/extension.js`): `resolveServerCommand` の候補に同梱パス `<extension>/server/SystemVerilogLanguageServer(.exe)` を先頭追加 (開発用の `SystemVerilogLanguageServer/publish` 兄弟パスも維持)。エラーメッセージを同梱前提に更新
+  - 変更2 (`vscode-extension/scripts/bundle-server.js` 新規): `dotnet publish` を `vscode-extension/server/` に出力 (`-p:DebugType=None -p:DebugSymbols=false` で pdb なし) + 残存 pdb 削除
+  - 変更3 (`vscode-extension/package.json`):
+    - `repository` / `homepage` / `bugs` を追加 (github.com/ajkfds/RtlEditor2)
+    - `scripts` に `bundle-server` / `package` (= bundle + vsce package) / `package:nobundle` を追加
+    - `serverPath` の説明を「空なら同梱サーバを使用」に更新
+  - 変更4 (`vscode-extension/.vscodeignore`): `.vscode`/`testRtl`/`scripts`/`*.map`/`node_modules` を除外、`server/**` は同梱し `pdb`/`.playwright`/`*.xml` のみ除外
+  - 変更5 (`vscode-extension/.gitignore`): `server/` (ビルド成果物) を追加
+  - 変更6 (`vscode-extension/README.md`): ユーザー向けに全面書き換え (機能 / インストール / npm run package でのビルド / serverPath / 開発 / GitHub Release 手順 / アイコン任意)
+  - 変更7 (`.github/workflows/vscode-extension-release.yml` 新規): `windows-latest` で submodules 再帰 checkout → .NET 10 / Node 20 → `npm run package` → `.vsix` を artifact 化 → `v*` タグでは `softprops/action-gh-release` で Release 添付。`workflow_dispatch` でも手動実行可
+  - 検証: `dotnet publish ... -o vscode-extension/server -p:DebugType=None` 成功、同梱サーバ `SystemVerilogLanguageServer.dll --selftest` 正常 (pdb なし)
+  - 注意: node/vsce はコマンド許可リスト外のため、`npm run package` と実際の .vsix 生成はユーザー環境で実行が必要。アイコン PNG は未作成 (任意、README に手順記載)
+  - コミット: メイン `f8ad448` (拡張一式 + workflow) / `f6ed716` (README 追記)
+  - Next: ユーザー環境で `cd vscode-extension && npm run package` (要 .NET SDK / Node / `npm i -g @vscode/vsce`) で .vsix を生成 → `git tag v0.1.0 && git push origin v0.1.0` で GitHub Release に添付 (または Actions 手動実行で artifact 取得) → 生成した .vsix を VS Code にインストールして動作確認
+
 - **RTL Hierarchy の右クリックメニューに Copy Instance Path しか出ない (NavigatePanelNode 相当のメニューを追加)** → 実装完了 (拡張のみ、コミット済み)
   - ユーザ要求: module instance を右クリックしたとき Copy Instance Path しか出ない。NavigatePanelNode.cs で追加している Add 等のメニューも表示してほしい
   - 参照したエディタ側メニュー (`CodeEditor2/CodeEditor2/NavigatePanel/NavigatePanelNode.cs` の `createContextMenu`): Add(Folder / Blank File) / Delete / (separator) / カスタム / Open in Explorer / CopyPath / Property
