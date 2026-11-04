@@ -5,6 +5,15 @@
   "version": "0.1.0",
   "publisher": "rtleditor2",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ajkfds/RtlEditor2.git",
+    "directory": "vscode-extension"
+  },
+  "homepage": "https://github.com/ajkfds/RtlEditor2/tree/main/vscode-extension",
+  "bugs": {
+    "url": "https://github.com/ajkfds/RtlEditor2/issues"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -196,12 +205,14 @@
         "systemverilogLsp.serverPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the published SystemVerilogLanguageServer executable (or its directory). If empty, the extension tries 'dotnet run --project' fallback."
+          "description": "Path to a SystemVerilogLanguageServer executable. Leave empty to use the server bundled under the extension's 'server' folder."
         }
       }
     }
   },
   "scripts": {
-    "package": "vsce package"
+    "bundle-server": "node scripts/bundle-server.js",
+    "package": "npm run bundle-server && vsce package",
+    "package:nobundle": "vsce package"
   }
 }

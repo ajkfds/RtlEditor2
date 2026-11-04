@@ -215,16 +215,24 @@ function resolveServerCommand(context) {
     let serverPath = config.get('serverPath', '');
 
     if (!serverPath) {
-        // Prefer the published binary. The extension lives inside the
-        // repository (vscode-extension/), so the server is a sibling folder;
-        // falling back to `dotnet run` would execute bin/Debug, which is often
-        // stale (an already-running server keeps the DLL locked, so the rebuild
-        // silently fails and the old binary keeps serving old behaviour).
+        // Prefer a bundled server. The packaged .vsix ships the published
+        // binaries under <extension>/server/ so the extension is self-contained
+        // (no separate build / serverPath needed). Development layouts
+        // (vscode-extension/ inside the repo, or a sibling publish folder) are
+        // also tried so F5 debugging keeps working. Falling back to
+        // `dotnet run` would execute bin/Debug, which is often stale (a running
+        // server keeps the DLL locked, so the rebuild silently fails).
+        const exe = 'SystemVerilogLanguageServer.exe';
+        const noExt = 'SystemVerilogLanguageServer';
         const candidates = [
-            vscode.Uri.joinPath(context.extensionUri, 'SystemVerilogLanguageServer', 'publish', 'SystemVerilogLanguageServer.exe').fsPath,
-            vscode.Uri.joinPath(context.extensionUri, 'SystemVerilogLanguageServer', 'publish', 'SystemVerilogLanguageServer').fsPath,
-            vscode.Uri.joinPath(context.extensionUri, '..', 'SystemVerilogLanguageServer', 'publish', 'SystemVerilogLanguageServer.exe').fsPath,
-            vscode.Uri.joinPath(context.extensionUri, '..', 'SystemVerilogLanguageServer', 'publish', 'SystemVerilogLanguageServer').fsPath,
+            // bundled server (packaged .vsix)
+            vscode.Uri.joinPath(context.extensionUri, 'server', exe).fsPath,
+            vscode.Uri.joinPath(context.extensionUri, 'server', noExt).fsPath,
+            // development: publish folder inside / next to the repo
+            vscode.Uri.joinPath(context.extensionUri, 'SystemVerilogLanguageServer', 'publish', exe).fsPath,
+            vscode.Uri.joinPath(context.extensionUri, 'SystemVerilogLanguageServer', 'publish', noExt).fsPath,
+            vscode.Uri.joinPath(context.extensionUri, '..', 'SystemVerilogLanguageServer', 'publish', exe).fsPath,
+            vscode.Uri.joinPath(context.extensionUri, '..', 'SystemVerilogLanguageServer', 'publish', noExt).fsPath,
         ];
         for (const candidate of candidates) {
             if (require('fs').existsSync(candidate)) {
@@ -274,8 +282,9 @@ function ensureClient() {
     const server = resolveServerCommand(getContext());
     if (!server) {
         return Promise.reject(new Error(
-            'server executable not found. Set "systemverilogLsp.serverPath" to the published SystemVerilogLanguageServer binary, ' +
-            'or build it with: dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release'
+            'server executable not found. The extension expects a bundled server under <extension>/server/ ' +
+            '(or set "systemverilogLsp.serverPath" to a published SystemVerilogLanguageServer binary). ' +
+            'To build it: dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release'
         ));
     }
 

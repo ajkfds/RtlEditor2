@@ -1,0 +1,63 @@
+name: Release VS Code extension
+
+# Builds the SystemVerilog LSP VS Code extension (bundling the published
+# language server) and attaches the resulting .vsix to a GitHub Release.
+#
+# Triggers:
+#   - push a tag like v0.1.0
+#   - or run manually (workflow_dispatch) - the .vsix is uploaded as an
+#     artifact; add a tag to also create a Release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-vsix:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Bundle server + package VSIX
+        working-directory: vscode-extension
+        run: npm run package
+
+      - name: Locate VSIX
+        id: vsix
+        working-directory: vscode-extension
+        shell: bash
+        run: |
+          f=$(ls *.vsix | head -n 1)
+          echo "file=$f" >> "$GITHUB_OUTPUT"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: systemverilog-lsp-vsix
+          path: vscode-extension/${{ steps.vsix.outputs.file }}
+
+      - name: Create / update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: vscode-extension/${{ steps.vsix.outputs.file }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,4 +1,15 @@
-node_modules/.package-lock.json
+# Development-only files, not shipped in the packaged .vsix
+.vscode/**
 **/.git
+**/.gitignore
 **/*.vsix
-.vscode
+**/*.map
+testRtl/**
+scripts/**
+node_modules/.package-lock.json
+
+# The bundled server (server/**) IS shipped: it makes the extension
+# self-contained. Exclude only dev-only bits to reduce size.
+server/**/*.pdb
+server/.playwright/**
+server/**/*.xml

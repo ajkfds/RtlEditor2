@@ -1,2 +1,5 @@
 node_modules/
 *.vsix
+
+# Bundled server binaries (built by scripts/bundle-server.js, not committed)
+server/
