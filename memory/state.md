@@ -3,6 +3,21 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy で collapse アイコンが出るのに展開しても何も出ないケース** → 修正完了 (ビルド成功 0 errors、テスト 1117/1117 合格、コミット済み)
+  - ユーザ報告: RTL hierarchy の要素で collapse アイコンが出ているのに expand しても下層に何も表示されないケースがある
+  - 再現 (プローブ `DebugExpandEmptyProbe.cs`): `module top; mid u_mid();` + `module mid; missing u_x();` (missing は未定義) で `u_mid` が `hasChildren=True` (collapse アイコン) なのに展開すると 0 件
+  - 根本原因: `CanExpand` (collapse アイコン判定) が「インスタンス先 building block の `GetBuildingBlockInstantiations().Count > 0`」だけで判定していた。実際の展開 (エディタの `Updater`) は **未解決モジュールを黙ってスキップ** し、program/udp/bind instantiation には子 Item を作らない。両者の判定経路が食い違っていた
+  - 修正 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`): `HasResolvableChildInstantiation(block)` を新設し、`CanExpand` のインスタンス分岐をこれに置換。子として数えるのは (1) `ModuleInstantiation` / `InterfaceInstance` のみ (他は Updater が子を作らない) (2) `GetInstancedBuildingBlock() != null` (実際に解決できる) ものだけ
+  - 検証 (プローブ実測):
+    - 未定義 module を instantiate する mid → `u_mid hasChildren=False` (不正な矢印が消えた) / 展開も空で一致
+    - 正常なネスト (mid → u_leaf) → `hasChildren=True` / 展開で `u_leaf` が出る
+    - instance array (`mid u_a[1:0]()`) → 各要素 `hasChildren=True` / 展開で `u_leaf` が出る
+  - 回帰テスト追加 (`WorkspaceHierarchyTests`): `InstanceOfUndefinedModule_IsNotExpandable` / `HasChildren_MatchesTheExpansion` / `InstanceArrayOfModuleWithChildren_IsExpandable`
+  - 検証: `dotnet test` **1117 合格 / 0 失敗** / `RtlEditor2.Desktop.csproj` ビルド 0 errors
+  - コミット: SystemVerilogLanguageServer `458d9b4`、メイン `e63feac` (submodule pointer + tests)
+  - メモ: publish 更新は VS Code が起動中の LSP サーバ (PID 29072) が DLL をロックして失敗 (MSB3027/MSB3021)。**VS Code を閉じてから** `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish` を再実行する必要あり
+  - Next: VS Code を閉じて publish 更新 → Reload Window 後、(1) collapse アイコンが出る要素は必ず展開で子が出ること (2) 未定義 module を instantiate する module に矢印が出ないこと を確認
+
 - **Send 不可の状態を可視化 (入力エリアを濃いダークグリーンに)** → 修正完了 (ビルド成功 0 errors)
   - ユーザ要求: user が send できる状態かどうか分かりにくいので、send できない状態では inputItem の入力エリアの色を濃い目のダークグリーンに変える
   - 修正 (`CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs`):
