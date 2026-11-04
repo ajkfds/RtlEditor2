@@ -3,6 +3,38 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張の RTL Hierarchy を NavigateNode の更新コードそのもの (`VerilogCommon.Updater`) に置き換え** → 実装完了 (ビルド成功 0 errors、テスト 1109/1109 合格、publish 更新・stdio 実測済み、コミット済み)
+  - ユーザ要求: RTL Hierarchy の実装をエディタの NavigateNode 更新コードそのものに置き換える (作業途中だったものを完遂)
+  - 変更前: `InMemoryFile.GetHierarchyRoots` / `CreateInstanceNode` が `GetBuildingBlockInstantiations()` を自前で辿る再実装だった。エディタの NavigateView と乖離 (include ヘッダ / imported package が出ない、instance array 規則が独自、parameter override が反映されない)
+  - **途中で発見したハングの根本原因 (これが「終了しない」の正体)**:
+    - `Updater.UpdateAsync` 自体は UI フリーで動作する (プローブで実証)。ハングは展開時の parse 経路 `VerilogModuleInstance.AcceptParsedDocumentAsync` → `VerilogFile.AcceptParsedDocumentAsync` の `GetTextFileAsync()` が UI レスホストで `Dispatcher.UIThread.InvokeAsync` を呼び永久ブロックしていた
+    - `Controller.CodeEditor.GetTextFileAsync` / `Controller.NavigatePanel.GetSelectedNodeAsync` は `Global.codeView` / `Global.navigateView` が null (UI レスホスト) でも Invoke してしまう → `== null` 早期 return を追加
+    - `CodeDocument.CopyColorMarkFrom` が `Global.codeView.TextFile` を無条件参照して NRE → `Global.codeView == null` 早期 return を追加 (折りたたみ更新は UI レスホストでは対象なし)
+    - プローブのログを逐次ファイル書き出しにして特定 (finally 一括書き出しではハング時に何も残らない)。`--blame-hang-timeout` + hangdump も併用
+  - 修正1 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`):
+    - `GetHierarchyRoots` / `CreateInstanceNode` を削除し、`GetHierarchyChildren(List<int> nodePath)` に置換。エディタの `VerilogCommon.Updater.UpdateAsync` を item に対して実行し、その `Data.Item.Items` を `HierarchyNodeDescriptor` に変換
+    - 展開はエディタと同じ**遅延**方式: nodePath を1段ずつ辿りながら `GetUpdatedChildren` で各段の Updater を実行 (`EnsureInstanceParsed` でインスタンスを先に parse)。全ツリーを先に構築すると全 module を eager parse してしまうため
+    - `GetUpdatedChildren`: `IVerilogRelatedFile` なら `EnsureInstanceParsed` → `Updater.UpdateAsync` → `Items.GetSnapShot()`。static `SemaphoreSlim _hierarchyUpdateSemaphore` で直列化
+    - `EnsureInstanceParsed`: 未 parse インスタンスを `CreateDocumentParser` → `ParseAsync` → `AcceptParsedDocumentAsync` (すべて UI フリー)
+    - `CreateDescriptor`: `Data.Item` → DTO。`HasChildren` = `CanExpand` (インスタンス先 building block の instantiation 有無 / フォールバックで自身の parse 結果)。位置は `GetParentInstanciatiation().BeginIndexReference` から line/character。URI は `ResolveItemUri` (`GetUriForRelativePath` で item の RelativePath → ファイル URI、見つからなければ自身の Id)
+    - `DescribeItem`: module/interface は `InstanceName`、package は `PackageName`、header は `RelativePath`
+    - `HasHierarchyChildren()` を新設 (旧 `GetHierarchyRootCount` 置換): ディレクトリ一覧の展開矢印用に**軽量**判定 (Updater を走らせず building block を直接見る)
+    - `InMemoryProject.GetPluginItem(relativePath)` / `GetUriForRelativePath(relativePath)` を新設
+    - `CreateVerilogFile` は**登録済み plugin item を優先** (`GetPluginVerilogFile`)。Updater は item tree の item の ParsedDocument を読むため、使い捨て VerilogFile を parse してもツリーが空になる
+  - 修正2 (`SystemVerilogLanguageServer/Server/LspHandler.cs`): `BuildFileNodes` を `GetHierarchyChildren(nodePath)` ベースに。`ResolveChildren` を削除。`BuildDirectoryNodes` は `HasHierarchyChildren()` を使用
+  - 修正3 (`SystemVerilogLanguageServer/RtlHierarchy.cs`): `HierarchyNodeDescriptor.HasChildren` を追加
+  - 修正4 (`CodeEditor2VerilogPlugin/.../Data/InterfaceInstance.cs`): `GetParentInstanciatiation()` を追加 (`VerilogModuleInstance` と対称、LSP が instantiating item を取得できるように)
+  - 修正5 (`CodeEditor2`): 上記3ファイルのヘッドレスガード
+  - 検証:
+    - `dotnet build SystemVerilogLanguageServer.csproj` / `RtlEditor2.Desktop.csproj` / `CodeEditor2.csproj` すべて 0 errors
+    - `dotnet test` **1109 合格 / 0 失敗** (既存 1106 + 新規回帰テスト: `InstanceTree_IsNestedLikeTheEditorNavigatePanel` (top→u_mid→u_leaf の3階層) / `MultiBuildingBlockFile_ListsOneEntryPerBuildingBlock` (building block ごとに1エントリ、Updater の辞書順なので順序非依存で検証))
+    - publish 更新 + `--selftest` 正常
+    - **publish 済みバイナリを stdio 起動し、VS Code と同じ URI (`file:///c%3A/...`) で実測**: workspace top=`rtl` / rtl folder=`leaf.sv`(leaf) `mid.sv`(expand) `top.sv`(expand) / top level0=`u_mid`(startLine=1, startCharacter=12, hasChildren=true) / top level1=`u_leaf`(同位置, leaf)。ネスト展開・位置・URI すべて正常
+  - コミット: CodeEditor2 `61190e6` / CodeEditor2VerilogPlugin `5dd6bea` / SystemVerilogLanguageServer `95cf79e`、メイン `7627b05` (submodule pointer + WorkspaceHierarchyTests.cs)
+  - Next: エディタ上で VS Code を Reload Window し、RTL Hierarchy の (1) インスタンス展開矢印が正しいこと (2) ネストしたインスタンス階層が出ること (3) クリックで宣言位置にジャンプすること を確認
+  - メモ: 検証用プローブ (`DebugHierarchyNestProbe.cs` / `DebugSpawnNestedProbe.cs` / `DebugNavigateTreeProbe.cs` ほか Debug*.cs) は従来どおりコミットから除外し作業ツリーに残置。`CodeEditor2/Data/DataAccess.cs` のユーザ変更も除外 (CodeEditor2 サブモジュールは `m` = modified content として残る)
+
+=======
 - **LLM の tool call 実行中に Abort すると、その後 Send できなくなる** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: LLM で execute_command 等の tool call 実行中に abort ボタンを押すと tool call を中断するが、その後次の command を send できなくなる
   - 根本原因 (**Abort が UI 上のスピナー停止しか行っておらず、実行中の tool を実際には中断できていなかった**):
