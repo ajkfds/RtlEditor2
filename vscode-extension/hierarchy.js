@@ -379,6 +379,128 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
         })
     );
 
+    // ---- file system operations (mirror the editor's NavigatePanel menu) ----
+    // These act on the on-disk file / folder the node represents, then ask the
+    // server to re-scan so the tree (and parse results) reflect the change.
+
+    const resolveFsPath = (node) => {
+        if (node && node.uri) {
+            try { return vscode.Uri.parse(node.uri).fsPath; } catch (e) { /* ignore */ }
+        }
+        // folder / file nodes without a uri: resolve from the workspace folder
+        // and the workspace-relative folderPath
+        if (node && node.folderPath) {
+            const folder = (vscode.workspace.workspaceFolders || [])[0];
+            if (folder) return vscode.Uri.joinPath(folder.uri, node.folderPath).fsPath;
+        }
+        return undefined;
+    };
+    // folder the node lives in (for Add): a folder node is its own directory,
+    // a file / instance uses the directory of its source file
+    const resolveDirPath = (node) => {
+        if (!node) return undefined;
+        if (node.kind === 'folder' && node.folderPath) {
+            const folder = (vscode.workspace.workspaceFolders || [])[0];
+            if (folder) return vscode.Uri.joinPath(folder.uri, node.folderPath).fsPath;
+        }
+        const fsPath = resolveFsPath(node);
+        if (fsPath) return require('path').dirname(fsPath);
+        return undefined;
+    };
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.addFolder', async (item) => {
+            const node = item || view.selection[0];
+            const dir = resolveDirPath(node);
+            if (!dir) return;
+            const name = await vscode.window.showInputBox({ prompt: 'New folder name' });
+            if (!name) return;
+            try {
+                await vscode.workspace.fs.createDirectory(vscode.Uri.file(require('path').join(dir, name)));
+                provider.refresh();
+            } catch (e) {
+                vscode.window.showErrorMessage('Add Folder failed: ' + e.message);
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.addBlankFile', async (item) => {
+            const node = item || view.selection[0];
+            const dir = resolveDirPath(node);
+            if (!dir) return;
+            const name = await vscode.window.showInputBox({ prompt: 'New file name (e.g. top.sv)' });
+            if (!name) return;
+            try {
+                const uri = vscode.Uri.file(require('path').join(dir, name));
+                await vscode.workspace.fs.writeFile(uri, new Uint8Array());
+                await openAt(uri.toString(), 0, 0);
+                provider.refresh();
+            } catch (e) {
+                vscode.window.showErrorMessage('Add File failed: ' + e.message);
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.deleteNode', async (item) => {
+            const node = item || view.selection[0];
+            const fsPath = resolveFsPath(node);
+            if (!fsPath) return;
+            const ok = await vscode.window.showWarningMessage(
+                'Delete ' + require('path').basename(fsPath) + '?', { modal: true }, 'Delete');
+            if (ok !== 'Delete') return;
+            try {
+                await vscode.workspace.fs.delete(vscode.Uri.file(fsPath), { recursive: true, useTrash: true });
+                provider.refresh();
+            } catch (e) {
+                vscode.window.showErrorMessage('Delete failed: ' + e.message);
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.copyPath', async (item) => {
+            const node = item || view.selection[0];
+            // prefer the workspace-relative path (detail) like the editor does,
+            // fall back to the absolute fs path
+            const text = (node && node.detail) ? node.detail : resolveFsPath(node);
+            if (!text) return;
+            await vscode.env.clipboard.writeText(text);
+            vscode.window.setStatusBarMessage('Copied: ' + text, 3000);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.openInExplorer', async (item) => {
+            const node = item || view.selection[0];
+            const fsPath = resolveFsPath(node);
+            if (!fsPath) return;
+            try {
+                await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(fsPath));
+            } catch (e) {
+                vscode.window.showErrorMessage('Open in Explorer failed: ' + e.message);
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.showProperty', async (item) => {
+            const node = item || view.selection[0];
+            if (!node) return;
+            const lines = [
+                'label: ' + (node.label || ''),
+                'kind: ' + (node.kind || ''),
+                'uri: ' + (node.uri || ''),
+                'detail: ' + (node.detail || ''),
+                'instancePath: ' + (node.instancePath || ''),
+                'startLine: ' + (node.startLine == null ? '' : node.startLine),
+                'startCharacter: ' + (node.startCharacter == null ? '' : node.startCharacter),
+            ];
+            await vscode.window.showInformationMessage(lines.join('\n'), { modal: true });
+        })
+    );
+
     return provider;
 }
 

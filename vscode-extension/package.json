@@ -53,6 +53,30 @@
         "title": "Reveal in Editor"
       },
       {
+        "command": "systemverilogLsp.addFolder",
+        "title": "Add Folder"
+      },
+      {
+        "command": "systemverilogLsp.addBlankFile",
+        "title": "Add Blank File"
+      },
+      {
+        "command": "systemverilogLsp.deleteNode",
+        "title": "Delete"
+      },
+      {
+        "command": "systemverilogLsp.openInExplorer",
+        "title": "Open in Explorer"
+      },
+      {
+        "command": "systemverilogLsp.copyPath",
+        "title": "Copy Path"
+      },
+      {
+        "command": "systemverilogLsp.showProperty",
+        "title": "Property"
+      },
+      {
         "command": "systemverilogLsp.showLog",
         "title": "SystemVerilog LSP: Show Log",
         "icon": "$(output)"
@@ -84,7 +108,42 @@
         {
           "command": "systemverilogLsp.copyHierarchyPath",
           "when": "view == systemverilogLsp.hierarchy && viewItem == rtlInstance",
-          "group": "1_copy"
+          "group": "3_copy"
+        },
+        {
+          "command": "systemverilogLsp.revealInEditor",
+          "when": "view == systemverilogLsp.hierarchy && (viewItem == rtlInstance || viewItem == rtlFile)",
+          "group": "0_open"
+        },
+        {
+          "command": "systemverilogLsp.addFolder",
+          "when": "view == systemverilogLsp.hierarchy && (viewItem == rtlFolder || viewItem == rtlFile || viewItem == rtlInstance)",
+          "group": "1_add"
+        },
+        {
+          "command": "systemverilogLsp.addBlankFile",
+          "when": "view == systemverilogLsp.hierarchy && (viewItem == rtlFolder || viewItem == rtlFile || viewItem == rtlInstance)",
+          "group": "1_add"
+        },
+        {
+          "command": "systemverilogLsp.deleteNode",
+          "when": "view == systemverilogLsp.hierarchy && (viewItem == rtlFile || viewItem == rtlFolder)",
+          "group": "2_edit"
+        },
+        {
+          "command": "systemverilogLsp.copyPath",
+          "when": "view == systemverilogLsp.hierarchy && (viewItem == rtlFile || viewItem == rtlInstance || viewItem == rtlFolder)",
+          "group": "3_copy"
+        },
+        {
+          "command": "systemverilogLsp.openInExplorer",
+          "when": "view == systemverilogLsp.hierarchy && (viewItem == rtlFile || viewItem == rtlFolder || viewItem == rtlInstance)",
+          "group": "4_explorer"
+        },
+        {
+          "command": "systemverilogLsp.showProperty",
+          "when": "view == systemverilogLsp.hierarchy && (viewItem == rtlFile || viewItem == rtlInstance)",
+          "group": "5_property"
         }
       ]
     },
