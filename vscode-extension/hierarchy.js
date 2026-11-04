@@ -329,6 +329,21 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
     });
     context.subscriptions.push(view);
     context.subscriptions.push(provider._onDidChangeTreeData);
+
+    // Clicking a node must re-parse its file and refresh the tree. Relying on
+    // TreeItem.command alone does not work for expandable nodes: VS Code toggles
+    // their expansion on click and does NOT run the command, so the hierarchy
+    // (and the errors under it) stayed stale until an edit happened to re-parse
+    // the file. Selection changes on every click, so drive the re-parse here.
+    context.subscriptions.push(view.onDidChangeSelection(async (e) => {
+        const node = e.selection && e.selection.length > 0 ? e.selection[0] : null;
+        if (!node || !node.uri) return;
+        try {
+            await provider.reparseAndRefresh(node.uri);
+        } catch (err) {
+            provider.log('selection reparse ERROR: ' + (err && err.message));
+        }
+    }));
     // The view title shows "No ... files" (viewsWelcome) only when the provider
     // returns nothing; keep the message visible by revealing the view itself.
     try { view.badge = undefined; } catch (e) { /* ignore */ }
