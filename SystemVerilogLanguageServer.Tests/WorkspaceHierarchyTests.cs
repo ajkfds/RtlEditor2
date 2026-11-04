@@ -220,6 +220,68 @@ public class WorkspaceHierarchyTests : IDisposable
         Assert.Equal(new[] { "u_leaf" }, Labels(result, "instance"));
     }
 
+    /// <summary>
+    /// The tree is produced by the editor's own NavigatePanel update code
+    /// (VerilogCommon.Updater), so it must expose the same nested instance
+    /// hierarchy the editor shows: expanding a node returns the instances
+    /// inside the instantiated module, not just the first level.
+    /// </summary>
+    [Fact]
+    public void InstanceTree_IsNestedLikeTheEditorNavigatePanel()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top; mid u_mid(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "mid.sv"),
+            "module mid; leaf u_leaf(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"),
+            "module leaf; endmodule\n");
+
+        LspHandler handler = CreateInitializedHandler();
+        string uri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        // first level: u_mid
+        JsonElement level0 = Query(handler, new { uri, nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "u_mid" }, Labels(level0, "instance"));
+        Assert.True(level0.GetProperty("nodes")[0].GetProperty("hasChildren").GetBoolean());
+
+        // second level: u_leaf inside u_mid
+        JsonElement level1 = Query(handler, new { uri, nodePath = new[] { 0 } });
+        Assert.Equal(new[] { "u_leaf" }, Labels(level1, "instance"));
+
+        // third level: leaf has no instances
+        JsonElement level2 = Query(handler, new { uri, nodePath = new[] { 0, 0 } });
+        Assert.Empty(Labels(level2, "instance"));
+    }
+
+    /// <summary>
+    /// A file that declares several building blocks lists one entry per
+    /// building block (the editor's addSubItemsMultiBuildingBlock rule), each
+    /// expandable into the instances inside that block.
+    /// </summary>
+    [Fact]
+    public void MultiBuildingBlockFile_ListsOneEntryPerBuildingBlock()
+    {
+        File.WriteAllText(Path.Combine(_root, "multi.sv"),
+            "module a; leaf u_leaf_a(); endmodule\n" +
+            "module b; leaf u_leaf_b(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+
+        LspHandler handler = CreateInitializedHandler();
+        string uri = new Uri(Path.Combine(_root, "multi.sv")).AbsoluteUri;
+
+        JsonElement level0 = Query(handler, new { uri, nodePath = Array.Empty<int>() });
+        // the editor's Updater adds building blocks in dictionary order, which
+        // is not source order, so compare as a set
+        string[] blocks = Labels(level0, "instance");
+        Assert.Equal(new[] { "a", "b" }, blocks.OrderBy(x => x, StringComparer.Ordinal).ToArray());
+
+        // resolve the index of "a" so the assertion does not depend on the
+        // Updater's dictionary order
+        int indexOfA = Array.IndexOf(blocks, "a");
+        JsonElement level1 = Query(handler, new { uri, nodePath = new[] { indexOfA } });
+        Assert.Equal(new[] { "u_leaf_a" }, Labels(level1, "instance"));
+    }
+
     [Fact]
     public void Rescan_PicksUpFilesCreatedAfterInitialize()
     {
