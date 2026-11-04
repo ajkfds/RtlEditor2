@@ -544,6 +544,32 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// Semantic tokens (syntax highlighting) must be returned for the escaped
+    /// URI VS Code sends. Before URI normalisation the request looked up a
+    /// different entry than didOpen registered, so the highlight data was empty.
+    /// </summary>
+    [Fact]
+    public void SemanticTokens_ReturnedForEscapedUri()
+    {
+        string path = Path.Combine(_root, "top.sv");
+        File.WriteAllText(path, "module top;\n  logic [7:0] data;\nendmodule\n");
+        string forward = path.Replace('\\', '/');
+        string vscodeUri = "file:///" + char.ToLowerInvariant(forward[0]) + "%3A" + forward.Substring(2);
+
+        LspHandler handler = CreateInitializedHandler();
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = vscodeUri, languageId = "systemverilog", version = 1, text = File.ReadAllText(path) },
+        });
+
+        using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(new { textDocument = new { uri = vscodeUri } }));
+        handler.TryHandleRequest("textDocument/semanticTokens/full", doc.RootElement, default, out object? result);
+        JsonElement tokens = JsonDocument.Parse(JsonSerializer.Serialize(result)).RootElement.Clone();
+        // 5 integers per token; at least the module / logic / data tokens
+        Assert.True(tokens.GetProperty("data").GetArrayLength() >= 5);
+    }
+
+    /// <summary>
     /// A node must only advertise an expand arrow (hasChildren) when expanding
     /// it actually shows children. An instance of an undefined module has no
     /// instantiable children (the editor's Updater skips the unresolved
