@@ -462,6 +462,67 @@ public class WorkspaceHierarchyTests : IDisposable
     /// Adding a folder to the window must extend the tree to that folder.
     /// </summary>
     [Fact]
+    public void Hierarchy_UpdatesAfterDidChange()
+    {
+        // didChange is the LSP equivalent of "parse hierarchy ran": the edited
+        // file is re-parsed, and expanding a file whose instance list changed
+        // must show the new instances (not the previous parse).
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; leaf u_a(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+        string uri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        LspHandler handler = CreateInitializedHandler();
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri, languageId = "systemverilog", version = 1, text = "module top; leaf u_a(); endmodule\n" },
+        });
+        Assert.Equal(new[] { "u_a" }, Labels(Query(handler, new { uri, nodePath = Array.Empty<int>() }), "instance"));
+
+        SendNotification(handler, "textDocument/didChange", new
+        {
+            textDocument = new { uri, version = 2 },
+            contentChanges = new[] { new { text = "module top; leaf u_b(); leaf u_c(); endmodule\n" } },
+        });
+        Assert.Equal(new[] { "u_b", "u_c" }, Labels(Query(handler, new { uri, nodePath = Array.Empty<int>() }), "instance"));
+    }
+
+    /// <summary>
+    /// Editing a DEPENDENCY module must refresh the instance tree under every
+    /// parent that expands it. The instance caches the parse result of its
+    /// source file, so without invalidation a parent would keep showing the
+    /// previous instantiations after the dependency was edited.
+    /// </summary>
+    [Fact]
+    public void Hierarchy_RefreshesNestedInstancesAfterDependencyEdit()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; mid u_mid(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "mid.sv"), "module mid; leaf u_old(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+        string midUri = new Uri(Path.Combine(_root, "mid.sv")).AbsoluteUri;
+
+        LspHandler handler = CreateInitializedHandler();
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = midUri, languageId = "systemverilog", version = 1, text = "module mid; leaf u_old(); endmodule\n" },
+        });
+
+        Assert.Equal(new[] { "u_mid" }, Labels(Query(handler, new { uri = topUri, nodePath = Array.Empty<int>() }), "instance"));
+        Assert.Equal(new[] { "u_old" }, Labels(Query(handler, new { uri = topUri, nodePath = new[] { 0 } }), "instance"));
+
+        SendNotification(handler, "textDocument/didChange", new
+        {
+            textDocument = new { uri = midUri, version = 2 },
+            contentChanges = new[] { new { text = "module mid; leaf u_new(); endmodule\n" } },
+        });
+
+        Assert.Equal(new[] { "u_new" }, Labels(Query(handler, new { uri = topUri, nodePath = new[] { 0 } }), "instance"));
+    }
+
+    /// <summary>
+    /// Adding a folder to the window must extend the tree to that folder.
+    /// </summary>
+    [Fact]
     public void DidChangeWorkspaceFolders_AddsTheNewRootToTheTree()
     {
         LspHandler handler = CreateInitializedHandler();
