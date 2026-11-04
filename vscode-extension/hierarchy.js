@@ -85,6 +85,24 @@ class HierarchyProvider {
     }
 
     /**
+     * Asks the server to re-parse the given file and then redraws the tree, so
+     * clicking a hierarchy node updates the instance list even before the
+     * client sends a didChange (an already-open, unedited file otherwise keeps
+     * the parse result from when it was first opened).
+     */
+    async reparseAndRefresh(uri) {
+        try {
+            const client = await this.ensureClient();
+            if (client && uri) {
+                await client.request('rtl/reparse', { uri });
+            }
+        } catch (e) {
+            this.log('reparse ERROR: ' + (e && e.stack ? e.stack : e));
+        }
+        this.refreshTree();
+    }
+
+    /**
      * Re-fetches the tree only while it has never been populated. Used when a
      * SystemVerilog document is opened: the server may have had no workspace
      * root when the view first rendered, so the first fetch came back empty.
@@ -324,6 +342,7 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
             const node = item || view.selection[0];
             if (!node || !node.uri) return;
             await openAt(node.uri, node.startLine, node.startCharacter);
+            await provider.reparseAndRefresh(node.uri);
         })
     );
 
@@ -332,6 +351,7 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
             const node = item || view.selection[0];
             if (!node || !node.uri) return;
             await openAt(node.uri, node.startLine, node.startCharacter);
+            await provider.reparseAndRefresh(node.uri);
         })
     );
 

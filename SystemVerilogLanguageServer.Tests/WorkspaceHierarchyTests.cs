@@ -490,6 +490,60 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// An interface may instantiate modules (e.g. "interface bus_if; leaf
+    /// u_leaf(); endinterface"). The interface item dispatcher used to reject the
+    /// identifier as an "illegal interface item", so a module instance inside an
+    /// interface never appeared in the hierarchy. Expanding an interface instance
+    /// must now show the modules it instantiates.
+    /// </summary>
+    [Fact]
+    public void InterfaceInstance_ShowsInstancesInsideTheInterface()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; bus_if u_bus(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "bus_if.sv"), "interface bus_if; leaf u_leaf(); endinterface\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        LspHandler handler = CreateInitializedHandler();
+        JsonElement level0 = Query(handler, new { uri = topUri, nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "u_bus" }, Labels(level0, "instance"));
+        Assert.True(level0.GetProperty("nodes")[0].GetProperty("hasChildren").GetBoolean());
+
+        JsonElement level1 = Query(handler, new { uri = topUri, nodePath = new[] { 0 } });
+        Assert.Equal(new[] { "u_leaf" }, Labels(level1, "instance"));
+    }
+
+    /// <summary>
+    /// Opening a file (didOpen) and expanding its node in the RTL Hierarchy must
+    /// operate on the SAME entry. VS Code sends the drive-letter colon escaped
+    /// and lower-case (file:///c%3A/...) while the workspace scan registers
+    /// file:///C:/...; without URI normalisation the same file was two entries,
+    /// so an opened (and edited) file's re-parse never reached the tree.
+    /// </summary>
+    [Fact]
+    public void DidOpenAndScan_ShareOneFileEntry()
+    {
+        string path = Path.Combine(_root, "top.sv");
+        File.WriteAllText(path, "module top; leaf u_a(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+
+        // exactly the URI VS Code sends in didOpen
+        string forward = path.Replace('\\', '/');
+        string vscodeUri = "file:///" + char.ToLowerInvariant(forward[0]) + "%3A" + forward.Substring(2);
+
+        LspHandler handler = CreateInitializedHandler();
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = vscodeUri, languageId = "systemverilog", version = 1, text = "module top; leaf u_b(); endmodule\n" },
+        });
+
+        // the scan-form uri must resolve to the same (edited) entry
+        string scannedUri = new Uri(path).AbsoluteUri;
+        JsonElement level0 = Query(handler, new { uri = scannedUri, nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "u_b" }, Labels(level0, "instance"));
+    }
+
+    /// <summary>
     /// A node must only advertise an expand arrow (hasChildren) when expanding
     /// it actually shows children. An instance of an undefined module has no
     /// instantiable children (the editor's Updater skips the unresolved
