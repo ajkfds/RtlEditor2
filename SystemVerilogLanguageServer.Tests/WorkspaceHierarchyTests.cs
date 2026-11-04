@@ -459,6 +459,67 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// A node must only advertise an expand arrow (hasChildren) when expanding
+    /// it actually shows children. An instance of an undefined module has no
+    /// instantiable children (the editor's Updater skips the unresolved
+    /// module), so it must not be expandable - otherwise the tree shows a
+    /// collapse arrow that opens to an empty list.
+    /// </summary>
+    [Fact]
+    public void InstanceOfUndefinedModule_IsNotExpandable()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; mid u_mid(); endmodule\n");
+        // mid instantiates "missing", which is declared nowhere
+        File.WriteAllText(Path.Combine(_root, "mid.sv"), "module mid; missing u_x(); endmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        LspHandler handler = CreateInitializedHandler();
+        JsonElement level0 = Query(handler, new { uri = topUri, nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "u_mid" }, Labels(level0, "instance"));
+        Assert.False(level0.GetProperty("nodes")[0].GetProperty("hasChildren").GetBoolean());
+
+        // and the expansion really is empty
+        Assert.Empty(Labels(Query(handler, new { uri = topUri, nodePath = new[] { 0 } }), "instance"));
+    }
+
+    /// <summary>
+    /// The expand arrow and the expansion must agree: a node that reports
+    /// hasChildren expands to a non-empty list.
+    /// </summary>
+    [Fact]
+    public void HasChildren_MatchesTheExpansion()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; mid u_mid(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "mid.sv"), "module mid; leaf u_leaf(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        LspHandler handler = CreateInitializedHandler();
+        JsonElement level0 = Query(handler, new { uri = topUri, nodePath = Array.Empty<int>() });
+        Assert.True(level0.GetProperty("nodes")[0].GetProperty("hasChildren").GetBoolean());
+        Assert.Equal(new[] { "u_leaf" }, Labels(Query(handler, new { uri = topUri, nodePath = new[] { 0 } }), "instance"));
+    }
+
+    /// <summary>
+    /// An instance array of a module that declares its own instances must be
+    /// expandable (each element expands to the module's instances).
+    /// </summary>
+    [Fact]
+    public void InstanceArrayOfModuleWithChildren_IsExpandable()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; mid u_a[1:0](); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "mid.sv"), "module mid; leaf u_leaf(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        LspHandler handler = CreateInitializedHandler();
+        JsonElement level0 = Query(handler, new { uri = topUri, nodePath = Array.Empty<int>() });
+        Assert.Equal(new[] { "u_a[0]", "u_a[1]" }, Labels(level0, "instance"));
+        Assert.True(level0.GetProperty("nodes")[0].GetProperty("hasChildren").GetBoolean());
+        Assert.Equal(new[] { "u_leaf" }, Labels(Query(handler, new { uri = topUri, nodePath = new[] { 0 } }), "instance"));
+    }
+
+    /// <summary>
     /// Adding a folder to the window must extend the tree to that folder.
     /// </summary>
     [Fact]
