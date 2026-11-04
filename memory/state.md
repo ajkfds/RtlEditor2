@@ -3,6 +3,14 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy のノードをクリックして parse しても階層が更新されない (展開可能ノードはクリックで command が走らない)** → 修正完了 (拡張のみ、コミット済み)
+  - ユーザ報告: rtl hierarchy のノードをクリックして parse した結果が hierarchy が更新されない
+  - サーバ側は正常であることを実測で確認 (プローブ `DebugClickUpdateProbe`): `top`→`mid`(u_old) を編集(didChange)+`rtl/reparse` すると、`top` から階層を展開すると `u_new` に更新される。サーバロジックは問題なし
+  - 根本原因 (**拡張側**): `getTreeItem` は展開可能ノード (`hasChildren=true`) を `CollapsibleState.Collapsed` にし、`item.command` に `openHierarchyNode` / `revealInEditor` (= `rtl/reparse` + 再描画) を設定していた。しかし **VS Code は展開可能ノードをクリックすると展開トグルだけを行い、`item.command` を実行しない**。そのため `rtl/reparse` も `refreshTree` も走らず、階層・エラーが編集するまで古いままだった
+  - 修正 (`vscode-extension/hierarchy.js`): `view.onDidChangeSelection` を購読し、選択されたノードの uri で `provider.reparseAndRefresh(uri)` を呼ぶ (クリックのたびに発火)。`reparseAndRefresh` は `rtl/reparse` 送信 → `refreshTree()` で再描画
+  - メモ: `openHierarchyNode` / `revealInEditor` の `item.command` は残置 (リーフファイルやコマンドパレット経由では有効)
+  - Next: VS Code を Reload Window 後、RTL Hierarchy のノードをクリックすると (1) そのファイルが再 parse され (2) 階層/エラーが更新されること を確認
+
 - **URI 正規化の副作用でシンタックスハイライト (semantic tokens) が効かなくなった** → 修正完了 (ビルド成功 0 errors、テスト 1136/1136 合格、コミット済み)
   - ユーザ報告: ノードクリックでエラー反映は直ったが、シンタックスハイライトが効かなくなった
   - 原因: 前回の `NormalizeUri` 導入で didOpen 等は `C:` 形式に統一したが、`HandleSemanticTokens` / `HandleDocumentSymbol` / `HandleCompletion` は **uri を正規化せず** `project.FindFile(uri)` していた。VS Code は semantic tokens 要求も didOpen と同じ `c%3A` エスケープ形式で送るため、登録済み `C:` エントリと一致せずトークンが空になっていた
