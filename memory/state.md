@@ -3,6 +3,20 @@
 
 ## 進行中タスク (最新)
 
+- **LLM が何も返さず終了したとき、"waiting" 表示を消して自動で「つづけて」を送る** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: LLM の戻りが空のまま終了すると "waiting ..." 表示が出たままユーザ入力状態に戻ってしまう
+  - 要望: その場合は "waiting" を消して自動で「つづけて」という応答を LLM に返す。ただし**連続 2 回**戻りが無かった場合は永久ループ防止のため行わずユーザに制御を返す
+  - 修正 (`CodeEditor2/CodeEditor2/LLM/ChatControl.axaml.cs`):
+    - `ContinueCommand` = "つづけて" / `MaxConsecutiveEmptyResponses` = 2 / `consecutiveEmptyResponseCount` を新設
+    - `IsEmptyResponse(string?)` 新設 (null / 空白のみ / 旧 "blank" マーカーを空応答と判定)
+    - `completeHandlingEmptyReply(...)` 新設: `complete()` を呼び、空応答なら 1 回だけ "つづけて" を送って再問い合わせ。2 連続で空なら黄/橙ログを出して `null` を返しターン終了 (ユーザに制御を返す)。内容ありで連続カウントをリセット
+    - `completeWithFunctionCallCore` の 2 箇所の `complete()` 呼び出しを `completeHandlingEmptyReply()` に置換 (初回応答 + ツール結果後の応答)
+    - `completeWithFunctionCall` 冒頭で `consecutiveEmptyResponseCount = 0` (ターン開始時にストリークをリセット)
+    - `completeWork`: 何もストリームされなかった場合、**タイマー停止後**に `SetText("")` で "waiting ..." プレースホルダを消去 (タイマーが後から再描画しないよう順序を変更)
+    - `completeWork`: 空の応答アイテムは `Items.Remove` で取り除き、空バブルを残さない (`lastResultItem` は直前の split アイテム or null に付け替え)
+  - 検証: `dotnet build CodeEditor2/CodeEditor2/CodeEditor2.csproj -clp:ErrorsOnly` → 0 errors / `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+  - Next: エディタ上で (1) 空応答時に "waiting" が消え自動で「つづけて」が送られること (2) 2 連続空応答で自動送信されず入力可能に戻ること を確認
+
 - **VS Code 拡張の RTL Hierarchy を NavigateNode の更新コードそのもの (`VerilogCommon.Updater`) に置き換え** → 実装完了 (ビルド成功 0 errors、テスト 1109/1109 合格、publish 更新・stdio 実測済み、コミット済み)
   - ユーザ要求: RTL Hierarchy の実装をエディタの NavigateNode 更新コードそのものに置き換える (作業途中だったものを完遂)
   - 変更前: `InMemoryFile.GetHierarchyRoots` / `CreateInstanceNode` が `GetBuildingBlockInstantiations()` を自前で辿る再実装だった。エディタの NavigateView と乖離 (include ヘッダ / imported package が出ない、instance array 規則が独自、parameter override が反映されない)
