@@ -3,6 +3,21 @@
 
 ## 進行中タスク (最新)
 
+- **大規模ワークスペースで RTL Hierarchy を開いた直後に展開すると下層が空になる (バックグラウンド parse との競合)** → 修正完了 (ビルド成功 0 errors、テスト 1125/1125 合格、publish 更新・stdio 実測済み、コミット済み)
+  - ユーザ報告: (1) まだ expand しても下層アイテムが表示されない場合がある (2) ファイルを open したときに editparse が走らず、編集して初めて parse が走る (3) RTL hierarchy をクリックしても parse hierarchy が走っていないように思える
+  - 再現 (プローブ `DebugBigWorkspaceProbe.cs`): 250 ファイル超 (MaxEagerParseFiles=200 超) のワークスペースで initialize 直後に `top.sv` を展開 → **L0 (top 直下) が 0 件**、L1 で初めて `u_leaf` が返りインデックスが1段ずれる。小規模 (≤200) や、一度目を通した後は正常
+  - 根本原因: initialize は 200 ファイル超だと `LoadWorkspaceFiles` が `Task.Run(ParseFiles)` で**バックグラウンド parse** する。展開時 `GetUpdatedChildren` は対象ファイル自身を parse するが、**依存モジュール (mid.sv 等) が未 parse** だとエディタの `Updater` が未解決インスタンスを**黙ってスキップ**し、その階層が空になる。「編集すると parse が走る」体感もこれと一致 (編集で依存ファイルが parse されると表示される)
+  - 副次原因 (レース): `InMemoryFile.EnsureBuilt` が `_built=true` を立ててから `BuildSymbols` を実行するため、バックグラウンド parse と展開パスの `EnsureBuilt` が並行すると、片方が parse 完了前に素通りして未登録のまま Updater に渡る (テストが単独合格・全体実行で稀に失敗した)
+  - 修正1 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`): `EnsureWorkspaceBuilt()` を新設し、`GetUpdatedChildren` の Updater 実行前に呼ぶ。`ProjectOwner.Files` の未 parse ファイルを全て `EnsureBuiltForResolve()` (= `EnsureBuilt`) してから Updater を走らせる。初回以降はフラグ済みで no-op
+  - 修正2 (同): `InMemoryFile.EnsureBuilt` を `lock (_buildLock)` で保護 (二重 parse 防止・`_built` 早期 true による未完了素通り防止)。`Rebuild` も同じ lock でリストクリア
+  - 修正3 (同): `InMemoryFile.EnsureBuiltForResolve()` を追加 (外部から build を促す entry)
+  - 検証: プローブ実測で 250 ファイル超でも L0=`u_mid hasChildren=true` / L1=`u_leaf` に。publish 済みバイナリを stdio 起動し VS Code と同一 URI で実測 → L0 (132ms) `u_mid` / L1 (31ms) `u_leaf`、303 ファイルのバックグラウンド parse 中でも即時正しく展開
+  - 回帰テスト追加 (`WorkspaceHierarchyTests.ExpandBeforeBackgroundParseFinishes_ShowsInstances`): 250 ダミーファイルでバックグラウンド parse を誘発し、initialize 直後に展開して `u_mid` → `u_leaf` が返ることを検証
+  - 検証: `dotnet test` **1125 合格 / 0 失敗** / `RtlEditor2.Desktop.csproj` ビルド 0 errors / publish 更新 + `--selftest` 正常
+  - コミット: SystemVerilogLanguageServer `0fb1ee1`、メイン `0e519c1` (submodule pointer + tests)
+  - メモ: didOpen 時の editparse は `HandleDidOpen` が `file.ForceBuild()` + `PushDiagnostics` するため実装済み。ユーザの「open 直後に走らない」体感はバックグラウンド parse との競合 (本修正) が原因で解消見込み
+  - Next: VS Code で Reload Window 後、(1) 大きめプロジェクトでファイルを開いた直後に RTL Hierarchy を展開しても下層が表示されること (2) 依存モジュールを持つファイルで矢印→展開が一致すること を確認
+
 - **RTL Hierarchy で collapse アイコンが出るのに展開しても何も出ないケース** → 修正完了 (ビルド成功 0 errors、テスト 1117/1117 合格、コミット済み)
   - ユーザ報告: RTL hierarchy の要素で collapse アイコンが出ているのに expand しても下層に何も表示されないケースがある
   - 再現 (プローブ `DebugExpandEmptyProbe.cs`): `module top; mid u_mid();` + `module mid; missing u_x();` (missing は未定義) で `u_mid` が `hasChildren=True` (collapse アイコン) なのに展開すると 0 件
