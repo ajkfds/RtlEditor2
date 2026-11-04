@@ -15,8 +15,8 @@
   - 回帰テスト追加 (`WorkspaceHierarchyTests`): `InstanceOfUndefinedModule_IsNotExpandable` / `HasChildren_MatchesTheExpansion` / `InstanceArrayOfModuleWithChildren_IsExpandable`
   - 検証: `dotnet test` **1117 合格 / 0 失敗** / `RtlEditor2.Desktop.csproj` ビルド 0 errors
   - コミット: SystemVerilogLanguageServer `458d9b4`、メイン `e63feac` (submodule pointer + tests)
-  - メモ: publish 更新は VS Code が起動中の LSP サーバ (PID 29072) が DLL をロックして失敗 (MSB3027/MSB3021)。**VS Code を閉じてから** `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish` を再実行する必要あり
-  - Next: VS Code を閉じて publish 更新 → Reload Window 後、(1) collapse アイコンが出る要素は必ず展開で子が出ること (2) 未定義 module を instantiate する module に矢印が出ないこと を確認
+  - publish 更新: ユーザが VS Code を閉じた後に `dotnet publish ... -o SystemVerilogLanguageServer/publish` 成功。`--selftest` 正常。**publish 済みバイナリを stdio 起動し VS Code と同一 URI で実測** → 未定義 module のファイル (bad.sv) は level0 空 (不正な矢印なし) / 正常なネスト (goodtop.sv) は `u_mid hasChildren=true` → 展開で `u_leaf` (位置情報付き) を返却
+  - Next: VS Code で Reload Window 後、(1) collapse アイコンが出る要素は必ず展開で子が出ること (2) 未定義 module を instantiate する module に矢印が出ないこと を確認
 
 - **Send 不可の状態を可視化 (入力エリアを濃いダークグリーンに)** → 修正完了 (ビルド成功 0 errors)
   - ユーザ要求: user が send できる状態かどうか分かりにくいので、send できない状態では inputItem の入力エリアの色を濃い目のダークグリーンに変える
