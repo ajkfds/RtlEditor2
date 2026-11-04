@@ -3,6 +3,15 @@
 
 ## 進行中タスク (最新)
 
+- **URI 正規化の副作用でシンタックスハイライト (semantic tokens) が効かなくなった** → 修正完了 (ビルド成功 0 errors、テスト 1136/1136 合格、コミット済み)
+  - ユーザ報告: ノードクリックでエラー反映は直ったが、シンタックスハイライトが効かなくなった
+  - 原因: 前回の `NormalizeUri` 導入で didOpen 等は `C:` 形式に統一したが、`HandleSemanticTokens` / `HandleDocumentSymbol` / `HandleCompletion` は **uri を正規化せず** `project.FindFile(uri)` していた。VS Code は semantic tokens 要求も didOpen と同じ `c%3A` エスケープ形式で送るため、登録済み `C:` エントリと一致せずトークンが空になっていた
+  - 修正 (`SystemVerilogLanguageServer/Server/LspHandler.cs`): `HandleSemanticTokens` / `HandleDocumentSymbol` / `HandleCompletion` の uri 読み取りに `NormalizeUri` を適用 (`HandleHover` / `HandleDefinition` / `HandleReferences` は `TryGetFileAndIndex` 経由で既に正規化済み)
+  - 検証: プローブで escaped URI / scan URI の両方で semantic tokens が 35 要素 (7トークン) 返ることを確認。回帰テスト `SemanticTokens_ReturnedForEscapedUri` 追加。`dotnet test` **1136 合格 / 0 失敗**
+  - コミット: SystemVerilogLanguageServer `8fa88d6`、メイン `ae08324` (submodule pointer + tests)
+  - **publish 未更新**: コミット時点で VS Code の LSP サーバ (PID 21232) が DLL をロックし `dotnet publish` 失敗 (MSB3027/MSB3021)。**VS Code を閉じてから** `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o SystemVerilogLanguageServer/publish` を再実行する必要あり
+  - Next: publish 更新 → Reload Window 後、(1) シンタックスハイライト (semantic tokens) が復活すること (2) ノードクリックでのエラー反映が引き続き動作すること を確認
+
 - **RTL Hierarchy のノードをクリックしても editparse / parse hierarchy が走らない (開いても編集するまで更新されない)** → 修正完了 (ビルド成功 0 errors、テスト 1133/1133 合格、publish 更新・stdio 実測済み、コミット済み)
   - ユーザ報告: rtl hierarchy のノードをクリックしたときに editparse, parse hierarchy が走らない。編集して初めて更新される
   - **根本原因1 (最重要・URI 二重登録)**: VS Code は didOpen で URI を `file:///c%3A/...` (ドライブレター小文字・コロン %3A エスケープ) で送るが、ワークスペーススキャン (`PathToUri`) は `file:///C:/...` (大文字・非エスケープ) を登録する。正規化が無いため **同じ物理ファイルが 2 エントリ** になり、didOpen で開いた方は `c%3A` 版、RTL Hierarchy の展開は `C:` 版を参照。開いたファイルの parse がツリーに反映されず、編集が偶然スキャン版に触れたときだけ更新されていた (プローブ `DebugClickFlowProbe` で files=4 / top.sv 2件を実測)
