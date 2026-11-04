@@ -3,6 +3,24 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy のノードをクリックしても editparse / parse hierarchy が走らない (開いても編集するまで更新されない)** → 修正完了 (ビルド成功 0 errors、テスト 1133/1133 合格、publish 更新・stdio 実測済み、コミット済み)
+  - ユーザ報告: rtl hierarchy のノードをクリックしたときに editparse, parse hierarchy が走らない。編集して初めて更新される
+  - **根本原因1 (最重要・URI 二重登録)**: VS Code は didOpen で URI を `file:///c%3A/...` (ドライブレター小文字・コロン %3A エスケープ) で送るが、ワークスペーススキャン (`PathToUri`) は `file:///C:/...` (大文字・非エスケープ) を登録する。正規化が無いため **同じ物理ファイルが 2 エントリ** になり、didOpen で開いた方は `c%3A` 版、RTL Hierarchy の展開は `C:` 版を参照。開いたファイルの parse がツリーに反映されず、編集が偶然スキャン版に触れたときだけ更新されていた (プローブ `DebugClickFlowProbe` で files=4 / top.sv 2件を実測)
+  - **根本原因2 (interface 内 module instance)**: `interface bus_if; leaf u_leaf(); endinterface` の `leaf` が `illegal interface item` になり interface 内の instance が階層に出ない。`InterfaceOrGenerateItem.ParseAsync` が `ModuleCommonItem` しか呼ばず、module/gate/udp instantiation の fallback が無かった。さらに `InterfaceInstance.Create` が `weakInstantiating` を設定せず `GetParentInstanciatiation()` が null → interface instance が expand 不可
+  - **根本原因3 (クリックで再 parse しない)**: ノードクリックは `openAt`→`openTextDocument`→didOpen のみ。既に開いているファイルは `openedDocs` 登録済みで didOpen が送られず parse されない
+  - 修正1 (`SystemVerilogLanguageServer/Server/LspHandler.cs`): `NormalizeUri(uri)` を新設。Windows ドライブレター形式 (`file:///c%3A/...`) や %エスケープを含む場合のみ `UriToAbsolutePath`→`PathToUri` で `C:` 形式に正規化 (`file:///test.sv` 等の合成 ID は不変)。didOpen / didChange / didSave / didClose / rtl/hierarchy の uri / TryGetFileAndIndex すべてに適用
+  - 修正2 (同 LspHandler): 独自リクエスト `rtl/reparse` を新設 (`HandleReparse`)。`{ "uri": ... }` を受け、既知なら現在テキストを `Rebuild()`、未知ならディスクからロード、診断 push。`{ "parsed": true }` を返す
+  - 修正3 (`CodeEditor2VerilogPlugin/.../Verilog/Items/InterfaceOrGenerateItem.cs`): gate / udp / module instantiation の fallback を `ModuleOrGenerateItem` と同様に追加 (interface 内の module instance を登録)
+  - 修正4 (`CodeEditor2VerilogPlugin/.../Data/InterfaceInstance.cs`): `Create` で `weakInstantiating` を設定 (`VerilogModuleInstance` と同じ) → `GetParentInstanciatiation()` が返り、expand 判定とジャンプ位置が正しくなる
+  - 修正5 (`vscode-extension/hierarchy.js`): `HierarchyProvider.reparseAndRefresh(uri)` を新設 (`rtl/reparse` 送信 → `refreshTree`)。`openHierarchyNode` / `revealInEditor` で `openAt` 後にこれを呼ぶ → ノードクリックで再 parse + ツリー再描画
+  - 検証:
+    - `dotnet test` **1133 合格 / 0 失敗** (新規回帰: `DidOpenAndScan_ShareOneFileEntry` / `InterfaceInstance_ShowsInstancesInsideTheInterface`)
+    - `RtlEditor2.Desktop.csproj` ビルド 0 errors / publish 更新 + `--selftest` 正常
+    - **publish 済みバイナリを stdio 起動し VS Code と同一 URI で実測**: didOpen(`c%3A`) 後にスキャン URI(`C:`) で展開 → `u_mid` 表示 (重複なし)。編集(`u_mid`→`u_only`) + `rtl/reparse` → `{"parsed":true}` → 展開で `u_only` に更新
+  - コミット: CodeEditor2VerilogPlugin `18b32ab` / SystemVerilogLanguageServer `43bbcff`、メイン `1f5bc5e` (submodule pointer + tests + hierarchy.js)
+  - Next: VS Code を Reload Window 後、(1) ファイルを開いた直後の RTL Hierarchy 展開で子が出ること (2) ノードクリックで再 parse・ツリー更新されること (3) interface 内の module instance が展開表示されること を確認
+  - メモ: 検証用プローブ (`Debug*.cs`) はコミットから除外し作業ツリーに残置。`CodeEditor2` サブモジュールのユーザ WIP (`ChatControl.axaml.cs` / `DataAccess.cs`) は除外
+
 - **大規模ワークスペースで RTL Hierarchy を開いた直後に展開すると下層が空になる (バックグラウンド parse との競合)** → 修正完了 (ビルド成功 0 errors、テスト 1125/1125 合格、publish 更新・stdio 実測済み、コミット済み)
   - ユーザ報告: (1) まだ expand しても下層アイテムが表示されない場合がある (2) ファイルを open したときに editparse が走らず、編集して初めて parse が走る (3) RTL hierarchy をクリックしても parse hierarchy が走っていないように思える
   - 再現 (プローブ `DebugBigWorkspaceProbe.cs`): 250 ファイル超 (MaxEagerParseFiles=200 超) のワークスペースで initialize 直後に `top.sv` を展開 → **L0 (top 直下) が 0 件**、L1 で初めて `u_leaf` が返りインデックスが1段ずれる。小規模 (≤200) や、一度目を通した後は正常
