@@ -57,12 +57,10 @@ class HierarchyProvider {
         // deleted since initialize). Plain expands skip the rescan so the tree
         // does not enumerate the whole workspace on every render.
         this.pendingRescan = false;
-        // set once the first top-level fetch has returned a non-empty tree, so
-        // a folder-less window does not re-scan the disk on every redraw
-        this.initialRescanDone = false;
-        // guards the one-shot retry scheduled when the first render came back
-        // empty because the server had no workspace root yet
-        this.retryScheduled = false;
+        // The server pushes rtl/hierarchyInvalidated when the workspace root
+        // becomes known (or files change), so the client no longer needs the
+        // "retry after N seconds" / "latch once non-empty" timers that used to
+        // live here: the redraw is driven by the server.
     }
 
     /**
@@ -103,21 +101,24 @@ class HierarchyProvider {
     }
 
     /**
-     * Re-fetches the tree only while it has never been populated. Used when a
-     * SystemVerilog document is opened: the server may have had no workspace
-     * root when the view first rendered, so the first fetch came back empty.
-     * Once the tree has content this is a no-op (a full rescan on every
-     * document open would be wasteful on a large workspace).
+     * Redraws the tree once the LSP session is ready.
+     *
+     * <p>
+     * The view is created as soon as the extension activates, which can be
+     * before the client has started: the first fetch then comes back empty.
+     * The server also pushes <c>rtl/hierarchyInvalidated</c> when it infers a
+     * workspace root, so this is only the "session just became ready" nudge.
+     * </p>
+     *
+     * <p>
+     * Deferred with setTimeout(0): this is called from inside the LSP
+     * initialize promise chain, and getChildren awaits ensureClient() (the same
+     * promise). Firing the tree change synchronously would make the re-fetch
+     * wait on a promise that only resolves after the current callback returns.
+     * </p>
      */
     refreshIfEmpty() {
-        if (this.initialRescanDone) return;
-        // Defer: this is called from inside the LSP initialize promise chain,
-        // and getChildren awaits ensureClient() (the same promise). Firing the
-        // tree change synchronously would make the re-fetch wait on a promise
-        // that only resolves after the current callback returns.
-        setTimeout(() => {
-            if (!this.initialRescanDone) this.refresh();
-        }, 0);
+        setTimeout(() => this.refresh(), 0);
     }
 
     getTreeItem(element) {
@@ -210,34 +211,16 @@ class HierarchyProvider {
                 // workspace root at initialize, so the server cannot scan the
                 // project. Ask for a rescan on the first render: the server then
                 // infers the root from the opened document instead of showing
-                // only that one file.
+                // only that one file. Once the root is known the server pushes
+                // rtl/hierarchyInvalidated, so no client-side retry timer is
+                // needed here.
                 const noFolderOpen = !(vscode.workspace.workspaceFolders || []).length;
-                if (this.pendingRescan || (noFolderOpen && !this.initialRescanDone)) {
+                if (this.pendingRescan || noFolderOpen) {
                     params.rescan = true;
                     this.pendingRescan = false;
                 }
                 const result = await client.request('rtl/hierarchy', params);
                 const items = this._toItems(result, [], '');
-                // Only latch the "initial rescan done" flag once the server
-                // actually returned something. The view is created (and
-                // getChildren runs) as soon as the extension activates, which
-                // can be before any SystemVerilog document has been opened: the
-                // server then has no workspace root yet and answers with an
-                // empty list. Latching on that empty answer left the tree blank
-                // forever, because nothing re-triggered a rescan afterwards.
-                if (items.length > 0) {
-                    this.initialRescanDone = true;
-                } else if (noFolderOpen && !this.retryScheduled) {
-                    // The server had no workspace root yet (no folder open and
-                    // no SystemVerilog document opened so far). Retry once the
-                    // client has had a chance to open a document, so the tree
-                    // fills in without the user pressing refresh.
-                    this.retryScheduled = true;
-                    setTimeout(() => {
-                        this.retryScheduled = false;
-                        this.refresh();
-                    }, 2000);
-                }
                 this.log('hierarchy top level: ' + items.length + ' node(s)'
                     + (params.rescan ? ' (rescan)' : ''));
                 if (items.length === 0) {

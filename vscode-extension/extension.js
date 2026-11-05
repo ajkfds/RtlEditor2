@@ -346,8 +346,8 @@ function ensureClient() {
         }
         // The RTL Hierarchy view may have rendered before the session existed
         // (getChildren awaits ensureClient, but the very first render can race
-        // the workspace scan). Re-fetch now that the server is ready; this is a
-        // no-op once the tree has content.
+        // the workspace scan). Redraw now that the server is ready; the server
+        // also pushes rtl/hierarchyInvalidated once it infers a workspace root.
         if (hierarchyProviderRef) hierarchyProviderRef.refreshIfEmpty();
         const openDisposable = vscode.workspace.onDidOpenTextDocument((doc) => { logLine('didOpen: ' + doc.uri.toString()); maybeOpenDocument(doc); });
         const changeDisposable = vscode.workspace.onDidChangeTextDocument((e) => {
@@ -1062,9 +1062,9 @@ function activate(context) {
             // SystemVerilog document when the window has no folder open. The
             // hierarchy view is rendered as soon as the extension activates,
             // which can be before that didOpen has been processed, so the first
-            // fetch may come back empty. Re-fetch once the document is open so
-            // the tree fills in without the user pressing refresh (no-op once
-            // the tree has content).
+            // fetch may come back empty. Redraw once the document is open; the
+            // server also pushes rtl/hierarchyInvalidated when it infers the
+            // root, so the tree fills in without the user pressing refresh.
             hierarchyProvider.refreshIfEmpty();
         }
     }));

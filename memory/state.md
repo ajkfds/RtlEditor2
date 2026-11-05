@@ -50,6 +50,16 @@
     - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **123 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
     - 効果: TS 側の `initialRescanDone` / `retryScheduled` / `refreshIfEmpty` のタイマー工作が不要になる（memory/vscode_extension_architecture.md の Phase 3 に相当）
     - Next: VS Code で Reload Window 後、(1) ファイル保存でツリーが自動更新されること (2) 外部でファイルを増減するとツリーが自動更新されること (3) フォルダ未オープンでファイルを開いたときツリーが自動で埋まること の確認
+  - **第4弾: TS 側の再走査タイマー工作を push 通知ベースに整理（Phase 3 の仕上げ）** → 実装完了 (ビルド成功 0 errors、テスト 123 合格)
+    - 背景: 第3弾でサーバが `rtl/hierarchyInvalidated` を push するようになったため、TS 側の「2秒後リトライ」「非空でラッチ」といったタイマー工作が不要になった
+    - TS 変更 (`vscode-extension/hierarchy.js`):
+      - `initialRescanDone` / `retryScheduled` フィールドを削除（コンストラクタのコメントを「サーバ push 駆動」に更新）
+      - `refreshIfEmpty()` を `setTimeout(() => this.refresh(), 0)` のみに簡素化（「未 populated のときだけ」の判定を削除。サーバ push が来るので無駄な再取得は起きない）
+      - `getChildren` トップレベル: `noFolderOpen && !initialRescanDone` → `noFolderOpen` に簡素化。空応答時の 2 秒後リトライ（`retryScheduled`）を削除
+    - TS 変更 (`vscode-extension/extension.js`): `refreshIfEmpty` 呼び出し箇所のコメントを「サーバ push もある」旨に更新（挙動は不変）
+    - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **123 合格 / 0 失敗**
+    - 効果: TS 側の状態機械が `pendingRescan` 1 個だけになり、`hierarchy.js` の見通しが向上（memory/vscode_extension_architecture.md の Phase 3 完了）
+    - Next: VS Code で Reload Window 後の動作確認（保存 / 外部ファイル増減 / フォルダ未オープンでの自動反映）
 
 - **VS Code 拡張の実装を C# 側へ寄せる（TypeScript は配管に徹する）** → 方針検討完了・未実装
   - ユーザ要求: 実装の実態を可能な限り TypeScript 側に乗せず C# 側で実装したい。TypeScript は情報のパイプに徹し、C# 側のコードの見通しを良くしたい。まずアーキテクチャ検討のみ（修正はしない）
