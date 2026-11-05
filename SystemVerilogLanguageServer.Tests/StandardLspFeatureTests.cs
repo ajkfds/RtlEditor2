@@ -284,6 +284,40 @@ public class StandardLspFeatureTests : IDisposable
     }
 
     [Fact]
+    public void FolderNode_ExpandToken_ExpandsToItsContents()
+    {
+        // Regression: the folder node must carry an expand token that actually
+        // resolves back to the same directory. The client only echoes the token,
+        // so a broken token shows a folder that cannot be expanded.
+        Directory.CreateDirectory(Path.Combine(_root, "src", "rtl"));
+        File.WriteAllText(Path.Combine(_root, "src", "rtl", "leaf.sv"), "module leaf; endmodule\n");
+        LspHandler handler = CreateInitializedHandler();
+
+        JsonElement top = Request(handler, "rtl/hierarchy", new { }).GetProperty("nodes");
+        JsonElement folderNode = default;
+        foreach (JsonElement n in top.EnumerateArray())
+        {
+            if (n.GetProperty("label").GetString() == "src") { folderNode = n; break; }
+        }
+        Assert.NotEqual(JsonValueKind.Undefined, folderNode.ValueKind);
+        Assert.Equal("rtlFolder", folderNode.GetProperty("contextValue").GetString());
+        Assert.Equal("collapsed", folderNode.GetProperty("collapsible").GetString());
+        Assert.True(folderNode.GetProperty("hasChildren").GetBoolean());
+
+        string token = folderNode.GetProperty("expandToken").GetString() ?? "";
+        Assert.False(string.IsNullOrEmpty(token), "folder node must carry an expand token");
+
+        JsonElement children = Request(handler, "rtl/hierarchy", new { expandToken = token }).GetProperty("nodes");
+        Assert.True(children.GetArrayLength() > 0, "expanding the folder must list its contents");
+        bool foundRtl = false;
+        foreach (JsonElement c in children.EnumerateArray())
+        {
+            if (c.GetProperty("label").GetString() == "rtl") { foundRtl = true; break; }
+        }
+        Assert.True(foundRtl, "expected the nested 'rtl' folder");
+    }
+
+    [Fact]
     public void ExpandToken_SurvivesSiblingChanges()
     {
         // The old protocol addressed children by index, so inserting a sibling

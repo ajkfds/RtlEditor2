@@ -101,6 +101,13 @@
     - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **126 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
     - 効果: TS 側から `nodePath` の組み立てが完全に消え、`getChildren` は「トークンを返送するだけ」になった。兄弟の増減でトークンが壊れない（堅牢性向上）
     - Next: VS Code で Reload Window 後の動作確認（ツリー展開・クリック・保存/外部変更での自動更新）。Phase 1〜3 完了、残りは Phase 4（legend/theme の単一情報源化）と Phase 5（C# 再編）
+  - **RTL Hierarchy のフォルダが展開できない** → 修正完了 (publish 更新、テスト追加)
+    - ユーザ報告: rtl hierarchy に folder が見えるが expand できない
+    - 根本原因: **publish 済みサーババイナリが古かった**。`vscode-extension/server/SystemVerilogLanguageServer.dll` が Phase 1/2 変更前のビルドで、フォルダノードに `expandToken` を返していなかった。TS 側は `element.expandToken` が無いので `getChildren` が即 `[]` を返し展開できなかった（サーバ側ロジック自体は正常）
+    - 対応: `vscode-extension/server/` と `SystemVerilogLanguageServer/publish/` の両方へ `dotnet publish -c Release -p:DebugType=None -p:DebugSymbols=false` で更新。`--selftest` で新 capability（`semanticTokensProvider.range: true` 等）を確認
+    - 回帰テスト追加 (`StandardLspFeatureTests.cs`, 1 件): `FolderNode_ExpandToken_ExpandsToItsContents`（フォルダノードが `expandToken` を持ち、返送すると中身が返ることを検証）
+    - 教訓: **プロトコル変更後は publish 更新を忘れない**。拡張は同梱サーバ（`vscode-extension/server/`）を優先使用するため、ビルド成功＝拡張が動くではない
+    - ユーザ確認: 修正後フォルダ展開できることを確認済み
 
 - **VS Code 拡張の実装を C# 側へ寄せる（TypeScript は配管に徹する）** → 方針検討完了・未実装
   - ユーザ要求: 実装の実態を可能な限り TypeScript 側に乗せず C# 側で実装したい。TypeScript は情報のパイプに徹し、C# 側のコードの見通しを良くしたい。まずアーキテクチャ検討のみ（修正はしない）
