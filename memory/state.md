@@ -19,8 +19,24 @@
     - `activate` で provider 登録 14 件（formatting / rangeFormatting / rename / codeAction / codeLens / signatureHelp / inlayHint / declaration / typeDefinition / implementation / documentHighlight / foldingRange / selectionRange / documentLink / workspaceSymbol）
     - `FileSystemWatcher` の create/change/delete/rename で `workspace/didChangeWatchedFiles` を送信（サーバ側は no-op）
   - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **112 合格 / 0 失敗**
-  - Next: 各機能の C# 内部実装（優先候補: foldingRange ← `CodeDocument.Foldings` / signatureHelp ← `ListOfArguments` hint / formatting ← `AutoFormatSnippet` / rename ← `UsedReferences`+`AssignedReferences` / codeAction ← `DiagnosticCodeMap` / didChangeWatchedFiles ← `RescanWorkspaceFiles`）
   - メモ: `node --check` はコマンド許可リスト外のため TS 構文チェックは未実施（目視確認のみ）。VS Code で Reload Window 後に provider 登録ログを確認すること
+  - **第2弾: C# 内部実装（実データを返す機能）** → 実装完了 (ビルド成功 0 errors、テスト 121 合格、sv-tests 1028 合格)
+    - 実装済み（実データ）:
+      - `foldingRange`: `InMemoryFile.GetFoldingRanges()` 新設。`_parsedDocument.CodeDocument.Foldings.Foldings`（`NewFolding`）を (startLine, endLine, name) に変換。単一行領域は除外
+      - `signatureHelp`: `CoreBridge/SignatureHelpAdapter.cs` 新設（UI フリー）。`CompletionContext.CarletPopupItems`（引数 hint）を `PopupItem.CreateString()` で文字列化。`InMemoryFile.GetSignatures(index)` 経由
+      - `formatting` / `rangeFormatting`: `CoreBridge/FormattingAdapter.cs` 新設（UI フリー）。`ModuleInstantiation.CreateString(indent)` で module instance を整形（エディタの autoFormat と同一スコープ）。`InMemoryFile.GetFormattingEdits()` 経由。rangeFormatting は範囲内の編集のみ抽出
+      - `rename` / `prepareRename`: `project.FindReferences` の結果を `WorkspaceEdit`（全出現箇所）に変換。prepareRename は `FindDefinition` から range + placeholder を返す
+      - `documentHighlight`: `FindReferences` を同一ファイルに絞り、宣言=Write(3) / 参照=Text(1) で返す
+      - `declaration` / `typeDefinition` / `implementation`: `HandleDefinition` に委譲（SystemVerilog に declaration/definition の区別がないため）
+      - `workspace/symbol`: `InMemoryFile.GetDeclarationElements()` 新設（`_byName` から参照を除外）。query 部分一致（大文字小文字無視）
+      - `documentLink`: `` `include "..." `` 行をスキャンし、include 先を解決（同一ディレクトリ → workspace root 順）してリンク化
+      - `selectionRange`: word → line → document の3段チェーン（`doc.TryGetWord` 使用）
+      - `semanticTokens/range`: full と同じトークンを指定行範囲でフィルタし、相対エンコードを再構築
+      - `didChangeWatchedFiles`: `RescanWorkspaceFiles(project)` を呼ぶ（ファイル増減をサーバへ反映）
+    - 未実装のまま（空実装を維持）: `codeAction`（診断に機械可読な修正候補がない）/ `codeLens` / `inlayHint` / `onTypeFormatting` / `completionItem/resolve` / `workspace/executeCommand` / `didChangeConfiguration` / `willSave`
+    - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/StandardLspFeatureTests.cs`, 9 件): foldingRange / documentHighlight / rename / prepareRename / workspaceSymbol / documentLink / selectionRange / semanticTokensRange / 未実装機能の空配列応答
+    - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **121 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+    - Next: 残りの空実装（codeAction / codeLens / inlayHint / onTypeFormatting / completionItem/resolve / executeCommand）の実装判断。VS Code で Reload Window 後の動作確認（折りたたみ・リネーム・ワークスペースシンボル・include リンク・引数ヒント・整形）
 
 - **VS Code 拡張の実装を C# 側へ寄せる（TypeScript は配管に徹する）** → 方針検討完了・未実装
   - ユーザ要求: 実装の実態を可能な限り TypeScript 側に乗せず C# 側で実装したい。TypeScript は情報のパイプに徹し、C# 側のコードの見通しを良くしたい。まずアーキテクチャ検討のみ（修正はしない）
