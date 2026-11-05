@@ -541,6 +541,215 @@ function toSymbol(sym) {
     return vs;
 }
 
+// ---- standard LSP features wired but not implemented yet ----
+// Each provider forwards to the server and maps the (currently empty) result
+// into the vscode type. The C# side returns empty collections until the real
+// implementation lands, so these are pure plumbing: no logic lives here.
+
+function provideFormatting(doc) {
+    return client.request('textDocument/formatting', {
+        textDocument: { uri: doc.uri.toString() },
+        options: { tabSize: 4, insertSpaces: true },
+    }).then((result) => toTextEdits(result));
+}
+
+function provideRangeFormatting(doc, range) {
+    return client.request('textDocument/rangeFormatting', {
+        textDocument: { uri: doc.uri.toString() },
+        range: toLspRange(range),
+        options: { tabSize: 4, insertSpaces: true },
+    }).then((result) => toTextEdits(result));
+}
+
+function provideRename(doc, pos, newName) {
+    return client.request('textDocument/rename', positionParams(doc, pos, { newName }))
+        .then((result) => toWorkspaceEdit(result));
+}
+
+function providePrepareRename(doc, pos) {
+    return client.request('textDocument/prepareRename', positionParams(doc, pos))
+        .then((result) => {
+            if (!result || !result.range) return null;
+            return { range: toRange(result.range), placeholder: result.placeholder };
+        });
+}
+
+function provideCodeActions(doc, range, context) {
+    return client.request('textDocument/codeAction', {
+        textDocument: { uri: doc.uri.toString() },
+        range: toLspRange(range),
+        context: {
+            diagnostics: (context.diagnostics || []).map((d) => ({
+                range: toLspRange(d.range),
+                message: d.message,
+                severity: d.severity,
+                code: d.code,
+            })),
+        },
+    }).then((result) => (result || []).map(toCodeAction).filter((a) => a));
+}
+
+function provideCodeLenses(doc) {
+    return client.request('textDocument/codeLens', {
+        textDocument: { uri: doc.uri.toString() },
+    }).then((result) => (result || []).map(toCodeLens).filter((l) => l));
+}
+
+function provideSignatureHelp(doc, pos) {
+    return client.request('textDocument/signatureHelp', positionParams(doc, pos))
+        .then((result) => toSignatureHelp(result));
+}
+
+function provideInlayHints(doc, range) {
+    return client.request('textDocument/inlayHint', {
+        textDocument: { uri: doc.uri.toString() },
+        range: toLspRange(range),
+    }).then((result) => (result || []).map(toInlayHint).filter((h) => h));
+}
+
+function provideDeclaration(doc, pos) {
+    return client.request('textDocument/declaration', positionParams(doc, pos))
+        .then((result) => toLocations(result));
+}
+
+function provideTypeDefinition(doc, pos) {
+    return client.request('textDocument/typeDefinition', positionParams(doc, pos))
+        .then((result) => toLocations(result));
+}
+
+function provideImplementation(doc, pos) {
+    return client.request('textDocument/implementation', positionParams(doc, pos))
+        .then((result) => toLocations(result));
+}
+
+function provideDocumentHighlights(doc, pos) {
+    return client.request('textDocument/documentHighlight', positionParams(doc, pos))
+        .then((result) => (result || []).map((h) => {
+            if (!h || !h.range) return null;
+            return new vscode.DocumentHighlight(toRange(h.range), h.kind);
+        }).filter((h) => h));
+}
+
+function provideFoldingRanges(doc) {
+    return client.request('textDocument/foldingRange', {
+        textDocument: { uri: doc.uri.toString() },
+    }).then((result) => (result || []).map((r) => {
+        if (!r) return null;
+        return new vscode.FoldingRange(r.startLine, r.endLine, r.kind);
+    }).filter((r) => r));
+}
+
+function provideSelectionRanges(doc, positions) {
+    return client.request('textDocument/selectionRange', {
+        textDocument: { uri: doc.uri.toString() },
+        positions: positions.map((p) => ({ line: p.line, character: p.character })),
+    }).then((result) => (result || []).map(toSelectionRange).filter((r) => r));
+}
+
+function provideDocumentLinks(doc) {
+    return client.request('textDocument/documentLink', {
+        textDocument: { uri: doc.uri.toString() },
+    }).then((result) => (result || []).map((l) => {
+        if (!l || !l.range) return null;
+        return new vscode.DocumentLink(toRange(l.range), l.target ? vscode.Uri.parse(l.target) : undefined);
+    }).filter((l) => l));
+}
+
+function provideWorkspaceSymbols(query) {
+    return client.request('workspace/symbol', { query: query || '' })
+        .then((result) => (result || []).map((s) => {
+            if (!s || !s.location) return null;
+            return new vscode.SymbolInformation(
+                s.name, s.kind,
+                s.location.range ? toRange(s.location.range) : undefined,
+                vscode.Uri.parse(s.location.uri));
+        }).filter((s) => s));
+}
+
+// ---- LSP <-> vscode conversion helpers (pure mapping, no logic) ----
+
+function toRange(r) {
+    return new vscode.Range(r.start.line, r.start.character, r.end.line, r.end.character);
+}
+
+function toLspRange(r) {
+    return {
+        start: { line: r.start.line, character: r.start.character },
+        end: { line: r.end.line, character: r.end.character },
+    };
+}
+
+function toTextEdits(result) {
+    return (result || []).map((e) => {
+        if (!e || !e.range) return null;
+        return new vscode.TextEdit(toRange(e.range), e.newText);
+    }).filter((e) => e);
+}
+
+function toWorkspaceEdit(result) {
+    if (!result || !result.changes) return null;
+    const edit = new vscode.WorkspaceEdit();
+    for (const uri of Object.keys(result.changes)) {
+        for (const e of result.changes[uri] || []) {
+            if (e && e.range) edit.replace(vscode.Uri.parse(uri), toRange(e.range), e.newText);
+        }
+    }
+    return edit;
+}
+
+function toCodeAction(a) {
+    if (!a) return null;
+    const action = new vscode.CodeAction(a.title, a.kind);
+    if (a.edit) action.edit = toWorkspaceEdit(a.edit);
+    return action;
+}
+
+function toCodeLens(l) {
+    if (!l || !l.range) return null;
+    const lens = new vscode.CodeLens(toRange(l.range));
+    if (l.command) {
+        lens.command = {
+            title: l.command.title,
+            command: l.command.command,
+            arguments: l.command.arguments,
+        };
+    }
+    return lens;
+}
+
+function toSignatureHelp(result) {
+    if (!result || !result.signatures || result.signatures.length === 0) return null;
+    const help = new vscode.SignatureHelp();
+    help.signatures = result.signatures.map((s) => {
+        const info = new vscode.SignatureInformation(s.label);
+        if (s.documentation) {
+            info.documentation = new vscode.MarkdownString(s.documentation.value);
+        }
+        if (s.parameters) {
+            info.parameters = s.parameters.map((p) => new vscode.ParameterInformation(p.label));
+        }
+        return info;
+    });
+    help.activeSignature = result.activeSignature || 0;
+    help.activeParameter = result.activeParameter || 0;
+    return help;
+}
+
+function toInlayHint(h) {
+    if (!h || !h.position) return null;
+    const hint = new vscode.InlayHint(
+        new vscode.Position(h.position.line, h.position.character), h.label);
+    if (h.kind !== undefined && h.kind !== null) hint.kind = h.kind;
+    return hint;
+}
+
+function toSelectionRange(r) {
+    if (!r || !r.range) return null;
+    const range = toRange(r.range);
+    const parent = r.parent ? toSelectionRange(r.parent) : undefined;
+    return new vscode.SelectionRange(range, parent);
+}
+
 function activate(context) {
     context_ = context;
     initLog(context);
@@ -613,14 +822,35 @@ function activate(context) {
         '**/*.{sv,svh,v,vh}'
     );
     context.subscriptions.push(sourceWatcher);
+    // Forward disk changes to the server as workspace/didChangeWatchedFiles so
+    // it can keep its file table in sync (the handler is a no-op for now; the
+    // hierarchy view still picks changes up through its explicit rescan).
+    const sendWatchedFiles = (uris, type) => {
+        if (!client) return;
+        client.send('workspace/didChangeWatchedFiles', {
+            changes: (uris || []).map((u) => ({
+                uri: (u && u.toString) ? u.toString() : String(u),
+                type,
+            })),
+        });
+    };
     context.subscriptions.push(
-        sourceWatcher.onDidCreate(() => hierarchyProvider.refresh())
+        sourceWatcher.onDidCreate((uri) => { sendWatchedFiles([uri], 1); hierarchyProvider.refresh(); })
     );
     context.subscriptions.push(
-        sourceWatcher.onDidDelete(() => hierarchyProvider.refresh())
+        sourceWatcher.onDidChange((uri) => { sendWatchedFiles([uri], 2); })
     );
     context.subscriptions.push(
-        vscode.workspace.onDidRenameFiles(() => hierarchyProvider.refresh())
+        sourceWatcher.onDidDelete((uri) => { sendWatchedFiles([uri], 3); hierarchyProvider.refresh(); })
+    );
+    context.subscriptions.push(
+        vscode.workspace.onDidRenameFiles((e) => {
+            const deleted = (e.files || []).map((f) => f.oldUri);
+            const created = (e.files || []).map((f) => f.newUri);
+            sendWatchedFiles(deleted, 3);
+            sendWatchedFiles(created, 1);
+            hierarchyProvider.refresh();
+        })
     );
 
     // configurationDefaults does not reliably apply to already-open
@@ -693,6 +923,94 @@ function activate(context) {
             '.', '`', '$'
         )
     );
+    // ---- standard LSP features wired but not implemented yet ----
+    // The server advertises these capabilities and returns empty results until
+    // the C# implementation lands, so registering the providers now makes the
+    // round-trip work end to end without any logic on this side.
+    const svDocSelector = [
+        { scheme: 'file', language: 'systemverilog' },
+        { scheme: 'file', language: 'verilog' },
+    ];
+    context.subscriptions.push(
+        vscode.languages.registerDocumentFormattingEditProvider(
+            svDocSelector,
+            { provideDocumentFormattingEdits: (doc) => withClient(() => provideFormatting(doc)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerDocumentRangeFormattingEditProvider(
+            svDocSelector,
+            { provideDocumentRangeFormattingEdits: (doc, range) => withClient(() => provideRangeFormatting(doc, range)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerRenameProvider(
+            svDocSelector,
+            {
+                provideRenameEdits: (doc, pos, newName) => withClient(() => provideRename(doc, pos, newName)),
+                prepareRename: (doc, pos) => withClient(() => providePrepareRename(doc, pos)),
+            })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerCodeActionsProvider(
+            svDocSelector,
+            { provideCodeActions: (doc, range, ctx) => withClient(() => provideCodeActions(doc, range, ctx)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerCodeLensProvider(
+            svDocSelector,
+            { provideCodeLenses: (doc) => withClient(() => provideCodeLenses(doc)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerSignatureHelpProvider(
+            svDocSelector,
+            { provideSignatureHelp: (doc, pos) => withClient(() => provideSignatureHelp(doc, pos)) },
+            '(', ',')
+    );
+    context.subscriptions.push(
+        vscode.languages.registerInlayHintsProvider(
+            svDocSelector,
+            { provideInlayHints: (doc, range) => withClient(() => provideInlayHints(doc, range)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerDeclarationProvider(
+            svDocSelector,
+            { provideDeclaration: (doc, pos) => withClient(() => provideDeclaration(doc, pos)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerTypeDefinitionProvider(
+            svDocSelector,
+            { provideTypeDefinition: (doc, pos) => withClient(() => provideTypeDefinition(doc, pos)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerImplementationProvider(
+            svDocSelector,
+            { provideImplementation: (doc, pos) => withClient(() => provideImplementation(doc, pos)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerDocumentHighlightProvider(
+            svDocSelector,
+            { provideDocumentHighlights: (doc, pos) => withClient(() => provideDocumentHighlights(doc, pos)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerFoldingRangeProvider(
+            svDocSelector,
+            { provideFoldingRanges: (doc) => withClient(() => provideFoldingRanges(doc)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerSelectionRangeProvider(
+            svDocSelector,
+            { provideSelectionRanges: (doc, positions) => withClient(() => provideSelectionRanges(doc, positions)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerDocumentLinkProvider(
+            svDocSelector,
+            { provideDocumentLinks: (doc) => withClient(() => provideDocumentLinks(doc)) })
+    );
+    context.subscriptions.push(
+        vscode.languages.registerWorkspaceSymbolProvider(
+            { provideWorkspaceSymbols: (query) => withClient(() => provideWorkspaceSymbols(query)) })
+    );
+    logLine('standard LSP providers registered (formatting / rename / codeAction / codeLens / signatureHelp / inlayHint / declaration / typeDefinition / implementation / documentHighlight / foldingRange / selectionRange / documentLink / workspaceSymbol)');
+
     try {
         const legend = new vscode.SemanticTokensLegend(
             ['keyword', 'comment', 'string', 'number', 'macro',

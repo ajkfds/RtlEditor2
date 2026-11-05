@@ -3,6 +3,39 @@
 
 ## 進行中タスク (最新)
 
+- **未実装の標準 LSP 機能を「配線」まで通す（C# 内部は空実装）** → 実装完了 (ビルド成功 0 errors、テスト 112 合格)
+  - ユーザ要求: まずは C# へのつなぎこみまでやって、C# の内部実装はいったん空実装で OK
+  - 方針: LSP 標準メソッドを追加（標準を破らない）。C# は capability を advertise + ハンドラ登録 + 空結果を返す。TS は provider 登録 + LSP↔vscode の純粋マッピングのみ（ロジックなし）
+  - C# 変更:
+    - `Server/LspHandler.cs` を `public sealed partial class` 化
+    - `RegisterDefaultHandlers` に request 18 件追加: `textDocument/formatting` / `rangeFormatting` / `onTypeFormatting` / `rename` / `prepareRename` / `codeAction` / `codeLens` / `signatureHelp` / `completionItem/resolve` / `inlayHint` / `declaration` / `typeDefinition` / `implementation` / `documentHighlight` / `foldingRange` / `selectionRange` / `documentLink` / `semanticTokens/range` / `workspace/symbol` / `workspace/executeCommand`
+    - notification 3 件追加: `workspace/didChangeWatchedFiles` / `workspace/didChangeConfiguration` / `textDocument/willSave`
+    - `ServerCapabilities` に上記 capability を追加（`CodeLensCapability` / `SignatureHelpCapability` / `DocumentLinkCapability` / `ExecuteCommandCapability` 新設、`SemanticTokensCapability.Range` 追加）
+    - **新規 `Server/LspHandler.Unimplemented.cs`**（partial）: 空実装ハンドラを集約（`LspHandler.cs` の見通し維持）。各ハンドラは空配列 / null を返す
+    - DTO 追加: `TextEdit` / `CodeAction` / `WorkspaceEdit` / `CodeLens` / `Command` / `SignatureHelp` / `SignatureInformation` / `ParameterInformation` / `InlayHint` / `DocumentHighlight` / `FoldingRange` / `SelectionRange` / `DocumentLink` / `WorkspaceSymbol`
+  - TS 変更 (`vscode-extension/extension.js`):
+    - provider 関数 14 件追加（`provideFormatting` / `provideRangeFormatting` / `provideRename` / `providePrepareRename` / `provideCodeActions` / `provideCodeLenses` / `provideSignatureHelp` / `provideInlayHints` / `provideDeclaration` / `provideTypeDefinition` / `provideImplementation` / `provideDocumentHighlights` / `provideFoldingRanges` / `provideSelectionRanges` / `provideDocumentLinks` / `provideWorkspaceSymbols`）
+    - 変換ヘルパー追加（`toRange` / `toLspRange` / `toTextEdits` / `toWorkspaceEdit` / `toCodeAction` / `toCodeLens` / `toSignatureHelp` / `toInlayHint` / `toSelectionRange`）— 純粋マッピングのみ
+    - `activate` で provider 登録 14 件（formatting / rangeFormatting / rename / codeAction / codeLens / signatureHelp / inlayHint / declaration / typeDefinition / implementation / documentHighlight / foldingRange / selectionRange / documentLink / workspaceSymbol）
+    - `FileSystemWatcher` の create/change/delete/rename で `workspace/didChangeWatchedFiles` を送信（サーバ側は no-op）
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **112 合格 / 0 失敗**
+  - Next: 各機能の C# 内部実装（優先候補: foldingRange ← `CodeDocument.Foldings` / signatureHelp ← `ListOfArguments` hint / formatting ← `AutoFormatSnippet` / rename ← `UsedReferences`+`AssignedReferences` / codeAction ← `DiagnosticCodeMap` / didChangeWatchedFiles ← `RescanWorkspaceFiles`）
+  - メモ: `node --check` はコマンド許可リスト外のため TS 構文チェックは未実施（目視確認のみ）。VS Code で Reload Window 後に provider 登録ログを確認すること
+
+- **VS Code 拡張の実装を C# 側へ寄せる（TypeScript は配管に徹する）** → 方針検討完了・未実装
+  - ユーザ要求: 実装の実態を可能な限り TypeScript 側に乗せず C# 側で実装したい。TypeScript は情報のパイプに徹し、C# 側のコードの見通しを良くしたい。まずアーキテクチャ検討のみ（修正はしない）
+  - 方針ドキュメント: **`memory/vscode_extension_architecture.md`** に詳細を記載（境界の原則 / 現状の責務分析 / 移設項目 / C# 構造改善案 / 移行フェーズ / トレードオフ / 未決事項）
+  - 要点:
+    - **最上位の制約: LSP 標準を破らない**。標準メソッド（initialize / hover / definition / references / documentSymbol / completion / semanticTokens / publishDiagnostics 等）は LSP 仕様のまま維持し、params/result を独自拡張で歪めない。標準で足りない機能は `rtl/*` プレフィックスの独自 request / notification として追加し、非標準の判断・計算・知識は C# 側に実装する
+    - 境界の原則: TS は「サーバ値を解釈しない・パス計算しない・再走査を判断しない・色/legend/kind の表を持たない・標準 LSP は仕様どおり中継する」。判断/計算/知識 = C#（非標準分は `rtl/*` 拡張）、VS Code API 型への変換 = TS、ファイル I/O 実行 = TS（`vscode.workspace.fs`、remote/仮想 FS のため）
+    - 独自拡張一覧: `rtl/hierarchy`（既存・記述子を厚くする）/ `rtl/reparse`（既存）/ `rtl/theme`（新設・色パレット）/ `rtl/snippet`（新設・snippet 挿入テキスト生成）/ `rtl/hierarchyInvalidated`（新設・通知）
+    - snippet の位置づけ: 実体は既に C#（`Verilog/Snippets/*`、`AutoCompleteHandler.GetToolItems` で登録）だが VS Code 拡張には未露出。方針 = 「何を挿入するか」は C#（`rtl/snippet` で `{label, snippetText, placeholders}` を返す）、「挿入実行（`insertSnippet` / タブストップ）」と「トリガ登録（contributes.commands/menus/keybindings）」は TS。既存 `InteractiveSnippet` は UI 密結合（`Controller.CodeEditor` / `PopupMenuView` / `KeyEventArgs`）のため、テキスト生成部の抽出リファクタが必要
+    - RTL Hierarchy 右クリックメニューの位置づけ: メニュー定義（`contributes.menus` / `when` / ラベル / グループ）は VS Code 宣言なので TS に残す。出し分け材料（`contextValue`）とパス解決（`fsPath`/`dirPath`）・操作可否判断は C# のノード記述子に寄せる。TS のコマンド実装は記述子の値で `vscode.workspace.fs` / `revealFileInOS` を呼ぶだけに痩せさせる
+    - 移設項目: (1) 階層ノードを完全な記述子にする（icon/contextValue/collapsible/instancePath/fsPath/dirPath をサーバが返す）(2) `nodePath` → 不透明 `expandToken` (3) 再走査状態機械（`pendingRescan`/`initialRescanDone`/`retryScheduled`/`refreshIfEmpty`）をサーバへ + `rtl/hierarchyInvalidated` 通知 (4) legend を initialize から読む / `rtl/theme` 新設で色を単一情報源化 (5) ファイル操作のパス解決を C# へ
+    - C# 構造改善: `SystemVerilogLanguageServer/Hierarchy/` を新設（`HierarchyViewService` / `HierarchyNodeViewModel` / `ExpandToken` / `HierarchyThemeProvider`）。`LspHandler` は薄いディスパッチャに、`InMemorySystemVerilogCore` は Updater 駆動に絞る
+    - 移行フェーズ: Phase1 記述子拡張（低リスク・追加のみ）/ Phase2 expandToken / Phase3 再走査状態機械 / Phase4 legend・theme / Phase5 C# 再編。Phase1・4 を先行推奨
+  - Next: 未決事項（Phase1 の記述子フィールド確定 / `expandToken` を Phase1 で入れるか Phase2 まで待つか）をユーザと決定 → Phase1 着手
+
 - **SimulationSetup の取得時に NavigateNode では階層展開できるのに setup に取得できていない module がある** → 修正完了 (ビルド成功 0 errors、テスト 112 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: SimulationSetup の取得時に NavigateNode では Hier 展開できているのに setup には取得できていない module がある
   - 根本原因1 (**file.Items lookup の前提違い**): `SimulationSetup.searchNameSpace` は子インスタンスを `file.Items[instanceName]` で引いていた。しかし `VerilogCommon.Updater` は **building block が1つ**のファイルでのみ内部インスタンスを `file.Items` 直下に置き (`addSubItemsSingleBuldingBlock`)、**複数 building block** のファイル (module + package / DUT + testbench 等) では building block ごとのインスタンスを `file.Items` に置いて内部インスタンスは**そのインスタンスの Items** に入れる (`addSubItemsMultiBuildingBlock`)。そのため複数 building block ファイルでは lookup が失敗し、その module 以下のサブツリー全体が setup から欠落していた (NavigateNode は building block インスタンスを展開するので見える)
