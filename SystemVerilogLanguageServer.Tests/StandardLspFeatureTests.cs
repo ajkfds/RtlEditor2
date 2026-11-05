@@ -284,6 +284,55 @@ public class StandardLspFeatureTests : IDisposable
     }
 
     [Fact]
+    public void Theme_ReturnsColourRulesForEveryLegendTokenType()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        JsonElement theme = Request(handler, "rtl/theme", new { });
+
+        Assert.Equal(JsonValueKind.Object, theme.ValueKind);
+        JsonElement rules = theme.GetProperty("rules");
+        JsonElement tokenTypes = theme.GetProperty("tokenTypes");
+        Assert.True(tokenTypes.GetArrayLength() > 0);
+
+        // every advertised token type must have a colour, otherwise the client
+        // would write an incomplete palette into the user settings
+        foreach (JsonElement t in tokenTypes.EnumerateArray())
+        {
+            string type = t.GetString() ?? "";
+            Assert.True(rules.TryGetProperty(type, out JsonElement colour),
+                $"missing colour rule for token type '{type}'");
+            string hex = colour.GetString() ?? "";
+            Assert.Matches("^#[0-9A-Fa-f]{6}$", hex);
+        }
+    }
+
+    [Fact]
+    public void Theme_LegendMatchesInitializeCapability()
+    {
+        LspHandler handler = CreateInitializedHandler();
+
+        // the legend advertised in initialize and the one rtl/theme returns must
+        // be the same list (one source of truth on the C# side)
+        string initialize = JsonSerializer.Serialize(new { processId = 1, capabilities = new { } });
+        using JsonDocument doc = JsonDocument.Parse(initialize);
+        handler.TryHandleRequest("initialize", doc.RootElement, default, out object? initResult);
+        JsonElement caps = JsonDocument.Parse(JsonSerializer.Serialize(initResult)).RootElement
+            .GetProperty("capabilities")
+            .GetProperty("semanticTokensProvider")
+            .GetProperty("legend")
+            .GetProperty("tokenTypes");
+
+        JsonElement themeTypes = Request(handler, "rtl/theme", new { }).GetProperty("tokenTypes");
+
+        List<string> fromInit = new();
+        foreach (JsonElement t in caps.EnumerateArray()) fromInit.Add(t.GetString() ?? "");
+        List<string> fromTheme = new();
+        foreach (JsonElement t in themeTypes.EnumerateArray()) fromTheme.Add(t.GetString() ?? "");
+
+        Assert.Equal(fromInit, fromTheme);
+    }
+
+    [Fact]
     public void FolderNode_ExpandToken_ExpandsToItsContents()
     {
         // Regression: the folder node must carry an expand token that actually

@@ -108,6 +108,20 @@
     - 回帰テスト追加 (`StandardLspFeatureTests.cs`, 1 件): `FolderNode_ExpandToken_ExpandsToItsContents`（フォルダノードが `expandToken` を持ち、返送すると中身が返ることを検証）
     - 教訓: **プロトコル変更後は publish 更新を忘れない**。拡張は同梱サーバ（`vscode-extension/server/`）を優先使用するため、ビルド成功＝拡張が動くではない
     - ユーザ確認: 修正後フォルダ展開できることを確認済み
+  - **第7弾: Phase 4 legend / theme の単一情報源化** → 実装完了 (ビルド成功 0 errors、テスト 129 合格、sv-tests 1028 合格、publish 更新)
+    - 背景: TS 側に semantic token legend のハードコードと色テーブル（pluginVerilog CodeDrawStyle の写し）があり、エディタと二重管理でドリフト源になっていた
+    - C# 変更:
+      - **新規 `Server/LspHandler.Theme.cs`**: `rtl/theme` リクエスト実装。`TokenColorMap`（LSP token type → `CodeDrawStyle.ColorType`）と `SemanticTokenTypes`（legend 順）を定義。`pluginVerilog.CodeDrawStyle` から実際の色を取得し `#RRGGBB` に変換して返す
+      - `LspHandler.cs`: `_requestHandlers["rtl/theme"] = HandleTheme` 登録。`initialize` の legend を `SemanticTokenTypes` 共有に変更（legend と色ルールがドリフトしない）
+      - `ThemeResult` DTO 新設（`rules` / `tokenTypes`）
+    - TS 変更 (`vscode-extension/extension.js`):
+      - `tokenTypesByIndex` を `let` に変更し、`initialize` 結果の `semanticTokensProvider.legend.tokenTypes` から採用（ハードコードは initialize 前のフォールバックのみ）
+      - semantic tokens provider 登録の legend も `tokenTypesByIndex.slice()` に
+      - 色テーブルのハードコードを削除し、`rtl/theme` から取得した `rules` を `semanticTokenColorCustomizations` に書き込む方式に変更
+    - 回帰テスト追加 (`StandardLspFeatureTests.cs`, 2 件): `Theme_ReturnsColourRulesForEveryLegendTokenType`（全 legend token type に色があり `#RRGGBB` 形式）/ `Theme_LegendMatchesInitializeCapability`（initialize の legend と rtl/theme の tokenTypes が一致）
+    - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **129 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗** / publish 更新（`vscode-extension/server` + `SystemVerilogLanguageServer/publish`）
+    - 効果: legend と色パレットの単一情報源が C# になり、TS 側の重複知識が消えた。token type 追加は `LspHandler.Theme.cs` の 1 箇所で完結
+    - Next: Phase 5（C# を `Hierarchy/` サービスに再編 + テスト移設）。VS Code で Reload Window 後の色分け確認も必要
 
 - **VS Code 拡張の実装を C# 側へ寄せる（TypeScript は配管に徹する）** → 方針検討完了・未実装
   - ユーザ要求: 実装の実態を可能な限り TypeScript 側に乗せず C# 側で実装したい。TypeScript は情報のパイプに徹し、C# 側のコードの見通しを良くしたい。まずアーキテクチャ検討のみ（修正はしない）

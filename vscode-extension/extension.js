@@ -339,6 +339,19 @@ function ensureClient() {
         spawnFailed,
     ]).then((result) => {
         logLine('initialize succeeded');
+        // Adopt the server's semantic-token legend instead of keeping a copy
+        // here: the token type order is defined once, on the C# side.
+        try {
+            const legend = result && result.capabilities &&
+                result.capabilities.semanticTokensProvider &&
+                result.capabilities.semanticTokensProvider.legend;
+            if (legend && Array.isArray(legend.tokenTypes) && legend.tokenTypes.length > 0) {
+                tokenTypesByIndex = legend.tokenTypes.slice();
+                logLine('semantic token legend from server: ' + tokenTypesByIndex.join(','));
+            }
+        } catch (e) {
+            logLine('could not read the server legend: ' + (e && e.message));
+        }
         client.send('initialized', {});
         // sync already-open documents
         for (const doc of vscode.workspace.textDocuments) {
@@ -496,8 +509,13 @@ function toLocations(items) {
     }).filter((l) => l);
 }
 
-// semantic tokens: build a vscode.SemanticTokens from the server response
-const tokenTypesByIndex = ['keyword', 'comment', 'string', 'number', 'macro',
+// semantic tokens: build a vscode.SemanticTokens from the server response.
+//
+// The legend is NOT hard-coded here: it is read from the server's initialize
+// result (semanticTokensProvider.legend), so the token type order can only be
+// defined in one place (the C# side). This fallback is used only until the
+// initialize result has been seen.
+let tokenTypesByIndex = ['keyword', 'comment', 'string', 'number', 'macro',
     'function', 'type', 'variable', 'property', 'parameter', 'register', 'identifier'];
 
 function provideDocumentSemanticTokens(doc) {
@@ -875,33 +893,28 @@ function activate(context) {
     }
 
     // configurationDefaults does not reliably apply semanticTokenColorCustomizations;
-    // write the pluginVerilog CodeDrawStyle colors into user settings when absent.
+    // write the palette into user settings when absent.
+    //
+    // The palette itself comes from the server (rtl/theme), which derives it
+    // from the plugin's CodeDrawStyle: the editor and the extension then share
+    // one source of truth instead of the extension keeping its own copy.
     const existingColors = editorConfig.inspect('semanticTokenColorCustomizations');
     // overwrite when the previous extension-written default (identifier #D4D4D4) is present
     const prevDefault = existingColors.globalValue &&
         existingColors.globalValue.rules && existingColors.globalValue.rules.identifier === '#D4D4D4';
     if (!existingColors.globalValue && !existingColors.workspaceValue || prevDefault) {
-        // pluginVerilog CodeDrawStyle hues, adjusted for VS Code dark themes
-        // (the original colors are tuned for the CodeEditor2 light background
-        // and read as white on dark backgrounds).
-        const colors = {
-            rules: {
-                keyword: '#569CD6',
-                comment: '#6A9955',
-                type: '#4EC9B0',
-                function: '#DCDCAA',
-                parameter: '#FF5EC2',
-                macro: '#FF5EC2',
-                property: '#E86FB8',
-                variable: '#F48FB1',
-                number: '#CE9178',
-                string: '#CE9178',
-                register: '#FF6B6B',
-                identifier: '#9CDCFE',
+        withClient(async () => {
+            const theme = await client.request('rtl/theme', {});
+            if (!theme || !theme.rules) {
+                logLine('rtl/theme returned no rules; leaving colours untouched');
+                return;
             }
-        };
-        editorConfig.update('semanticTokenColorCustomizations', colors, vscode.ConfigurationTarget.Global)
-            .then(() => logLine('semanticTokenColorCustomizations written (user settings)'));
+            await editorConfig.update(
+                'semanticTokenColorCustomizations',
+                { rules: theme.rules },
+                vscode.ConfigurationTarget.Global);
+            logLine('semanticTokenColorCustomizations written from rtl/theme (user settings)');
+        });
     }
     context.subscriptions.push(
         vscode.languages.registerHoverProvider(
@@ -1023,11 +1036,9 @@ function activate(context) {
     logLine('standard LSP providers registered (formatting / rename / codeAction / codeLens / signatureHelp / inlayHint / declaration / typeDefinition / implementation / documentHighlight / foldingRange / selectionRange / documentLink / workspaceSymbol)');
 
     try {
-        const legend = new vscode.SemanticTokensLegend(
-            ['keyword', 'comment', 'string', 'number', 'macro',
-             'function', 'type', 'variable', 'property', 'parameter', 'register', 'identifier'],
-            []
-        );
+        // The legend is the server's (adopted from initialize); the fallback
+        // above only covers the window before initialize has answered.
+        const legend = new vscode.SemanticTokensLegend(tokenTypesByIndex.slice(), []);
         context.subscriptions.push(
             vscode.languages.registerDocumentSemanticTokensProvider(
                 { scheme: 'file', language: 'systemverilog' },
