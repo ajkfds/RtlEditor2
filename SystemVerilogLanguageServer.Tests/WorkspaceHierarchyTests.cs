@@ -89,13 +89,89 @@ public class WorkspaceHierarchyTests : IDisposable
         Assert.Equal(new[] { "top.sv" }, Labels(result, "file"));
     }
 
+    /// <summary>
+    /// Drives <c>rtl/hierarchy</c>. The tests describe the node they want with
+    /// the old, readable parameters (<c>folderPath</c> / <c>uri</c> +
+    /// <c>nodePath</c>); this helper translates them into the opaque
+    /// <c>expandToken</c> the real client would echo back, so the tests keep
+    /// reading naturally while exercising the real protocol.
+    /// </summary>
     private static JsonElement Query(LspHandler handler, object parameters)
     {
-        using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(parameters));
-        handler.TryHandleRequest("rtl/hierarchy", doc.RootElement, default, out object? result);
+        string json = JsonSerializer.Serialize(parameters);
+        using JsonDocument doc = JsonDocument.Parse(json);
+        JsonElement root = doc.RootElement;
+
+        string? expandToken = null;
+        if (root.TryGetProperty("folderPath", out JsonElement folder)
+            && folder.ValueKind == JsonValueKind.String)
+        {
+            expandToken = ExpandToken.ForFolder(folder.GetString() ?? string.Empty);
+        }
+        else if (root.TryGetProperty("uri", out JsonElement uri)
+            && uri.ValueKind == JsonValueKind.String)
+        {
+            string fileUri = uri.GetString() ?? string.Empty;
+            List<string> segments = new();
+            if (root.TryGetProperty("nodePath", out JsonElement path)
+                && path.ValueKind == JsonValueKind.Array)
+            {
+                // the old protocol addressed children by index; resolve them to
+                // names by walking the tree the same way the client would
+                JsonElement current = Query(handler, new { uri = fileUri });
+                foreach (JsonElement indexElement in path.EnumerateArray())
+                {
+                    int index = indexElement.GetInt32();
+                    JsonElement nodes = current.GetProperty("nodes");
+                    if (index < 0 || index >= nodes.GetArrayLength()) break;
+                    JsonElement node = nodes[index];
+                    segments.Add(node.GetProperty("label").GetString() ?? string.Empty);
+                    if (!node.TryGetProperty("expandToken", out JsonElement token)
+                        || token.ValueKind != JsonValueKind.String)
+                    {
+                        break;
+                    }
+                    current = Query(handler, new { expandToken = token.GetString() });
+                }
+            }
+            expandToken = segments.Count == 0
+                ? ExpandToken.ForFile(fileUri)
+                : ExpandToken.ForInstance(fileUri, segments);
+        }
+
+        bool rescan = root.TryGetProperty("rescan", out JsonElement r) && r.ValueKind == JsonValueKind.True;
+        Dictionary<string, object> request = new();
+        if (expandToken != null) request["expandToken"] = expandToken;
+        if (rescan) request["rescan"] = true;
+
+        using JsonDocument requestDoc = JsonDocument.Parse(JsonSerializer.Serialize(request));
+        handler.TryHandleRequest("rtl/hierarchy", requestDoc.RootElement, default, out object? result);
         // re-serialize so the test does not depend on internal DTO types
-        string json = JsonSerializer.Serialize(result);
-        return JsonDocument.Parse(json).RootElement.Clone();
+        string resultJson = JsonSerializer.Serialize(result);
+        return JsonDocument.Parse(resultJson).RootElement.Clone();
+    }
+
+    /// <summary>Top level of the tree (no expand token = the workspace root).</summary>
+    private static JsonElement QueryTop(LspHandler handler) => Query(handler, new { });
+
+    /// <summary>
+    /// Expands the node with the given label in <paramref name="parent"/> by
+    /// echoing back the opaque expand token the server issued for it. This is
+    /// exactly what the client does, so the tests exercise the real protocol.
+    /// </summary>
+    private static JsonElement QueryChild(LspHandler handler, JsonElement parent, string label)
+    {
+        foreach (JsonElement node in parent.GetProperty("nodes").EnumerateArray())
+        {
+            if (node.GetProperty("label").GetString() != label) continue;
+            if (!node.TryGetProperty("expandToken", out JsonElement token)
+                || token.ValueKind != JsonValueKind.String)
+            {
+                throw new InvalidOperationException($"node '{label}' has no expandToken");
+            }
+            return Query(handler, new { expandToken = token.GetString() });
+        }
+        throw new InvalidOperationException($"node '{label}' not found");
     }
 
     /// <summary>

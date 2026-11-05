@@ -79,6 +79,28 @@
     - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **124 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
     - 効果: TS 側の `getTreeItem` が「記述子 → vscode 型」の純粋マッピングになり、パス計算・アイコン選択・contextValue 導出がすべて C# に集約された
     - Next: Phase 2（`nodePath` → 不透明 `expandToken` 化）。プロトコル変更のため両側同時修正が必要
+  - **第6弾: Phase 2 `nodePath` → 不透明 `expandToken` 化** → 実装完了 (ビルド成功 0 errors、テスト 126 合格、sv-tests 1028 合格)
+    - 背景: 旧プロトコルは `nodePath`（子インデックス列）で、TS が `parentPath.concat([index])` で組み立てていた。ツリーが途中で変わるとインデックスが別ノードを指す脆弱性があった
+    - C# 変更:
+      - **新規 `ExpandToken.cs`**: 不透明トークンの encode/decode。payload は `{k: w|f|d|i, f: folderPath, u: uri, p: [instanceName...]}` を base64url 化。`ForWorkspace()` / `ForFolder()` / `ForFile()` / `ForInstance()` / `Decode()`。不正トークンは null（例外を投げない）
+      - `RtlHierarchy.cs`: `HierarchyNode.ExpandToken` 追加、`HierarchyNodeDescriptor.InstancePathSegments` 追加
+      - `InMemorySystemVerilogCore.GetHierarchyChildren`: 引数を `List<int> nodePath` → `IReadOnlyList<string> instancePath`（**子インデックス → 子の名前**）に変更。名前で子を探すため、兄弟の増減でトークンが壊れない。見つからなければ空リスト（stale トークン）
+      - `LspHandler.HandleHierarchy`: `expandToken` を decode して `Workspace` / `Folder` / `File` / `Instance` に分岐。トークン無し = ワークスペースルート
+      - `BuildFileNodes`: 引数を `IReadOnlyList<string>` に変更し、`HasChildren` のノードに `ExpandToken.ForInstance(uri, segments)` を設定
+      - `BuildDirectoryNodes` / マルチルート: folder に `ForFolder`、file に `ForFile` を設定
+    - TS 変更 (`vscode-extension/hierarchy.js`):
+      - `HierarchyItem` の `nodePath` を削除し `expandToken` を追加
+      - `getChildren`: kind ごとの分岐（folderPath / uri+nodePath）を廃止し、`{ expandToken: element.expandToken }` を送るだけに。トークン無し = トップレベル
+      - `_toItems(result)` に簡素化（`parentPath` / `parentInstancePath` 引数を削除、`nodePath` の組み立ても削除）
+      - info ノードも記述子ベース（icon/contextValue/collapsible/tooltip）に統一
+      - ヘッダコメントを新プロトコルに更新
+    - テスト更新:
+      - `WorkspaceHierarchyTests.Query` に互換レイヤを追加: テストは従来どおり `folderPath` / `uri` + `nodePath` で書き、ヘルパーが `expandToken` に変換（`nodePath` は実際にツリーを辿って名前に解決）。既存 15 テストが無修正で通る
+      - `StandardLspFeatureTests` の `HierarchyNodes_CarryPresentationMetadata` を `expandToken` ベースに更新
+      - 新規 2 件: `ExpandToken_SurvivesSiblingChanges`（名前ベースなので兄弟増減に強い / 存在しない名前は空）/ `ExpandToken_MalformedToken_ReturnsEmptyInsteadOfThrowing`
+    - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **126 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+    - 効果: TS 側から `nodePath` の組み立てが完全に消え、`getChildren` は「トークンを返送するだけ」になった。兄弟の増減でトークンが壊れない（堅牢性向上）
+    - Next: VS Code で Reload Window 後の動作確認（ツリー展開・クリック・保存/外部変更での自動更新）。Phase 1〜3 完了、残りは Phase 4（legend/theme の単一情報源化）と Phase 5（C# 再編）
 
 - **VS Code 拡張の実装を C# 側へ寄せる（TypeScript は配管に徹する）** → 方針検討完了・未実装
   - ユーザ要求: 実装の実態を可能な限り TypeScript 側に乗せず C# 側で実装したい。TypeScript は情報のパイプに徹し、C# 側のコードの見通しを良くしたい。まずアーキテクチャ検討のみ（修正はしない）

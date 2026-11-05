@@ -251,7 +251,7 @@ public class StandardLspFeatureTests : IDisposable
         LspHandler handler = CreateInitializedHandler();
 
         // top level: the workspace folder listing (response is { nodes: [...] })
-        JsonElement topResult = Request(handler, "rtl/hierarchy", new { nodePath = Array.Empty<int>() });
+        JsonElement topResult = Request(handler, "rtl/hierarchy", new { });
         JsonElement top = topResult.GetProperty("nodes");
         Assert.Equal(JsonValueKind.Array, top.ValueKind);
         Assert.True(top.GetArrayLength() > 0);
@@ -269,9 +269,11 @@ public class StandardLspFeatureTests : IDisposable
         Assert.EndsWith("top.sv", fsPath.GetString());
         Assert.True(fileNode.TryGetProperty("dirPath", out _));
 
-        // expand the file: the instance node must carry the same metadata
-        string uri = fileNode.GetProperty("uri").GetString() ?? "";
-        JsonElement childResult = Request(handler, "rtl/hierarchy", new { uri, nodePath = Array.Empty<int>() });
+        // expand the file: the instance node must carry the same metadata.
+        // The client echoes back the opaque expandToken the server issued.
+        string fileToken = fileNode.GetProperty("expandToken").GetString() ?? "";
+        Assert.False(string.IsNullOrEmpty(fileToken));
+        JsonElement childResult = Request(handler, "rtl/hierarchy", new { expandToken = fileToken });
         JsonElement children = childResult.GetProperty("nodes");
         Assert.True(children.GetArrayLength() > 0);
         JsonElement inst = children[0];
@@ -279,6 +281,54 @@ public class StandardLspFeatureTests : IDisposable
         Assert.Equal("symbol-class", inst.GetProperty("icon").GetString());
         Assert.Equal("u_leaf", inst.GetProperty("instancePath").GetString());
         Assert.Contains("u_leaf", inst.GetProperty("tooltip").GetString() ?? "");
+    }
+
+    [Fact]
+    public void ExpandToken_SurvivesSiblingChanges()
+    {
+        // The old protocol addressed children by index, so inserting a sibling
+        // shifted every later node. The token carries the child NAMES, so the
+        // same token still resolves to the same instance after an edit.
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "mid.sv"), "module mid;\n  leaf u_leaf();\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top;\n  mid u_mid();\nendmodule\n");
+        LspHandler handler = CreateInitializedHandler();
+
+        JsonElement top = Request(handler, "rtl/hierarchy", new { }).GetProperty("nodes");
+        JsonElement fileNode = default;
+        foreach (JsonElement n in top.EnumerateArray())
+        {
+            if (n.GetProperty("label").GetString() == "top.sv") { fileNode = n; break; }
+        }
+        string fileToken = fileNode.GetProperty("expandToken").GetString() ?? "";
+
+        JsonElement level0 = Request(handler, "rtl/hierarchy", new { expandToken = fileToken }).GetProperty("nodes");
+        Assert.Equal("u_mid", level0[0].GetProperty("label").GetString());
+        string instanceToken = level0[0].GetProperty("expandToken").GetString() ?? "";
+        Assert.False(string.IsNullOrEmpty(instanceToken));
+
+        // The token addresses the instance by NAME, so it resolves to u_mid
+        // regardless of where u_mid sits among its siblings. A token naming an
+        // instance that does not exist resolves to nothing (no throw).
+        string uri = fileNode.GetProperty("uri").GetString() ?? "";
+        JsonElement byName = Request(handler, "rtl/hierarchy",
+            new { expandToken = ExpandToken.ForInstance(uri, new[] { "u_mid" }) }).GetProperty("nodes");
+        Assert.Equal(1, byName.GetArrayLength());
+        Assert.Equal("u_leaf", byName[0].GetProperty("label").GetString());
+
+        JsonElement missing = Request(handler, "rtl/hierarchy",
+            new { expandToken = ExpandToken.ForInstance(uri, new[] { "u_does_not_exist" }) }).GetProperty("nodes");
+        Assert.Equal(0, missing.GetArrayLength());
+    }
+
+    [Fact]
+    public void ExpandToken_MalformedToken_ReturnsEmptyInsteadOfThrowing()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        // a garbage token must not throw: the server answers with the top level
+        JsonElement result = Request(handler, "rtl/hierarchy", new { expandToken = "!!!not-a-token!!!" });
+        Assert.Equal(JsonValueKind.Object, result.ValueKind);
+        Assert.True(result.TryGetProperty("nodes", out _));
     }
 
     [Fact]

@@ -9,9 +9,10 @@
 // The top level is the WHOLE workspace (every .sv/.svh/.v/.vh file found under
 // the workspace roots by the server), grouped into folders, not just the
 // documents that happen to be open. The tree is lazy: one `rtl/hierarchy`
-// request per expanded node — `folderPath` for folders, `uri` + `nodePath`
-// for file / instance nodes — so the server never has to serialise the whole
-// workspace hierarchy at once.
+// request per expanded node, carrying the opaque `expandToken` the server
+// issued for that node (no token = the workspace root), so the server never
+// has to serialise the whole workspace hierarchy at once and the client never
+// builds a path or an index itself.
 
 const vscode = require('vscode');
 
@@ -27,11 +28,12 @@ class HierarchyItem {
         this.startLine = options.startLine;
         this.startCharacter = options.startCharacter;
         this.hasChildren = options.hasChildren;
-        // sequence of child indexes from the workspace root
-        this.nodePath = options.nodePath;
+        // Opaque token the server issued for this node. The client stores it
+        // and echoes it back verbatim to expand the node; it never parses it.
+        this.expandToken = options.expandToken;
         // readable instance path, used by "Copy Instance Path"
         this.instancePath = options.instancePath;
-        // workspace-relative folder path, used to expand a 'folder' node
+        // workspace-relative folder path (informational; expansion uses the token)
         this.folderPath = options.folderPath;
         // ---- presentation metadata, decided by the server ----
         // The client only maps these onto the VS Code TreeItem; it never
@@ -190,8 +192,9 @@ class HierarchyProvider {
             }
 
             if (element === undefined) {
-                // top level: the whole workspace (folder tree + files)
-                const params = { nodePath: [] };
+                // top level: the whole workspace (folder tree + files). No
+                // expandToken means "the workspace root".
+                const params = {};
                 // A window that has no folder open ("File > Open File") sends no
                 // workspace root at initialize, so the server cannot scan the
                 // project. Ask for a rescan on the first render: the server then
@@ -205,7 +208,7 @@ class HierarchyProvider {
                     this.pendingRescan = false;
                 }
                 const result = await client.request('rtl/hierarchy', params);
-                const items = this._toItems(result, [], '');
+                const items = this._toItems(result);
                 this.log('hierarchy top level: ' + items.length + ' node(s)'
                     + (params.rescan ? ' (rescan)' : ''));
                 if (items.length === 0) {
@@ -223,34 +226,27 @@ class HierarchyProvider {
                             + 'Open a folder containing .sv/.svh/.v/.vh files, '
                             + 'or press the refresh button in the view title.',
                         hasChildren: false,
-                        nodePath: [],
+                        icon: 'warning',
+                        contextValue: 'rtlInfo',
+                        collapsible: 'none',
+                        tooltip: 'The server returned an empty workspace tree.',
                     })];
                 }
                 return items;
             }
 
             if (!element.hasChildren) return [];
-
-            if (element.kind === 'folder') {
-                const result = await client.request('rtl/hierarchy', {
-                    folderPath: element.folderPath,
-                });
-                return this._toItems(result, [], '');
+            if (!element.expandToken) {
+                // a leaf, or a node the server did not mark expandable
+                return [];
             }
 
-            if (element.kind === 'file') {
-                const result = await client.request('rtl/hierarchy', {
-                    uri: element.uri,
-                    nodePath: [],
-                });
-                return this._toItems(result, [], '');
-            }
-
+            // The server issued an opaque token for this node: echo it back
+            // verbatim. The client never builds a path or an index itself.
             const result = await client.request('rtl/hierarchy', {
-                uri: element.uri,
-                nodePath: element.nodePath,
+                expandToken: element.expandToken,
             });
-            return this._toItems(result, element.nodePath, element.instancePath);
+            return this._toItems(result);
         } catch (err) {
             this.lastError = err;
             this.log('getChildren ERROR: ' + (err && err.stack ? err.stack : err));
@@ -258,37 +254,34 @@ class HierarchyProvider {
         }
     }
 
-    _toItems(result, parentPath, parentInstancePath) {
+    /**
+     * Maps the server's node descriptors onto HierarchyItems.
+     *
+     * Everything the tree needs (label, icon, contextValue, collapsible state,
+     * tooltip, instance path, absolute paths, expand token) comes from the
+     * server, so this is a straight field copy: no path building, no index
+     * bookkeeping.
+     */
+    _toItems(result) {
         const nodes = (result && result.nodes) || [];
-        return nodes.map((node, index) => {
-            const nodePath = parentPath.concat([index]);
-            const kind = node.kind || 'instance';
-            const label = node.label || '';
-            const instancePath = kind === 'instance'
-                ? (parentInstancePath ? parentInstancePath + '.' + label : label)
-                : '';
-            return new HierarchyItem({
-                label,
-                kind,
-                uri: node.uri,
-                detail: node.detail,
-                startLine: node.startLine,
-                startCharacter: node.startCharacter,
-                hasChildren: !!node.hasChildren,
-                nodePath,
-                // the server sends the full instance path; fall back to the
-                // locally built one only for older servers
-                instancePath: node.instancePath || instancePath,
-                folderPath: node.folderPath,
-                // presentation metadata decided by the server
-                icon: node.icon,
-                contextValue: node.contextValue,
-                collapsible: node.collapsible,
-                tooltip: node.tooltip,
-                fsPath: node.fsPath,
-                dirPath: node.dirPath,
-            });
-        });
+        return nodes.map((node) => new HierarchyItem({
+            label: node.label || '',
+            kind: node.kind || 'instance',
+            uri: node.uri,
+            detail: node.detail,
+            startLine: node.startLine,
+            startCharacter: node.startCharacter,
+            hasChildren: !!node.hasChildren,
+            expandToken: node.expandToken,
+            instancePath: node.instancePath,
+            folderPath: node.folderPath,
+            icon: node.icon,
+            contextValue: node.contextValue,
+            collapsible: node.collapsible,
+            tooltip: node.tooltip,
+            fsPath: node.fsPath,
+            dirPath: node.dirPath,
+        }));
     }
 }
 
