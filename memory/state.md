@@ -3,6 +3,23 @@
 
 ## 進行中タスク (最新)
 
+- **SimulationSetup の取得時に NavigateNode では階層展開できるのに setup に取得できていない module がある** → 修正完了 (ビルド成功 0 errors、テスト 112 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: SimulationSetup の取得時に NavigateNode では Hier 展開できているのに setup には取得できていない module がある
+  - 根本原因1 (**file.Items lookup の前提違い**): `SimulationSetup.searchNameSpace` は子インスタンスを `file.Items[instanceName]` で引いていた。しかし `VerilogCommon.Updater` は **building block が1つ**のファイルでのみ内部インスタンスを `file.Items` 直下に置き (`addSubItemsSingleBuldingBlock`)、**複数 building block** のファイル (module + package / DUT + testbench 等) では building block ごとのインスタンスを `file.Items` に置いて内部インスタンスは**そのインスタンスの Items** に入れる (`addSubItemsMultiBuildingBlock`)。そのため複数 building block ファイルでは lookup が失敗し、その module 以下のサブツリー全体が setup から欠落していた (NavigateNode は building block インスタンスを展開するので見える)
+  - 根本原因2 (**stale unfound による早期 return**): `searchHier` 冒頭が `parsedDocument.UnfoundModules` に1件でもあると `setup.Failed = false; return;` で**そのファイルのサブツリー全体を収集せずに打ち切って**いた。`UnfoundModules` は Add 時に重複排除するが**後で解決されてもクリアされない** (2パス目で解決される前方参照 / 非生成 generate 分岐内の instance) ため、一度でも記録が残ったファイルは永久に setup から除外されていた
+  - 修正1 (`Data/SimulationSetup.cs` `searchNameSpace` ModuleInstantiation 分岐): `file.Items` の instance item (パラメータ上書き済み parse を持つ) → instance array 要素 (`name[i]`) → `file.ProjectProperty.DefinitionNameSpace.GetFile(SourceName)` の順で解決し、`sourceFile` を `setup.Files` に追加して `searchHier` 再帰
+  - 修正2 (同 `searchNameSpace` InterfaceInstance 分岐): 同様に `file.Items` → `DefinitionNameSpace.GetFile(SourceName)` のフォールバックを追加
+  - 修正3 (同 `searchHier` 冒頭): 早期 return を廃止。unfound は log + `setup.UnfoundModules` に `RelativePath:Name` 形式で記録しつつ**走査を継続** (真に欠落している定義は引き続き可視化)
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/SimulationSetupTests.cs`, 2件):
+    - `MultiBuildingBlockFile_CollectsInstantiatedModule` (package + top module のファイルから leaf が収集されること)
+    - `StaleUnfoundEntry_DoesNotDropTheSubtree` (stale unfound があっても leaf が収集され、unfound は UnfoundModules に残ること)
+    - **修正前は 2 件とも失敗 (Files が空)、修正後は合格** を stash で実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test` (ParseSvTestFile 以外) **112 合格 / 0 失敗** / sv-tests **1028 合格 / 0 失敗**
+  - コミット: CodeEditor2VerilogPlugin `0451422`、メイン (submodule pointer + SimulationSetupTests.cs + state.md)
+  - 既知の残課題 (本タスク外・要判断): commit `4f4e46e "fix simulation Setup"` で `GetAllFiles` / `GetAllIncludePaths` / `GetAbsolutePath` / `addUnfoundModule` / `isResolvableCrossProjectReference` / `hasInstantiationItem` / `getExternalProjectSetup` が削除され、Icarus / Vivado バックエンドのファイル出力ループもコメントアウトされたまま。外部プロジェクト (`@project`) のソースをシミュレーションに渡す経路が現状無効
+  - Next: エディタ上で NavigateNode で展開できる階層が SimulationSetup にも同様に収集されること (特に複数 building block を含むファイル / 過去に unfound が出たファイル) の確認
+  - メモ: `SystemVerilogLanguageServer.Tests/Debug*.cs` (検証用プローブ) と `CodeEditor2` サブモジュールのユーザ WIP はコミットから除外
+
 - **SystemVerilog の ParseHierarchy がすぐ終了し、階層の末端まで探索できない** → 修正完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ報告: ParseHierarchy がすぐ終わってしまい、Hierarchy の末端まで探索できていない
   - 根本原因 (**子 Items 構築の fire-and-forget 化**): `ParseHierarchy.parseDownwardAsync` は `verilogFile.AcceptParsedDocumentAsync(parser)` の直後に `verilogFile.Items` を読んで次階層を workQueue に enqueue する。しかし commit `00922c0` が `VerilogModuleInstance.AcceptParsedDocumentAsync` / `InterfaceInstance.AcceptParsedDocumentAsync` の post-parse 更新全体 (子 Items を構築する `UpdateAsync()` を含む) を `Dispatcher.UIThread.Post(() => _ = postUpdateAsync(...))` の **fire-and-forget** に変更していた。そのため `AcceptParsedDocumentAsync` が返った時点では子 Items が未構築で、downward 探索が空の Items を読み **1階層で終了** していた (「すぐ終わる」の正体)
