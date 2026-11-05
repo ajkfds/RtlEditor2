@@ -37,6 +37,19 @@
     - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/StandardLspFeatureTests.cs`, 9 件): foldingRange / documentHighlight / rename / prepareRename / workspaceSymbol / documentLink / selectionRange / semanticTokensRange / 未実装機能の空配列応答
     - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **121 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
     - Next: 残りの空実装（codeAction / codeLens / inlayHint / onTypeFormatting / completionItem/resolve / executeCommand）の実装判断。VS Code で Reload Window 後の動作確認（折りたたみ・リネーム・ワークスペースシンボル・include リンク・引数ヒント・整形）
+  - **第3弾: RTL Hierarchy のサーバ→クライアント push 更新** → 実装完了 (ビルド成功 0 errors、テスト 123 合格、sv-tests 1028 合格)
+    - ユーザ質問: rtl hierarchy に対する C# 側からの push 更新は可能か → 可能（`NotificationSender` / `onNotification` / `refreshTree` が既存）
+    - C# 変更:
+      - `LspHandler.PushHierarchyInvalidated(string reason)` 新設。`NotificationSender` 経由で `rtl/hierarchyInvalidated` 通知を送る（`NotificationSender` が null なら no-op）
+      - `HierarchyInvalidatedParams { reason }` DTO 新設
+      - push 呼び出し 5 箇所: `HandleDidSave`（"didSave"）/ `HandleDidChangeWatchedFiles`（"didChangeWatchedFiles"）/ `HandleDidChangeWorkspaceFolders`（"didChangeWorkspaceFolders"）/ `EnsureWorkspaceRootFromFile`（"workspaceRootInferred"）/ `EnsureWorkspaceRootFromKnownFiles`（"workspaceRootInferred"）
+      - **`didChange` では push しない**（タイプ中にツリーが再描画され続けるのを防ぐ）
+      - スレッド安全性: すべてメッセージループ内（単一スレッド）からの push なので writer 競合なし
+    - TS 変更 (`vscode-extension/extension.js`): `client.onNotification('rtl/hierarchyInvalidated', ...)` を追加し `hierarchyProviderRef.refreshTree()` を呼ぶ（ディスク再走査なしの再描画）。reason をログ出力
+    - 回帰テスト追加 (`StandardLspFeatureTests.cs`, 2 件): `DidSave_PushesHierarchyInvalidated` / `DidChangeWatchedFiles_PushesHierarchyInvalidated`（`NotificationSender` を差し替えて通知を捕捉）
+    - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **123 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+    - 効果: TS 側の `initialRescanDone` / `retryScheduled` / `refreshIfEmpty` のタイマー工作が不要になる（memory/vscode_extension_architecture.md の Phase 3 に相当）
+    - Next: VS Code で Reload Window 後、(1) ファイル保存でツリーが自動更新されること (2) 外部でファイルを増減するとツリーが自動更新されること (3) フォルダ未オープンでファイルを開いたときツリーが自動で埋まること の確認
 
 - **VS Code 拡張の実装を C# 側へ寄せる（TypeScript は配管に徹する）** → 方針検討完了・未実装
   - ユーザ要求: 実装の実態を可能な限り TypeScript 側に乗せず C# 側で実装したい。TypeScript は情報のパイプに徹し、C# 側のコードの見通しを良くしたい。まずアーキテクチャ検討のみ（修正はしない）

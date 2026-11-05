@@ -244,6 +244,58 @@ public class StandardLspFeatureTests : IDisposable
     }
 
     [Fact]
+    public void DidSave_PushesHierarchyInvalidated()
+    {
+        const string text = "module top;\nendmodule\n";
+        string uri = WriteFile("push.sv", text);
+        LspHandler handler = CreateInitializedHandler();
+
+        // capture the server-initiated notifications
+        System.Collections.Generic.List<LspMessage> pushed = new();
+        handler.NotificationSender = (msg) => pushed.Add(msg);
+
+        DidOpen(handler, uri, text);
+        pushed.Clear();
+
+        string json = JsonSerializer.Serialize(new
+        {
+            textDocument = new { uri },
+            text = "module top;\n  wire a;\nendmodule\n",
+        });
+        using JsonDocument doc = JsonDocument.Parse(json);
+        handler.TryHandleNotification("textDocument/didSave", doc.RootElement, default);
+
+        bool found = false;
+        foreach (LspMessage m in pushed)
+        {
+            if (m.Method == "rtl/hierarchyInvalidated") { found = true; break; }
+        }
+        Assert.True(found, "expected rtl/hierarchyInvalidated after didSave");
+    }
+
+    [Fact]
+    public void DidChangeWatchedFiles_PushesHierarchyInvalidated()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        System.Collections.Generic.List<LspMessage> pushed = new();
+        handler.NotificationSender = (msg) => pushed.Add(msg);
+
+        string json = JsonSerializer.Serialize(new
+        {
+            changes = new[] { new { uri = new Uri(Path.Combine(_root, "new.sv")).AbsoluteUri, type = 1 } },
+        });
+        using JsonDocument doc = JsonDocument.Parse(json);
+        handler.TryHandleNotification("workspace/didChangeWatchedFiles", doc.RootElement, default);
+
+        bool found = false;
+        foreach (LspMessage m in pushed)
+        {
+            if (m.Method == "rtl/hierarchyInvalidated") { found = true; break; }
+        }
+        Assert.True(found, "expected rtl/hierarchyInvalidated after watched-file change");
+    }
+
+    [Fact]
     public void UnimplementedFeatures_ReturnEmptyResults()
     {
         const string text = "module top;\nendmodule\n";

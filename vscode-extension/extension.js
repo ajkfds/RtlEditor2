@@ -299,6 +299,17 @@ function ensureClient() {
         proc.on('error', (err) => reject(new Error('server spawn failed: ' + err.message)));
     });
     spawnFailed.catch(() => { /* handled below via Promise.race */ });
+    // Server-initiated "the hierarchy changed" push (non-standard notification,
+    // vendor prefix rtl/). The server sends it on didSave / watched-file
+    // changes / workspace-folder changes / workspace-root inference, so the
+    // tree redraws without the user pressing refresh. The tree is fetched
+    // lazily per expanded node, so a plain redraw is enough.
+    client.onNotification('rtl/hierarchyInvalidated', (params) => {
+        const reason = params && params.reason ? params.reason : '';
+        logLine('hierarchy invalidated by server: ' + reason);
+        if (hierarchyProviderRef) hierarchyProviderRef.refreshTree();
+    });
+
     client.onNotification('textDocument/publishDiagnostics', (params) => {
         const uri = vscode.Uri.parse(params.uri);
         const diags = (params.diagnostics || []).map((d) => {
