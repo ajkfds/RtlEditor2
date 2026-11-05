@@ -60,6 +60,25 @@
     - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **123 合格 / 0 失敗**
     - 効果: TS 側の状態機械が `pendingRescan` 1 個だけになり、`hierarchy.js` の見通しが向上（memory/vscode_extension_architecture.md の Phase 3 完了）
     - Next: VS Code で Reload Window 後の動作確認（保存 / 外部ファイル増減 / フォルダ未オープンでの自動反映）
+  - **第5弾: Phase 1 記述子拡張（提示メタをサーバが返す）** → 実装完了 (ビルド成功 0 errors、テスト 124 合格、sv-tests 1028 合格)
+    - 背景: memory/vscode_extension_architecture.md の Phase 1。TS 側の `getTreeItem` 分岐・`_toItems` の計算・`resolveFsPath`/`resolveDirPath` のパス計算を C# へ移設
+    - C# 変更:
+      - `RtlHierarchy.cs` `HierarchyNode` に提示メタ 7 フィールド追加: `icon`（ThemeIcon id）/ `contextValue`（rtlFolder/rtlFile/rtlInstance）/ `collapsible`（none/collapsed）/ `tooltip` / `instancePath` / `fsPath` / `dirPath`
+      - `HierarchyNodeDescriptor` に `InstancePath` / `FsPath` / `DirPath` 追加
+      - `InMemorySystemVerilogCore.CreateDescriptor`: `ResolveItemAbsolutePath(item)` 新設（`RelativePath` を workspace root で解決）→ `FsPath` / `DirPath` 設定
+      - `GetHierarchyChildren`: `nodePath` を辿りながら `parentInstancePath` を組み立て、各子に `InstancePath` を設定（`u_mid.u_leaf` 形式）
+      - `LspHandler.BuildFileNodes`: instance ノードに `icon="symbol-class"` / `contextValue="rtlInstance"` / `collapsible` / `tooltip` / `instancePath` / `fsPath` / `dirPath` を設定
+      - `BuildDirectoryNodes`: folder ノードに `icon="folder"` / `contextValue="rtlFolder"` / `fsPath` / `dirPath`、file ノードに `icon="file"` / `contextValue="rtlFile"` / `fsPath` / `dirPath` を設定
+      - マルチルートのフォルダノードにも同様に設定
+    - TS 変更 (`vscode-extension/hierarchy.js`):
+      - `HierarchyItem` に `icon` / `contextValue` / `collapsible` / `tooltip` / `fsPath` / `dirPath` を追加
+      - `getTreeItem` を全面書き換え: kind ごとの分岐を廃止し、記述子の値をそのままマップするだけに（file のみ `resourceUri` で実ファイルアイコンを使う特例を維持）
+      - `_toItems` で記述子フィールドを引き継ぎ（`instancePath` はサーバ値を優先、旧サーバ向けフォールバックあり）
+      - `resolveFsPath` / `resolveDirPath` を `node.fsPath` / `node.dirPath` 優先に簡素化（uri フォールバックは旧サーバ向け）
+    - 回帰テスト追加 (`StandardLspFeatureTests.cs`, 1 件): `HierarchyNodes_CarryPresentationMetadata`（folder/file/instance の icon・contextValue・collapsible・fsPath・dirPath・instancePath・tooltip を検証）
+    - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **124 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+    - 効果: TS 側の `getTreeItem` が「記述子 → vscode 型」の純粋マッピングになり、パス計算・アイコン選択・contextValue 導出がすべて C# に集約された
+    - Next: Phase 2（`nodePath` → 不透明 `expandToken` 化）。プロトコル変更のため両側同時修正が必要
 
 - **VS Code 拡張の実装を C# 側へ寄せる（TypeScript は配管に徹する）** → 方針検討完了・未実装
   - ユーザ要求: 実装の実態を可能な限り TypeScript 側に乗せず C# 側で実装したい。TypeScript は情報のパイプに徹し、C# 側のコードの見通しを良くしたい。まずアーキテクチャ検討のみ（修正はしない）

@@ -244,6 +244,44 @@ public class StandardLspFeatureTests : IDisposable
     }
 
     [Fact]
+    public void HierarchyNodes_CarryPresentationMetadata()
+    {
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top;\n  leaf u_leaf();\nendmodule\n");
+        LspHandler handler = CreateInitializedHandler();
+
+        // top level: the workspace folder listing (response is { nodes: [...] })
+        JsonElement topResult = Request(handler, "rtl/hierarchy", new { nodePath = Array.Empty<int>() });
+        JsonElement top = topResult.GetProperty("nodes");
+        Assert.Equal(JsonValueKind.Array, top.ValueKind);
+        Assert.True(top.GetArrayLength() > 0);
+
+        JsonElement fileNode = default;
+        foreach (JsonElement n in top.EnumerateArray())
+        {
+            if (n.GetProperty("label").GetString() == "top.sv") { fileNode = n; break; }
+        }
+        Assert.NotEqual(JsonValueKind.Undefined, fileNode.ValueKind);
+        Assert.Equal("rtlFile", fileNode.GetProperty("contextValue").GetString());
+        Assert.Equal("file", fileNode.GetProperty("icon").GetString());
+        Assert.Equal("collapsed", fileNode.GetProperty("collapsible").GetString());
+        Assert.True(fileNode.TryGetProperty("fsPath", out JsonElement fsPath));
+        Assert.EndsWith("top.sv", fsPath.GetString());
+        Assert.True(fileNode.TryGetProperty("dirPath", out _));
+
+        // expand the file: the instance node must carry the same metadata
+        string uri = fileNode.GetProperty("uri").GetString() ?? "";
+        JsonElement childResult = Request(handler, "rtl/hierarchy", new { uri, nodePath = Array.Empty<int>() });
+        JsonElement children = childResult.GetProperty("nodes");
+        Assert.True(children.GetArrayLength() > 0);
+        JsonElement inst = children[0];
+        Assert.Equal("rtlInstance", inst.GetProperty("contextValue").GetString());
+        Assert.Equal("symbol-class", inst.GetProperty("icon").GetString());
+        Assert.Equal("u_leaf", inst.GetProperty("instancePath").GetString());
+        Assert.Contains("u_leaf", inst.GetProperty("tooltip").GetString() ?? "");
+    }
+
+    [Fact]
     public void DidSave_PushesHierarchyInvalidated()
     {
         const string text = "module top;\nendmodule\n";

@@ -33,6 +33,17 @@ class HierarchyItem {
         this.instancePath = options.instancePath;
         // workspace-relative folder path, used to expand a 'folder' node
         this.folderPath = options.folderPath;
+        // ---- presentation metadata, decided by the server ----
+        // The client only maps these onto the VS Code TreeItem; it never
+        // derives them from `kind` / `hasChildren` itself.
+        this.icon = options.icon;
+        this.contextValue = options.contextValue;
+        this.collapsible = options.collapsible;
+        this.tooltip = options.tooltip;
+        // absolute paths for the file operations (Add / Delete / Open in
+        // Explorer), resolved by the server
+        this.fsPath = options.fsPath;
+        this.dirPath = options.dirPath;
     }
 }
 
@@ -121,77 +132,51 @@ class HierarchyProvider {
         setTimeout(() => this.refresh(), 0);
     }
 
+    /**
+     * Maps a server descriptor onto a VS Code TreeItem.
+     *
+     * The server decides the icon, contextValue, collapsible state, tooltip and
+     * the absolute paths; this method only translates them into the VS Code
+     * types. The only client-side special case is the file icon: a real
+     * `resourceUri` gives the proper file-type icon, which the server cannot
+     * express as a ThemeIcon id.
+     */
     getTreeItem(element) {
-        if (element.kind === 'info') {
-            // Diagnostic node shown when the tree would otherwise be empty, so
-            // the user (and the log) can see WHY nothing was listed instead of
-            // a silent blank view.
-            const item = new vscode.TreeItem(
-                element.label,
-                vscode.TreeItemCollapsibleState.None
-            );
-            item.iconPath = new vscode.ThemeIcon('warning');
-            item.contextValue = 'rtlInfo';
-            item.tooltip = element.detail || element.label;
-            return item;
-        }
+        const collapsible = element.collapsible === 'collapsed'
+            ? vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.None;
+        const item = new vscode.TreeItem(element.label, collapsible);
 
-        if (element.kind === 'folder') {
-            const item = new vscode.TreeItem(
-                element.label,
-                element.hasChildren
-                    ? vscode.TreeItemCollapsibleState.Collapsed
-                    : vscode.TreeItemCollapsibleState.None
-            );
-            item.iconPath = vscode.ThemeIcon.Folder;
-            item.contextValue = 'rtlFolder';
-            item.tooltip = element.folderPath;
-            return item;
-        }
+        if (element.contextValue) item.contextValue = element.contextValue;
+        if (element.tooltip) item.tooltip = element.tooltip;
+        if (element.detail) item.description = element.detail;
 
-        if (element.kind === 'file') {
-            const item = new vscode.TreeItem(
-                element.label,
-                element.hasChildren
-                    ? vscode.TreeItemCollapsibleState.Collapsed
-                    : vscode.TreeItemCollapsibleState.None
-            );
-            // resourceUri drives the real file icon; unknown schemes (a file the
-            // server could not turn into a URI) fall back to the generic one
+        if (element.kind === 'file' && element.uri) {
+            // resourceUri drives the real file icon; unknown schemes (a file
+            // the server could not turn into a URI) fall back to the ThemeIcon
             try {
                 item.resourceUri = vscode.Uri.parse(element.uri);
             } catch (e) {
-                item.iconPath = vscode.ThemeIcon.File;
+                item.iconPath = new vscode.ThemeIcon(element.icon || 'file');
             }
-            item.description = element.detail || undefined;
-            item.contextValue = 'rtlFile';
-            item.tooltip = element.uri;
-            // opening the file itself is the default action for leaf files
+        } else if (element.icon) {
+            item.iconPath = new vscode.ThemeIcon(element.icon);
+        }
+
+        // default click action: open the file / reveal the instance
+        if (element.kind === 'file') {
             item.command = {
                 command: 'systemverilogLsp.openHierarchyNode',
                 title: 'Open',
                 arguments: [element],
             };
-            return item;
+        } else if (element.kind === 'instance') {
+            item.command = {
+                command: 'systemverilogLsp.revealInEditor',
+                title: 'Reveal in Editor',
+                arguments: [element],
+            };
         }
-
-        const item = new vscode.TreeItem(
-            element.label,
-            element.hasChildren
-                ? vscode.TreeItemCollapsibleState.Collapsed
-                : vscode.TreeItemCollapsibleState.None
-        );
-        item.iconPath = new vscode.ThemeIcon('symbol-class');
-        item.description = element.detail || undefined;
-        item.contextValue = 'rtlInstance';
-        item.tooltip = element.detail
-            ? `${element.instancePath}  (${element.detail})`
-            : element.instancePath;
-        item.command = {
-            command: 'systemverilogLsp.revealInEditor',
-            title: 'Reveal in Editor',
-            arguments: [element],
-        };
         return item;
     }
 
@@ -291,8 +276,17 @@ class HierarchyProvider {
                 startCharacter: node.startCharacter,
                 hasChildren: !!node.hasChildren,
                 nodePath,
-                instancePath,
+                // the server sends the full instance path; fall back to the
+                // locally built one only for older servers
+                instancePath: node.instancePath || instancePath,
                 folderPath: node.folderPath,
+                // presentation metadata decided by the server
+                icon: node.icon,
+                contextValue: node.contextValue,
+                collapsible: node.collapsible,
+                tooltip: node.tooltip,
+                fsPath: node.fsPath,
+                dirPath: node.dirPath,
             });
         });
     }
@@ -366,26 +360,21 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
     // These act on the on-disk file / folder the node represents, then ask the
     // server to re-scan so the tree (and parse results) reflect the change.
 
+    // The server resolves the absolute paths (fsPath / dirPath) for every node,
+    // so the client never joins paths itself. The uri fallback only covers an
+    // older server that does not send them yet.
     const resolveFsPath = (node) => {
-        if (node && node.uri) {
+        if (!node) return undefined;
+        if (node.fsPath) return node.fsPath;
+        if (node.uri) {
             try { return vscode.Uri.parse(node.uri).fsPath; } catch (e) { /* ignore */ }
-        }
-        // folder / file nodes without a uri: resolve from the workspace folder
-        // and the workspace-relative folderPath
-        if (node && node.folderPath) {
-            const folder = (vscode.workspace.workspaceFolders || [])[0];
-            if (folder) return vscode.Uri.joinPath(folder.uri, node.folderPath).fsPath;
         }
         return undefined;
     };
-    // folder the node lives in (for Add): a folder node is its own directory,
-    // a file / instance uses the directory of its source file
+    // folder the node lives in (for Add): the server sends it as dirPath
     const resolveDirPath = (node) => {
         if (!node) return undefined;
-        if (node.kind === 'folder' && node.folderPath) {
-            const folder = (vscode.workspace.workspaceFolders || [])[0];
-            if (folder) return vscode.Uri.joinPath(folder.uri, node.folderPath).fsPath;
-        }
+        if (node.dirPath) return node.dirPath;
         const fsPath = resolveFsPath(node);
         if (fsPath) return require('path').dirname(fsPath);
         return undefined;
