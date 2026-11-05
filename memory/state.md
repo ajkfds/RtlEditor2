@@ -3,6 +3,18 @@
 
 ## 進行中タスク (最新)
 
+- **SystemVerilog の ParseHierarchy がすぐ終了し、階層の末端まで探索できない** → 修正完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ報告: ParseHierarchy がすぐ終わってしまい、Hierarchy の末端まで探索できていない
+  - 根本原因 (**子 Items 構築の fire-and-forget 化**): `ParseHierarchy.parseDownwardAsync` は `verilogFile.AcceptParsedDocumentAsync(parser)` の直後に `verilogFile.Items` を読んで次階層を workQueue に enqueue する。しかし commit `00922c0` が `VerilogModuleInstance.AcceptParsedDocumentAsync` / `InterfaceInstance.AcceptParsedDocumentAsync` の post-parse 更新全体 (子 Items を構築する `UpdateAsync()` を含む) を `Dispatcher.UIThread.Post(() => _ = postUpdateAsync(...))` の **fire-and-forget** に変更していた。そのため `AcceptParsedDocumentAsync` が返った時点では子 Items が未構築で、downward 探索が空の Items を読み **1階層で終了** していた (「すぐ終わる」の正体)
+  - 修正1 (`Data/VerilogModuleInstance.cs`): `_parsedDocument = newParsedDocument;` の直後に `await UpdateAsync();` を追加し、子 Items 構築を **return 前に完了** させる。`Dispatcher.UIThread.Post` はエディタ専用の描画更新 (`postUpdateAsync`: color mark / message view / node icon) のみに縮小。`postUpdateAsync` 内の `await UpdateAsync()` は二重実行になるため削除 (コメントで明示)
+  - 修正2 (`Data/InterfaceInstance.cs`): 同一修正 (await UpdateAsync を return 前に移動、postUpdateAsync から UpdateAsync を削除)
+  - 安全性: `UpdateAsync` は UI フリー (`VerilogCommon.Updater.UpdateAsync` は background スレッドで実行、`TextFile.UpdateAsync` は描画更新を `Dispatcher.UIThread.Post` するだけ) のため、parse スレッドから await してもエディタへ直接触れない
+  - 対象外: `VerilogHeaderInstance.AcceptParsedDocumentAsync` は元々 `await UpdateAsync()` を同期実行しており問題なし。`ImportedPackage.AcceptParsedDocumentAsync` も `await UpdateAsync()` 済み
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+  - コミット: CodeEditor2VerilogPlugin `3782483`
+  - Next: エディタ上で深い階層 (top → mid → leaf 等) の ParseHierarchy が末端まで探索され、NavigatePanel / RTL Hierarchy に全階層が表示されることの確認
+  - メモ: `SystemVerilogLanguageServer.Tests/Debug*.cs` (検証用プローブ) と `CodeEditor2` サブモジュールのユーザ WIP はコミットから除外
+
 - **VS Code 拡張を GitHub リリース可能にする (サーバ同梱で自己完結化)** → 実装完了 (拡張のみ、コミット済み)
   - ユーザ要求: この拡張を GitHub にリリースできるようにする。方針 = (A) サーババイナリを .vsix に同梱 + GitHub Releases (.vsix 添付)
   - 変更1 (`vscode-extension/extension.js`): `resolveServerCommand` の候補に同梱パス `<extension>/server/SystemVerilogLanguageServer(.exe)` を先頭追加 (開発用の `SystemVerilogLanguageServer/publish` 兄弟パスも維持)。エラーメッセージを同梱前提に更新
