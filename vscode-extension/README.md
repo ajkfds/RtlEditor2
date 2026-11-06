@@ -15,6 +15,27 @@ or build step needed once it is packaged).
   Problems panel
 - **RTL Hierarchy** tree view (see below) with the same content as RtlEditor2's
   NavigatePanel
+- **Snippets** from the editor (see below): alwaysFF block, module instance,
+  port connection fill, port inversion, modport generation
+
+## Snippets
+
+The snippet logic lives in the language server (the same code the RtlEditor2
+editor uses), so the extension only inserts the text it returns. Available from
+the command palette (`SystemVerilog Snippet: ...`) and the editor right-click
+menu:
+
+| Command | What it does |
+|---|---|
+| `Insert alwaysFF Block` | `always @(posedge clk or negedge rst)` block; the clock / reset are taken from the ports annotated `// @sync: clock` / `// @sync: reset` |
+| `Insert Module Instance` | Full instantiation of a module (parameter overrides + one named port connection per port). Shows a module picker first |
+| `Fill Port Connections` | Rewrites the instantiation under the caret, filling every port connection |
+| `Invert Selected Ports` | Flips `input`/`output` and the `_I`/`_O` name suffix of the selected port declarations |
+| `Generate Modport` | Modport listing every logic signal of the enclosing interface |
+
+The inserted text uses VS Code snippet tab stops (`${1:name}`), so `Tab` jumps
+between the fields. The interactive key handling of the editor's snippets is not
+reproduced.
 
 ## RTL Hierarchy view
 

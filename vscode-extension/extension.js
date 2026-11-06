@@ -1035,6 +1035,10 @@ function activate(context) {
     );
     logLine('standard LSP providers registered (formatting / rename / codeAction / codeLens / signatureHelp / inlayHint / declaration / typeDefinition / implementation / documentHighlight / foldingRange / selectionRange / documentLink / workspaceSymbol)');
 
+    // Snippets: the text is produced by the server (rtl/snippet); the
+    // extension only inserts it.
+    registerSnippetCommands(context);
+
     try {
         // The legend is the server's (adopted from initialize); the fallback
         // above only covers the window before initialize has answered.
@@ -1079,6 +1083,117 @@ function activate(context) {
             hierarchyProvider.refreshIfEmpty();
         }
     }));
+}
+
+// ---- snippets (rtl/snippet) -------------------------------------------
+//
+// The snippet logic (what to insert: port enumeration, parameter overrides,
+// connection generation, port inversion, modport derivation) lives in the
+// server. The extension only performs the mechanical part: ask the server for
+// the text, then insert it with TextEditor.insertSnippet (or replace a range).
+// This keeps the extension a pure pipe, per the architecture note in
+// memory/vscode_extension_architecture.md.
+
+/** Converts a vscode Position to the LSP line/character shape. */
+function toLspPosition(pos) {
+    return { line: pos.line, character: pos.character };
+}
+
+/**
+ * Requests a snippet from the server and applies it.
+ *
+ * @param {string} kind one of the server's snippet names
+ *        (alwaysFF / moduleInstance / portConnectionCreate / portInvert / modport)
+ * @param {string} [argument] extra argument (module name for moduleInstance)
+ */
+async function applySnippet(kind, argument) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+        vscode.window.showWarningMessage('SystemVerilog LSP: open a SystemVerilog file first.');
+        return;
+    }
+    const doc = editor.document;
+    if (doc.languageId !== 'systemverilog' && doc.languageId !== 'verilog') {
+        vscode.window.showWarningMessage('SystemVerilog LSP: the active file is not SystemVerilog / Verilog.');
+        return;
+    }
+
+    const params = {
+        textDocument: { uri: doc.uri.toString() },
+        position: toLspPosition(editor.selection.active),
+        kind,
+    };
+    if (argument) params.argument = argument;
+    if (!editor.selection.isEmpty) {
+        params.selection = {
+            start: toLspPosition(editor.selection.start),
+            end: toLspPosition(editor.selection.end),
+        };
+    }
+
+    let result;
+    try {
+        const c = await ensureClient();
+        result = await c.request('rtl/snippet', params);
+    } catch (e) {
+        logLine('rtl/snippet ERROR: ' + (e && e.stack ? e.stack : e));
+        vscode.window.showErrorMessage('SystemVerilog LSP: snippet request failed (see the log).');
+        return;
+    }
+
+    if (!result) {
+        vscode.window.showWarningMessage('SystemVerilog LSP: no snippet returned.');
+        return;
+    }
+
+    // The server may need a further choice (e.g. which module to instantiate).
+    if ((!result.snippets || result.snippets.length === 0) && result.candidates && result.candidates.length > 0) {
+        const picked = await vscode.window.showQuickPick(result.candidates, {
+            placeHolder: 'Select a module to instantiate',
+        });
+        if (!picked) return;
+        return applySnippet(kind, picked);
+    }
+
+    if (!result.snippets || result.snippets.length === 0) {
+        const message = result.message || 'no snippet available at the caret';
+        vscode.window.showInformationMessage('SystemVerilog LSP: ' + message);
+        return;
+    }
+
+    for (const snippet of result.snippets) {
+        await applyOneSnippet(editor, doc, snippet);
+    }
+}
+
+/** Applies one snippet entry (insert at the caret, or replace a range). */
+async function applyOneSnippet(editor, doc, snippet) {
+    const snippetString = new vscode.SnippetString(snippet.snippetText);
+
+    if (snippet.kind === 'replace') {
+        const range = new vscode.Range(doc.positionAt(snippet.start), doc.positionAt(snippet.end));
+        await editor.insertSnippet(snippetString, range);
+    } else {
+        await editor.insertSnippet(snippetString, editor.selection.active);
+    }
+    logLine('snippet applied: ' + (snippet.label || snippet.kind));
+}
+
+/** Registers the snippet commands. */
+function registerSnippetCommands(context) {
+    const commands = [
+        ['systemverilogLsp.snippet.alwaysFF', 'alwaysFF', undefined],
+        ['systemverilogLsp.snippet.moduleInstance', 'moduleInstance', undefined],
+        ['systemverilogLsp.snippet.portConnectionCreate', 'portConnectionCreate', undefined],
+        ['systemverilogLsp.snippet.portInvert', 'portInvert', undefined],
+        ['systemverilogLsp.snippet.modport', 'modport', undefined],
+    ];
+    for (const [command, kind, argument] of commands) {
+        context.subscriptions.push(
+            vscode.commands.registerCommand(command, () => applySnippet(kind, argument))
+        );
+    }
+    logLine('snippet commands registered (alwaysFF / moduleInstance / portConnectionCreate / portInvert / modport)');
 }
 
 function deactivate() {

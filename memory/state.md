@@ -3,6 +3,28 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張に pluginVerilog の snippet を適用（`rtl/snippet` 新設）** → 実装完了 (ビルド成功 0 errors、テスト 135 合格、sv-tests 1028 合格)
+  - ユーザ要求: vscode に pluginVerilog の snippet を適用したい
+  - 方針: `memory/vscode_extension_architecture.md` の設計どおり「何を挿入するか = C#」「挿入実行 = TS」で分担。標準 LSP は触らず独自拡張 `rtl/snippet` を新設
+  - C# 変更 (CodeEditor2VerilogPlugin):
+    - **新規 `CoreBridge/SnippetAdapter.cs`**（UI フリー）: 既存 snippet から「挿入テキスト生成」だけを抽出。`GetSnippets(file, parsedDocument, index, name, argument, selectionStart, selectionEnd)` → `SnippetResult { Snippets, Candidates, Message }`
+    - 実装した snippet: `alwaysFF`（`// @sync: clock` / `@sync: reset` 注釈から clock/reset を取得）/ `moduleInstance`（引数なしは候補列挙、ありは parameter override + 全 port の named connection）/ `portConnectionCreate`（caret 位置の instantiation を書き換え）/ `portInvert`（選択範囲の input/output と `_I`/`_O` を反転、空白・コメント保持）/ `modport`（interface の logic 信号から modport 生成、既存 modport が drive する信号は input に反転）
+    - プレースホルダは VS Code のタブストップ `${n:name}` で出力（エディタの `InteractiveSnippet` の対話キー操作は再現しない）
+    - 未対応: `autoConnect`（対話的キー入力が中核で、テキスト生成部が分離できないため）/ `connectionCheck`（ツリーウィンドウ表示が本体）/ `autoFormat`（既に標準 `textDocument/formatting` で提供済み）
+  - C# 変更 (SystemVerilogLanguageServer):
+    - **新規 `RtlSnippet.cs`**: `SnippetResultDto` / `SnippetDto`（`label` / `detail` / `kind`(insert|replace) / `start` / `end` / `snippetText` / `candidates` / `message`）
+    - **新規 `Server/LspHandler.Snippet.cs`**: `HandleSnippet`（`rtl/snippet`）。`textDocument.uri` + `position` + `kind` + 任意の `argument` / `selection` を受け、`ResolveIndex` で行/文字 → オフセット変換
+    - `LspHandler.cs`: `_requestHandlers["rtl/snippet"] = HandleSnippet` 登録
+    - `InMemorySystemVerilogCore.cs`: `InMemoryFile.GetSnippets(...)` 新設（`EnsureBuilt` → `SnippetAdapter` 呼び出し）
+  - TS 変更 (`vscode-extension`):
+    - `extension.js`: `applySnippet(kind, argument)` / `applyOneSnippet` / `registerSnippetCommands` 新設。`rtl/snippet` を要求し `TextEditor.insertSnippet`（`kind=replace` は range 指定）で適用。候補が返ったら `showQuickPick` で選択して再要求
+    - `package.json`: `contributes.commands` に 5 コマンド（`systemverilogLsp.snippet.{alwaysFF,moduleInstance,portConnectionCreate,portInvert,modport}`、category `SystemVerilog Snippet`）、`contributes.menus.editor/context` に 5 項目（`editorLangId == systemverilog || verilog`）
+    - `README.md`: Snippets 節を追加（コマンド表・タブストップの説明）
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/SnippetTests.cs`, 6 件): alwaysFF の clock/reset 解決 / moduleInstance の候補列挙 / moduleInstance の port connection 生成 / portInvert の方向・suffix 反転 / modport の interface 外エラー / 未知 kind のエラー
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **135 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+  - Next: VS Code で Reload Window 後、(1) コマンドパレット / 右クリックから各 snippet が挿入されること (2) `Tab` でタブストップを移動できること (3) moduleInstance でモジュール選択ピッカーが出ること の確認。**publish 更新が必要**（`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`）
+  - メモ: `node --check` はコマンド許可リスト外のため TS 構文チェックは未実施（目視確認のみ）
+
 - **未実装の標準 LSP 機能を「配線」まで通す（C# 内部は空実装）** → 実装完了 (ビルド成功 0 errors、テスト 112 合格)
   - ユーザ要求: まずは C# へのつなぎこみまでやって、C# の内部実装はいったん空実装で OK
   - 方針: LSP 標準メソッドを追加（標準を破らない）。C# は capability を advertise + ハンドラ登録 + 空結果を返す。TS は provider 登録 + LSP↔vscode の純粋マッピングのみ（ロジックなし）
