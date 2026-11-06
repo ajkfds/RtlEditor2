@@ -492,6 +492,15 @@ function provideCompletion(doc, pos) {
                 completionKinds[item.kind] !== undefined ? completionKinds[item.kind] : vscode.CompletionItemKind.Text
             );
             if (item.detail) ci.detail = item.detail;
+            // The server may return a snippet body (e.g. "begin ... end") so that
+            // block keywords expand like the desktop editor's autocomplete.
+            if (item.insertText) {
+                if (item.insertTextFormat === 2) {
+                    ci.insertText = new vscode.SnippetString(item.insertText);
+                } else {
+                    ci.insertText = item.insertText;
+                }
+            }
             return ci;
         });
     });

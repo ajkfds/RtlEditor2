@@ -3,6 +3,16 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張で `begin` を補完しても `end` が自動挿入されない** → 修正完了 (ビルド成功 0 errors、コミット済み)
+  - ユーザ報告: begin を入れても end が自動ではいらない
+  - 原因: デスクトップエディタは `Verilog/AutoComplete/BeginAutoCompleteItem.ApplyAsync()` が `begin` + 改行 + `end` をまとめて挿入するが、VS Code 拡張は LSP `textDocument/completion` 経由で `CompletionAdapter` が返す **ラベル文字列だけ** を使っていた。`CompletionItem` DTO に `insertText` / `insertTextFormat` が無く、`extension.js` も `new vscode.CompletionItem(label, kind)` でプレーンテキスト挿入するだけだった
+  - 修正1 (`CodeEditor2VerilogPlugin/CoreBridge/CompletionAdapter.cs`): `CompletionEntry` に `InsertText` / `InsertTextFormat` を追加。`BuildBlockSnippet(keyword, codeDocument, index)` を新設し、ブロック開始キーワード (begin / fork / case / casex / casez / generate / module / interface / function / task) に対して VS Code スニペット本文 (`begin\n\t$0\nend` 等、行頭インデントを再利用) を生成。`GetLineIndent` helper で caret 行のインデントを取得
+  - 修正2 (`SystemVerilogLanguageServer/Server/LspHandler.cs`): `CompletionItem` DTO に `insertText` / `insertTextFormat` を追加し、`HandleCompletion` で `CompletionEntry` の値を転送
+  - 修正3 (`vscode-extension/extension.js`): `provideCompletion` で `item.insertText` があれば `insertTextFormat === 2` のとき `new vscode.SnippetString(...)`、それ以外は文字列として `ci.insertText` に設定
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors
+  - コミット: CodeEditor2VerilogPlugin `6bde480` / SystemVerilogLanguageServer `ec35779`、メイン (submodule pointer + extension.js + state.md)
+  - Next: VS Code で Reload Window 後、(1) `begin` 補完で `begin` / インデント済み空行 / `end` が挿入されカーソルが空行に来ること (2) `case` / `module` / `function` 等でも同様に展開されること (3) 通常の識別子補完は従来どおりラベルのみ挿入されること を確認。**publish 更新が必要**（`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`）
+
 - **VS Code 拡張に pluginVerilog の snippet を適用（`rtl/snippet` 新設）** → 実装完了 (ビルド成功 0 errors、テスト 135 合格、sv-tests 1028 合格)
   - ユーザ要求: vscode に pluginVerilog の snippet を適用したい
   - 方針: `memory/vscode_extension_architecture.md` の設計どおり「何を挿入するか = C#」「挿入実行 = TS」で分担。標準 LSP は触らず独自拡張 `rtl/snippet` を新設
