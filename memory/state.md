@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy のノードアイコンを反映する** → 実装完了 (ビルド成功 0 errors、テスト 138 合格、コミット済み)
+  - ユーザ要求: rtl hierarchy のノードのアイコンを反映したい
+  - 変更前: インスタンスノードは全て `symbol-class` 固定 (module / interface の区別なし)、エラー/警告バッジは VS Code 側に一切出ていなかった。ファイルノードは `resourceUri` で実ファイルアイコン
+  - 設計判断: プラグインの SVG (`module.svg` / `interface.svg` 等) は `fill:#4b4b4b` の**濃いグレー固定**でダークテーマでは見えないため、VS Code では**テーマ追従する codicon (ThemeIcon)** にマッピングする
+  - 修正1 (`SystemVerilogLanguageServer/RtlHierarchy.cs`): `HierarchyNode` に `IconColor` を追加 (VS Code テーマ色 id)。`HierarchyNodeDescriptor` に `Icon` / `IconColor` を追加
+  - 修正2 (`Server/InMemorySystemVerilogCore.cs`):
+    - `ResolveItemIcon(item)` 新設: `VerilogModuleInstance` → インスタンス先 building block が `Interface` なら `symbol-interface`、それ以外 `symbol-module` / `InterfaceInstance` → `symbol-interface` / `ImportedPackage` → `symbol-package` / `VerilogHeaderInstance` → `file-code`
+    - `ResolveItemIconColor(item)` 新設: `VerilogParsedDocument.ErrorCount > 0` → `errorForeground` / `WarningCount > 0` → `editorWarning.foreground` / それ以外 null
+    - `CreateDescriptor` で両方を設定
+  - 修正3 (`Server/LspHandler.cs`):
+    - `BuildFileNodes` のインスタンスノードを `Icon = child.Icon ?? "symbol-module"` / `IconColor = child.IconColor` に変更 (固定 `symbol-class` を廃止)
+    - `BuildDirectoryNodes` のファイルノードに、パース済みファイルの diagnostics から `iconColor` を算出して設定 (未パースファイルは lazy 展開を壊さないよう検査しない)
+  - 修正4 (`vscode-extension/hierarchy.js`):
+    - `HierarchyItem` に `iconColor` を追加、`_toItems` で引き継ぎ
+    - `getTreeItem` で `new vscode.ThemeColor(element.iconColor)` を生成し `new vscode.ThemeIcon(id, color)` に渡す。ファイルノードは `resourceUri` を維持しつつ、色がある場合のみ `ThemeIcon('file', color)` で上書き
+  - 回帰テスト追加 (`StandardLspFeatureTests.cs`, 2 件): `HierarchyInstanceIcons_ReflectTheInstantiatedKind` (module → `symbol-module` / interface → `symbol-interface`) / `HierarchyFileNodes_FlagErrorsWithAThemeColour` (未宣言識別子で `errorForeground`)。既存 `HierarchyNodes_CarryPresentationMetadata` の期待値を `symbol-class` → `symbol-module` に更新
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **138 合格 / 0 失敗**
+  - コミット: SystemVerilogLanguageServer `01f878d`、メイン (submodule pointer + hierarchy.js + tests + state.md)
+  - Next: VS Code で Reload Window 後、(1) module instance と interface instance でアイコンが変わること (2) エラーのあるファイルが赤系、警告のみのファイルが黄系で表示されること を確認。**publish 更新が必要**（`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`）
+
 - **VS Code 拡張で `begin` を補完しても `end` が自動挿入されない** → 修正完了 (ビルド成功 0 errors、コミット済み)
   - ユーザ報告: begin を入れても end が自動ではいらない
   - 原因: デスクトップエディタは `Verilog/AutoComplete/BeginAutoCompleteItem.ApplyAsync()` が `begin` + 改行 + `end` をまとめて挿入するが、VS Code 拡張は LSP `textDocument/completion` 経由で `CompletionAdapter` が返す **ラベル文字列だけ** を使っていた。`CompletionItem` DTO に `insertText` / `insertTextFormat` が無く、`extension.js` も `new vscode.CompletionItem(label, kind)` でプレーンテキスト挿入するだけだった

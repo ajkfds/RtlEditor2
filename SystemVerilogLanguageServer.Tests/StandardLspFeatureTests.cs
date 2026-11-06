@@ -278,9 +278,62 @@ public class StandardLspFeatureTests : IDisposable
         Assert.True(children.GetArrayLength() > 0);
         JsonElement inst = children[0];
         Assert.Equal("rtlInstance", inst.GetProperty("contextValue").GetString());
-        Assert.Equal("symbol-class", inst.GetProperty("icon").GetString());
+        // the icon reflects the instantiated building block kind (module here),
+        // not a single generic "symbol-class" for every instance
+        Assert.Equal("symbol-module", inst.GetProperty("icon").GetString());
         Assert.Equal("u_leaf", inst.GetProperty("instancePath").GetString());
         Assert.Contains("u_leaf", inst.GetProperty("tooltip").GetString() ?? "");
+    }
+
+    [Fact]
+    public void HierarchyInstanceIcons_ReflectTheInstantiatedKind()
+    {
+        File.WriteAllText(Path.Combine(_root, "bus_if.sv"), "interface bus_if; endinterface\n");
+        File.WriteAllText(Path.Combine(_root, "pkg.sv"), "package pkg; endpackage\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  leaf u_leaf();\n  bus_if u_bus();\nendmodule\n");
+        LspHandler handler = CreateInitializedHandler();
+
+        JsonElement top = Request(handler, "rtl/hierarchy", new { }).GetProperty("nodes");
+        JsonElement fileNode = default;
+        foreach (JsonElement n in top.EnumerateArray())
+        {
+            if (n.GetProperty("label").GetString() == "top.sv") { fileNode = n; break; }
+        }
+        Assert.NotEqual(JsonValueKind.Undefined, fileNode.ValueKind);
+
+        string fileToken = fileNode.GetProperty("expandToken").GetString() ?? "";
+        JsonElement children = Request(handler, "rtl/hierarchy", new { expandToken = fileToken })
+            .GetProperty("nodes");
+
+        Dictionary<string, string> icons = new();
+        foreach (JsonElement n in children.EnumerateArray())
+        {
+            icons[n.GetProperty("label").GetString() ?? ""] = n.GetProperty("icon").GetString() ?? "";
+        }
+        Assert.Equal("symbol-module", icons["u_leaf"]);
+        Assert.Equal("symbol-interface", icons["u_bus"]);
+    }
+
+    [Fact]
+    public void HierarchyFileNodes_FlagErrorsWithAThemeColour()
+    {
+        // an undeclared identifier makes the parser report an error, which the
+        // tree surfaces as a theme colour on the file icon (the editor draws an
+        // exclamation badge for the same condition)
+        File.WriteAllText(Path.Combine(_root, "bad.sv"),
+            "module bad;\n  assign x = undeclared_signal;\nendmodule\n");
+        LspHandler handler = CreateInitializedHandler();
+
+        JsonElement top = Request(handler, "rtl/hierarchy", new { }).GetProperty("nodes");
+        JsonElement fileNode = default;
+        foreach (JsonElement n in top.EnumerateArray())
+        {
+            if (n.GetProperty("label").GetString() == "bad.sv") { fileNode = n; break; }
+        }
+        Assert.NotEqual(JsonValueKind.Undefined, fileNode.ValueKind);
+        Assert.Equal("errorForeground", fileNode.GetProperty("iconColor").GetString());
     }
 
     [Fact]

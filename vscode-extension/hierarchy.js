@@ -39,6 +39,9 @@ class HierarchyItem {
         // The client only maps these onto the VS Code TreeItem; it never
         // derives them from `kind` / `hasChildren` itself.
         this.icon = options.icon;
+        // optional VS Code theme colour id ("errorForeground" /
+        // "editorWarning.foreground") used to flag files with errors/warnings
+        this.iconColor = options.iconColor;
         this.contextValue = options.contextValue;
         this.collapsible = options.collapsible;
         this.tooltip = options.tooltip;
@@ -153,16 +156,28 @@ class HierarchyProvider {
         if (element.tooltip) item.tooltip = element.tooltip;
         if (element.detail) item.description = element.detail;
 
+        // The server decides the codicon id and (optionally) a theme colour id
+        // used to flag files with errors / warnings. Codicons are used instead
+        // of the plugin's own SVG assets because those are filled with a fixed
+        // dark grey and would be invisible on a dark theme.
+        const iconColor = element.iconColor
+            ? new vscode.ThemeColor(element.iconColor)
+            : undefined;
+
         if (element.kind === 'file' && element.uri) {
-            // resourceUri drives the real file icon; unknown schemes (a file
-            // the server could not turn into a URI) fall back to the ThemeIcon
+            // resourceUri drives the real file-type icon. A file with errors /
+            // warnings keeps that icon but is tinted with the theme colour, so
+            // the tree flags broken files like the editor's NavigatePanel.
             try {
                 item.resourceUri = vscode.Uri.parse(element.uri);
+                if (iconColor) {
+                    item.iconPath = new vscode.ThemeIcon('file', iconColor);
+                }
             } catch (e) {
-                item.iconPath = new vscode.ThemeIcon(element.icon || 'file');
+                item.iconPath = new vscode.ThemeIcon(element.icon || 'file', iconColor);
             }
         } else if (element.icon) {
-            item.iconPath = new vscode.ThemeIcon(element.icon);
+            item.iconPath = new vscode.ThemeIcon(element.icon, iconColor);
         }
 
         // default click action: open the file / reveal the instance
@@ -276,6 +291,7 @@ class HierarchyProvider {
             instancePath: node.instancePath,
             folderPath: node.folderPath,
             icon: node.icon,
+            iconColor: node.iconColor,
             contextValue: node.contextValue,
             collapsible: node.collapsible,
             tooltip: node.tooltip,
