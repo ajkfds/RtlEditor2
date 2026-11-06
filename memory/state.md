@@ -3,6 +3,21 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy のアイコン対応後に「起動できないケースが増えた」** → 修正完了 (ビルド成功 0 errors、テスト 138 合格、コミット済み)
+  - ユーザ報告: 起動できないケースが増えました (直前のアイコン対応コミット `01f878d` の後)
+  - 根本原因 (**スレッド安全性**): `BuildDirectoryNodes` が `parsedFile.Diagnostics` を `foreach` で列挙していたが、`InMemoryFile._diagnostics` は素の `List<>` で、バックグラウンドのワークスペース parse が `SetDiagnostics` (`Clear` + `AddRange`) で同時に書き換える。列挙中に変更されると `InvalidOperationException: Collection was modified` が発生し、`HandleHierarchy` の catch が `IOException` / `UnauthorizedAccessException` のみだったため**素通りして `rtl/hierarchy` 全体がエラー** → クライアントは空ツリーを描画し「起動できない」ように見えた。大きいワークスペース (バックグラウンド parse が走る) ほど発生しやすい
+  - 修正1 (`Server/InMemorySystemVerilogCore.cs`):
+    - `_diagnosticsLock` を新設し、`SetDiagnostics` / `Rebuild` のクリア / `HasErrors` をロックで保護
+    - `Diagnostics` プロパティを**スナップショット (`ToArray()`) を返す**よう変更 (呼び出し側の列挙が書き換えの影響を受けない)
+    - `HighestDiagnosticSeverity()` を新設 (ロック内で Error > Warning > その他 の最高重大度を返す。リストのコピー不要)
+  - 修正2 (`Server/LspHandler.cs`):
+    - `BuildDirectoryNodes` のアイコン色判定を `parsedFile.Diagnostics` の列挙から `parsedFile.HighestDiagnosticSeverity()` の switch に変更
+    - `HandleHierarchy` の catch を `IOException` / `UnauthorizedAccessException` 限定から **全例外** に拡大し、フルスタックトレースを stderr に出力してから空の `HierarchyResult` を返す (1 ノードの失敗でツリー全体が空にならない)
+  - 修正3 (`Server/InMemorySystemVerilogCore.cs`): `ResolveItemIcon` / `ResolveItemIconColor` を try/catch で防御 (未解決の cross-project instance で `GetInstancedBuildingBlock` / `VerilogParsedDocument` が投げてもアイコンだけ諦めてツリーは継続)
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **138 合格 / 0 失敗**
+  - コミット: SystemVerilogLanguageServer `1170576`、メイン (submodule pointer + state.md)
+  - Next: VS Code で Reload Window 後、大きめのワークスペースでも RTL Hierarchy が空にならず表示されること / エラー・警告の色分けが引き続き効くことを確認。**publish 更新が必要**（`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`）
+
 - **RTL Hierarchy のノードアイコンを反映する** → 実装完了 (ビルド成功 0 errors、テスト 138 合格、コミット済み)
   - ユーザ要求: rtl hierarchy のノードのアイコンを反映したい
   - 変更前: インスタンスノードは全て `symbol-class` 固定 (module / interface の区別なし)、エラー/警告バッジは VS Code 側に一切出ていなかった。ファイルノードは `resourceUri` で実ファイルアイコン
