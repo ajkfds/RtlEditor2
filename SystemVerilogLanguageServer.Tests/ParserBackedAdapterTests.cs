@@ -236,5 +236,67 @@ endmodule
                    $"range end {d.Range.EndIndex} exceeds document length {memFile.CodeDocument.Length}");
            }
        }
+
+       [Fact]
+       public void InMemoryCore_DiagnosticsReadableWhileReparsing()
+       {
+           // Regression: the RTL hierarchy listing reads every file's
+           // diagnostics while the background workspace parse replaces them.
+           // Enumerating the live list threw "Collection was modified", which
+           // failed the whole rtl/hierarchy request and blanked the tree (it
+           // looked like the extension would not start).
+           EnsurePluginRegistered();
+
+           var core = new SystemVerilogLanguageServer.Server.InMemorySystemVerilogCore();
+           var project = (SystemVerilogLanguageServer.Server.InMemoryProject)core.GetOrCreateProject("default");
+
+           string text =
+"""
+module top;
+    wire sig;
+    assign dst = 1;
+endmodule
+""";
+
+           project.AddOrUpdateFile("mem://race.sv", null, text, true);
+           var memFile = (SystemVerilogLanguageServer.Server.InMemoryFile)project.FindFile("mem://race.sv")!;
+           memFile.ForceBuild();
+
+           using var stop = new System.Threading.CancellationTokenSource();
+           // writer: keeps replacing the diagnostic list (what a background
+           // workspace parse does)
+           var writer = System.Threading.Tasks.Task.Run(() =>
+           {
+               while (!stop.IsCancellationRequested)
+               {
+                   memFile.Rebuild();
+               }
+           });
+
+           // reader: the hierarchy listing path
+           var deadline = System.DateTime.UtcNow.AddSeconds(3);
+           int reads = 0;
+           while (System.DateTime.UtcNow < deadline)
+           {
+               // must never throw: enumerating the live list while the writer
+               // clears it is exactly what used to fail
+               var snapshot = memFile.Diagnostics;
+               Assert.NotNull(snapshot);
+               int count = 0;
+               foreach (var d in snapshot)
+               {
+                   Assert.NotNull(d);
+                   count++;
+               }
+               Assert.True(count >= 0);
+               _ = memFile.HighestDiagnosticSeverity();
+               reads++;
+           }
+
+           stop.Cancel();
+           try { writer.Wait(System.TimeSpan.FromSeconds(10)); } catch (System.AggregateException) { }
+
+           Assert.True(reads > 0, "expected the reader to run at least once");
+       }
    }
 }

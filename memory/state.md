@@ -14,9 +14,10 @@
     - `BuildDirectoryNodes` のアイコン色判定を `parsedFile.Diagnostics` の列挙から `parsedFile.HighestDiagnosticSeverity()` の switch に変更
     - `HandleHierarchy` の catch を `IOException` / `UnauthorizedAccessException` 限定から **全例外** に拡大し、フルスタックトレースを stderr に出力してから空の `HierarchyResult` を返す (1 ノードの失敗でツリー全体が空にならない)
   - 修正3 (`Server/InMemorySystemVerilogCore.cs`): `ResolveItemIcon` / `ResolveItemIconColor` を try/catch で防御 (未解決の cross-project instance で `GetInstancedBuildingBlock` / `VerilogParsedDocument` が投げてもアイコンだけ諦めてツリーは継続)
-  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **138 合格 / 0 失敗**
-  - コミット: SystemVerilogLanguageServer `1170576`、メイン (submodule pointer + state.md)
-  - Next: VS Code で Reload Window 後、大きめのワークスペースでも RTL Hierarchy が空にならず表示されること / エラー・警告の色分けが引き続き効くことを確認。**publish 更新が必要**（`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`）
+  - 回帰テスト追加 (`ParserBackedAdapterTests.cs`, 1 件): `InMemoryCore_DiagnosticsReadableWhileReparsing` — writer スレッドが `Rebuild()` を回し続ける間に reader が `Diagnostics` を列挙 + `HighestDiagnosticSeverity()` を 3 秒間呼び続け、例外が出ないことを検証。**修正を一時的に戻すと `InvalidOperationException: Collection was modified` で失敗することを実証済み**
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **139 合格 / 0 失敗** / publish 更新 + `--selftest` 正常
+  - コミット: SystemVerilogLanguageServer `1170576`、メイン `9670fb0` (submodule pointer + state.md) + 回帰テスト
+  - Next: VS Code で Reload Window 後、大きめのワークスペースでも RTL Hierarchy が空にならず表示されること / エラー・警告の色分けが引き続き効くことを確認
 
 - **RTL Hierarchy のノードアイコンを反映する** → 実装完了 (ビルド成功 0 errors、テスト 138 合格、コミット済み)
   - ユーザ要求: rtl hierarchy のノードのアイコンを反映したい
