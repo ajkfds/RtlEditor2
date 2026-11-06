@@ -8,9 +8,25 @@
             "args": [
                 "--extensionDevelopmentPath=${workspaceFolder}"
             ],
+            // This is a plain-JS extension: only the two source files at the
+            // extension root are debuggable. Do NOT glob **/*.js here: the
+            // bundled server under server/ (a publish output, git-ignored)
+            // contains multi-megabyte Playwright bundles and per-platform
+            // runtimes. Matching them makes the debug adapter try to resolve
+            // source maps for thousands of files, which kills the debug
+            // session and closes the Extension Development Host window right
+            // after it opens.
             "outFiles": [
-                "${workspaceFolder}/**/*.js"
-            ]
+                "${workspaceFolder}/*.js"
+            ],
+            "sourceMaps": false,
+            "resolveSourceMapLocations": [
+                "${workspaceFolder}/*.js"
+            ],
+            "skipFiles": [
+                "${workspaceFolder}/server/**"
+            ],
+            "internalConsoleOptions": "openOnSessionStart"
         }
     ]
 }
