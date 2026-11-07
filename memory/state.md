@@ -3,6 +3,25 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code でコード上をクリックしたときのハイライト範囲がおかしい** → 修正完了 (ビルド成功 0 errors、テスト 144 + sv-tests 1028 合格、publish 更新、コミット済み)
+  - ユーザ報告: `vscodeでコード上をクリックしたときにハイライトされる範囲がおかしいです。本来、CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor\CodeDocument.cs の GetWord でとれる値であるべきです`
+  - 実測 (プローブ `DebugHighlightProbe.cs`、コミット除外): `wire sig; // trailing comment here` の `sig` 宣言 (1:7) をハイライトすると **1:7–1:29** (行末コメントまで)、`data_bus` 宣言 (3:14) は **3:14–6:0** (文書末まで)。要素の生レンジも `start=19 len=22 text='sig; // trailing comme'` で、明らかに長すぎた
+  - **根本原因1 (`SystemVerilogRange` の第2引数は length だが end index を渡していた)**: `SystemVerilogRange(int startIndex, int length)` の第2引数は **長さ**。しかし `InMemorySystemVerilogCore` の以下 4 箇所が **end index** を渡していたため、レンジ長が `start + len` になっていた
+    - `BuildSymbolsFromParsedDocument` の building block 宣言 (`nameStart + bb.Name.Length`)
+    - 同 members (`start + element.Name.Length`)
+    - `BuildSymbolsLightweight` の symbols (`sym.End`) / references (`rf.End`) — `SymbolInfo.End` / `ReferenceInfo.End` は排他的終端
+  - **根本原因2 (`WordReference.Length` は「次トークンまでの距離」)**: プラグインの `WordReference.Length` はエディタの mark 用規約で **次トークン開始位置までの距離**（間の空白・コメントを含む）であり、トークン幅ではない。`RegisterReference` がこれをそのまま使っていたため、長さを正しく渡しても行末までハイライトされていた（診断レンジでは既に同じ理由で識別子スキャンする回避策が入っていた）
+  - 修正1 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`): 上記 4 箇所を `length` を渡すよう修正 (`bb.Name.Length` / `element.Name.Length` / `sym.End - sym.Start` / `rf.End - rf.Start`)。経緯コメント付き
+  - 修正2 (同): `GetTokenLength(index, fallbackLength)` を新設。**プラグインのトークナイザ `WordPointer.FetchNext`** でトークン幅を求め、`RegisterReference` で `WordReference.Length` の代わりに使用。これでエディタの `CodeDocument.GetWord` と同一の値になる（識別子だけでなく `1'b0` のようなサイズ付きリテラル・複数文字演算子も一致）。トークナイザが使えない場合のみ `WordReference.Length` にフォールバック
+  - 検証 (プローブ実測、修正後): `sig` 宣言 1:7–1:10 (3文字) / `sig` 参照 2:9–2:12 / `data_bus` 宣言 3:14–3:22 (8文字) / 参照 4:9–4:17。要素レンジも `start=19 len=3 text='sig'` / `start=84 len=8 text='data_bus'` と正しい
+  - 回帰テスト追加 (`SystemVerilogLanguageServer.Tests/StandardLspFeatureTests.cs`, 2 件):
+    - `DocumentHighlight_ReturnsDeclarationAndUses` に「全ハイライトが同一行かつ幅 3 (`sig`)」の assert を追加
+    - `DocumentHighlight_RangeCoversOnlyTheIdentifier` を新設 (宣言の後ろにコメントがあるケースで幅 8 = `data_bus` を検証)
+  - 検証: `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **144 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗** / publish 更新 (`vscode-extension/server`) + `--selftest` 正常 (documentSymbol の `foo` が 7..10 = 3文字)
+  - コミット: SystemVerilogLanguageServer `de0e808`、メイン `6191511` (submodule pointer + StandardLspFeatureTests.cs)
+  - Next: VS Code で Reload Window 後、(1) シンボルをクリックしたときハイライトが識別子ちょうどの幅になること (2) 宣言の後ろにコメントがある行でもコメントまで伸びないこと (3) 参照 (Shift+F12) / リネームの範囲も同様に正しいこと を確認
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/Debug*.cs`) は従来どおりコミットから除外し作業ツリーに残置。`CodeEditor2` / `CodeEditor2VerilogPlugin` の modified は本タスク外のユーザ変更のため除外
+
 - **TCP デバッグ接続が動くようになったら SystemVerilog の色がおかしくなった** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: `動くようになりました。systemverilogのcodeの色がおかしくなったようです。`
   - 根本原因 (**`rtl/theme` が identifier を teal にマップしていた**): `LspHandler.Theme.cs` の `TokenColorMap` が `("identifier", ColorType.Identifier)` になっていた。`ColorType.Identifier` は `#4EC9B0` (teal) で、エディタでは **module / class / function 名などの宣言**に使う色。一方、式の中の信号参照やインスタンス名などの **plain な参照は `ColorType.Normal` (`#D4D4D4` グレー)** で描画される
