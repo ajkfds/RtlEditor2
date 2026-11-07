@@ -19,6 +19,8 @@ or build step needed once it is packaged).
   RtlEditor2's MessageView
 - **Snippets** from the editor (see below): alwaysFF block, module instance,
   port connection fill, port inversion, modport generation
+- **Auto Connect** form (see below): every port of an instantiation in one
+  panel, with the signal the editor would connect
 
 ## Snippets
 
@@ -38,6 +40,25 @@ menu:
 The inserted text uses VS Code snippet tab stops (`${1:name}`), so `Tab` jumps
 between the fields. The interactive key handling of the editor's snippets is not
 reproduced.
+
+## Auto Connect
+
+`SystemVerilog Snippet: Auto Connect Ports` (also in the editor right-click
+menu) opens a panel listing **every port** of the module instantiation under the
+caret, the same content as RtlEditor2's `AutoConnectWindow`:
+
+- one row per port, with its direction and a drop-down of the signals the
+  editor would connect (a signal whose name equals the port name, or the port
+  name without an `_I` / `_O` / `_IO` suffix);
+- ports already connected show their current signal pre-selected;
+- port groups (`// @group` annotations) are shown as comment rows;
+- **Apply** rewrites the instantiation with the chosen connections, **Cancel**
+  leaves it untouched.
+
+The matching rule lives in the language server (the same code the desktop
+editor uses), so the extension only renders the rows and forwards the choices.
+The panel is a webview rather than a QuickPick because the whole port list has
+to be visible at once, which a QuickPick cannot do.
 
 ## RTL Hierarchy view
 

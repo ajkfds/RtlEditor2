@@ -31,6 +31,16 @@ try {
     messageViewLoadError = err;
 }
 
+// Auto-connect form (webview). Loaded defensively for the same reason as the
+// message view: a broken module must not disable the whole extension.
+let autoConnectView = null;
+let autoConnectLoadError = null;
+try {
+    autoConnectView = require('./autoConnectView');
+} catch (err) {
+    autoConnectLoadError = err;
+}
+
 let log = null;
 let logFilePath = null;
 // Directory of the extension's own log file, recorded by initLog(). The crash
@@ -1390,6 +1400,11 @@ function activateCore(context) {
     // extension only inserts it.
     registerSnippetCommands(context);
 
+    // Auto-connect form: the rows come from the server (rtl/autoConnect) and
+    // the chosen connections go back through rtl/autoConnectApply. The
+    // extension only renders the webview and forwards the choices.
+    registerAutoConnectCommand(context);
+
     try {
         // The legend is the server's (adopted from initialize); the fallback
         // above only covers the window before initialize has answered.
@@ -1545,6 +1560,25 @@ function registerSnippetCommands(context) {
         );
     }
     logLine('snippet commands registered (alwaysFF / moduleInstance / portConnectionCreate / portInvert / modport)');
+}
+
+/**
+ * Registers the auto-connect command.
+ *
+ * The form itself (which signal matches a port) is decided by the server; this
+ * only opens the webview and forwards the user's choices back.
+ */
+function registerAutoConnectCommand(context) {
+    if (!autoConnectView) {
+        crashLog('autoConnectView', autoConnectLoadError || new Error('module not loaded'));
+        logLine('auto-connect command NOT registered (autoConnectView.js failed to load)');
+        return;
+    }
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.autoConnect', () =>
+            autoConnectView.showAutoConnect({ ensureClient, log: logLine }))
+    );
+    logLine('auto-connect command registered');
 }
 
 function deactivate() {
