@@ -3,6 +3,17 @@
 
 ## 進行中タスク (最新)
 
+- **TCP デバッグ接続が動くようになったら SystemVerilog の色がおかしくなった** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: `動くようになりました。systemverilogのcodeの色がおかしくなったようです。`
+  - 根本原因 (**`rtl/theme` が identifier を teal にマップしていた**): `LspHandler.Theme.cs` の `TokenColorMap` が `("identifier", ColorType.Identifier)` になっていた。`ColorType.Identifier` は `#4EC9B0` (teal) で、エディタでは **module / class / function 名などの宣言**に使う色。一方、式の中の信号参照やインスタンス名などの **plain な参照は `ColorType.Normal` (`#D4D4D4` グレー)** で描画される
+  - なぜ今まで気づかなかったか: これまでサーバに接続できず `rtl/theme` が走らなかったため、`package.json` の `configurationDefaults` (`identifier: #D4D4D4`) が効いていた。TCP 接続が動くようになって `rtl/theme` がユーザー設定 `semanticTokenColorCustomizations` を上書きし、**全参照が teal** になった
+  - 修正1 (`SystemVerilogLanguageServer/Server/LspHandler.Theme.cs`): `("identifier", ColorType.Normal)` に変更 (経緯コメント付き)。宣言は `type` / `function` トークン (どちらも `ColorType.Identifier`) が担当するため、`identifier` は既定前景色が正しい
+  - 修正2 (`vscode-extension/extension.js`): 既に書き込まれた誤パレットを置換する移行処理を追加。`staleIdentifierColors = ['#D4D4D4', '#4EC9B0']` に一致したら `rtl/theme` で上書きし直す (従来は `#D4D4D4` のみ判定)。置換時はログに出す
+  - 修正3 (`vscode-extension/package.json`): `configurationDefaults` の色を `CodeDrawStyle` の実値に合わせて修正 (`property` `#FF96C8` → `#FFC8C8` = Net, `variable` `#FFC8C8` → `#FFB4B4` = Variable)
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors
+  - Next: VS Code で Reload Window 後、(1) 信号参照 / インスタンス名が既定の前景色 (グレー) に戻ること (2) module / class / function 名は teal のままであること (3) keyword / comment / number / parameter / register の色が従来どおりであること を確認。**ユーザー設定に古いパレットが残っている場合は、拡張が起動時に自動で置換する** (ログに `replacing a stale semanticTokenColorCustomizations palette` が出る)
+  - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは未実施 (目視確認のみ)
+
 - **TCP デバッグ接続で RTL Hierarchy が取得できなくなる / Socket エラーで落ちる** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: `RTL Hierarchyの取得が終わらなくなりました` + `at Socket.<anonymous> (extension.js:443:28)` のスタック + ログ末尾が `debug transport: connecting to 127.0.0.1:9250` / `getChildren: <root>` で止まる
   - 原因1 (**unhandled 'error' で拡張ホストが落ちる**): `connectToDebugServer` が `socket.once('error', ...)` で登録し、ハンドラ内で `socket.destroy()` を呼んでいた。`destroy()` は **2 回目の 'error' (ECONNRESET / ERR_STREAM_DESTROYED) を emit する**ことがあり、`once` は既に消費済みのため **unhandled 'error' イベント**になって拡張ホストごと落ちていた (スタックの `Socket.<anonymous>` がこれ)

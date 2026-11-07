@@ -1238,9 +1238,21 @@ function activateCore(context) {
     // from the plugin's CodeDrawStyle: the editor and the extension then share
     // one source of truth instead of the extension keeping its own copy.
     const existingColors = editorConfig.inspect('semanticTokenColorCustomizations');
-    // overwrite when the previous extension-written default (identifier #D4D4D4) is present
-    const prevDefault = existingColors.globalValue &&
-        existingColors.globalValue.rules && existingColors.globalValue.rules.identifier === '#D4D4D4';
+    // Values this extension wrote in the past and that are now known to be
+    // wrong. They must be replaced, otherwise the stale palette sticks in the
+    // user's settings forever:
+    //   #D4D4D4 - the very first hard-coded default
+    //   #4EC9B0 - identifier mapped to ColorType.Identifier (teal), which made
+    //             every plain reference teal instead of the default foreground
+    const staleIdentifierColors = ['#D4D4D4', '#4EC9B0'];
+    const existingIdentifier = existingColors.globalValue &&
+        existingColors.globalValue.rules && existingColors.globalValue.rules.identifier;
+    const prevDefault = typeof existingIdentifier === 'string' &&
+        staleIdentifierColors.indexOf(existingIdentifier.toUpperCase()) >= 0;
+    if (prevDefault) {
+        logLine('replacing a stale semanticTokenColorCustomizations palette (identifier ' +
+            existingIdentifier + ')');
+    }
     if (!existingColors.globalValue && !existingColors.workspaceValue || prevDefault) {
         withClient(async () => {
             const theme = await client.request('rtl/theme', {});
