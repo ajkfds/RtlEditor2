@@ -150,7 +150,41 @@ under `vscode-extension/` and reference it from `package.json`:
 
 ## Development (F5)
 
-Open the `vscode-extension` folder and press `F5` (Extension Development Host).
+### Debug both sides at once (recommended)
+
+Open `RtlEditor2.code-workspace` in VS Code and press `F5`, choosing
+**Extension + Language Server**. This is a compound launch that starts:
+
+1. **Launch: SystemVerilog Language Server (C#)** — the server under the C#
+   debugger (breakpoints in the server work). It listens on
+   `127.0.0.1:9250` (`--port 9250`).
+2. **Run Extension** — the Extension Development Host (TS/JS side).
+
+The two talk over TCP instead of stdio: the launch configuration sets
+`SVLSP_SERVER_PORT=9250` in the extension host's environment, and
+`extension.js` then **connects** to the already-running server instead of
+spawning it. Without that variable the extension spawns the server as usual
+(stdio), which is what the packaged `.vsix` does.
+
+The same two configurations (and the compound) are also defined in
+`vscode-extension/.vscode/launch.json`, so opening the `vscode-extension`
+folder directly and pressing `F5` works too.
+
+Notes:
+
+- The server is built first by the `build-server` task
+  (`dotnet build SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj`).
+- The extension retries the TCP connection for 30 seconds, so the launch order
+  between the two configurations does not matter.
+- `Developer: Reload Window` in the Extension Development Host reconnects to
+  the same server (the server accepts connections in a loop).
+- To debug only the extension, run **Run Extension** alone; it will then try to
+  connect to port 9250 and fail unless a server is listening. Unset
+  `SVLSP_SERVER_PORT` (or use the `serverPath` setting) to spawn a server
+  instead.
+
+### Spawning a published server
+
 For development the extension also looks for a server published at
 `SystemVerilogLanguageServer/publish/` (inside or next to the extension folder),
 so you can run:

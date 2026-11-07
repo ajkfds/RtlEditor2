@@ -3,6 +3,31 @@
 
 ## 進行中タスク (最新)
 
+- **RtlEditor2.code-workspace で F5 一発で TS (拡張) と C# (LSP サーバ) を同時起動・アタッチ** → 実装完了 (ビルド成功 0 errors)
+  - ユーザ要求: `RtlEditor2.code-workspace` で VS Code 全体を開き、F5 一発で TS と C# を同時に起動・アタッチしたい。`vscode-extension/.vscode/launch.json` / `tasks.json` の修正が必要かも
+  - 問題: 拡張はサーバを **stdio で spawn** する設計 (`resolveServerCommand` → `spawn`)。spawn した子プロセスには C# デバッガを後からアタッチしづらく、`extensionHost` と `coreclr` を 1 つの compound で起動してもサーバ側のブレークポイントが効かない
+  - 方針: **デバッグ時だけ TCP トランスポートに切り替える**。サーバに `--port <n>` を追加してループバックで待ち受け、拡張は環境変数 `SVLSP_SERVER_PORT` があれば spawn せず接続する。これで compound launch が「C# を launch (デバッガ所有) + 拡張ホスト起動」の形で成立する。パッケージ版 (.vsix) は従来どおり stdio spawn のまま (環境変数が無いので挙動不変)
+  - 修正1 (`SystemVerilogLanguageServer/Program.cs`):
+    - `ParsePortArgument(args)` 新設 (`--port <n>` / `--port=<n>`)。0 なら従来の stdio
+    - `RunTcpServerAsync(port)` 新設: `TcpListener(IPAddress.Loopback, port)` で待ち受け、**接続ごとに `RunLoopAsync` を回すループ** (Reload Window で拡張ホストが再起動しても同じサーバに再接続できる)
+    - メッセージループを `RunLoopAsync(input, output, cancellationToken)` に抽出し、stdio / TCP で共有。`cts` は呼び出し側 (Main / RunTcpServerAsync) が所有する形に整理 (二重 `Console.CancelKeyPress` 登録を解消)
+  - 修正2 (`vscode-extension/extension.js`):
+    - `RawLspClient` を **transport 抽象**ベースに変更 (`createProcessTransport(proc)` / TCP 用のインライン transport)。`this.proc` 直接参照を廃止し `onData` / `onStderr` / `onExit` / `write` / `kill` の 5 メソッドに統一
+    - `debugServerPort()` 新設 (`process.env.SVLSP_SERVER_PORT` を読む)
+    - `connectToDebugServer(port)` 新設: 127.0.0.1 へ接続、**30 秒まで 250ms 間隔でリトライ** (compound launch の起動順に依存しない)。`settled` フラグで接続後の error が再試行を起こさないよう防御。接続後は恒久 `error` ハンドラを付け unhandled 'error' を防止
+    - `createClient()` 新設 (`{ client, spawnFailed }` を返す)。`SVLSP_SERVER_PORT` があれば TCP 接続、無ければ従来どおり spawn。`ensureClient` はこれを使う薄いラッパに整理
+    - TCP transport の各メソッドは socket promise を await し、**失敗は `spawnFailed` 経由で 1 回だけ報告** (per-call の rejection は握り潰して unhandled rejection を回避)
+  - 修正3 (`vscode-extension/.vscode/launch.json`):
+    - `Run Extension` に `env: { SVLSP_SERVER_PORT: "9250" }` を追加 (サーバを spawn せず接続する)
+    - `Launch: SystemVerilog Language Server (C#)` (`type: coreclr`, `request: launch`) を追加。`program` は `../SystemVerilogLanguageServer/bin/Debug/net10.0/SystemVerilogLanguageServer.dll`、`args: ["--port","9250"]`、`preLaunchTask: build-server`
+  - 修正4 (`vscode-extension/.vscode/tasks.json`): `build-server` タスクを追加 (`dotnet build .../SystemVerilogLanguageServer.csproj -clp:ErrorsOnly`、`problemMatcher: $msCompile`)
+  - 修正5 (`RtlEditor2.code-workspace`): `launch` セクションに同じ 2 構成 + **compound `Extension + Language Server`** を定義 (マルチルート/ワークスペースで開いた場合は `.code-workspace` の launch が使われるため)。`tasks` セクションにも `build-server` を定義
+  - 修正6 (`vscode-extension/README.md`): "Development (F5)" を「両方同時デバッグ (推奨)」/「publish 済みサーバを spawn」の 2 節に再構成。`SVLSP_SERVER_PORT` の意味、起動順に依存しない理由、Reload Window で再接続できる理由、拡張単体デバッグ時の注意を明記
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+  - コミット: SystemVerilogLanguageServer `cc9b5af`、メイン (submodule pointer + vscode-extension 3 ファイル + RtlEditor2.code-workspace + state.md)
+  - Next: VS Code で `RtlEditor2.code-workspace` を開き、Run and Debug で **Extension + Language Server** を選んで F5 → (1) 拡張ホストが起動し RTL Hierarchy / hover / 補完が動くこと (2) サーバ側 C# のブレークポイント (例: `LspHandler.HandleInitialize`) で止まること (3) Extension Development Host で Reload Window しても再接続して動き続けること を確認
+  - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは未実施 (目視確認のみ)。ポート 9250 が使用中の場合は launch.json / code-workspace の `SVLSP_SERVER_PORT` と `--port` を同じ値に変えること
+
 - **VS Code 拡張が起動しなくなった (デバッグ起動時に例外の記録がどこにも残らない)** → 調査・防御実装完了 (ビルド成功 0 errors)
   - ユーザ報告: 前回の Message view 修正後、拡張が起動失敗するようになった。デバッグ起動時に exception が出たときログはどこかに出ないのか
   - **ログの現状 (調査結果)**:

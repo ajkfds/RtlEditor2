@@ -6,6 +6,23 @@
             "type": "shell",
             "command": "echo 'No build step required (plain JS extension)'",
             "problemMatcher": []
+        },
+        {
+            // Builds the C# language server before the debugger launches it.
+            // The server is a sibling project of vscode-extension/ in the repo.
+            "label": "build-server",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "${workspaceFolder}/../SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj",
+                "-clp:ErrorsOnly"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/../SystemVerilogLanguageServer"
+            },
+            "problemMatcher": "$msCompile",
+            "group": "build"
         }
     ]
 }

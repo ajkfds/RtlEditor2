@@ -2,12 +2,23 @@
     "version": "0.2.0",
     "configurations": [
         {
+            // Debugs the extension host (TypeScript/JavaScript side).
+            //
+            // The language server is NOT spawned by the extension in this
+            // configuration: SVLSP_SERVER_PORT tells extension.js to connect to
+            // a server that is already listening on that loopback port. The
+            // server itself is launched by the "Attach: SystemVerilog Language
+            // Server (C#)" configuration below, so both sides can be debugged
+            // at once from the compound launch in RtlEditor2.code-workspace.
             "name": "Run Extension",
             "type": "extensionHost",
             "request": "launch",
             "args": [
                 "--extensionDevelopmentPath=${workspaceFolder}"
             ],
+            "env": {
+                "SVLSP_SERVER_PORT": "9250"
+            },
             // This is a plain-JS extension: only the two source files at the
             // extension root are debuggable. Do NOT glob **/*.js here: the
             // bundled server under server/ (a publish output, git-ignored)
@@ -27,6 +38,29 @@
                 "${workspaceFolder}/server/**"
             ],
             "internalConsoleOptions": "openOnSessionStart"
+        },
+        {
+            // Debugs the C# language server. It listens on the same loopback
+            // port the extension connects to (SVLSP_SERVER_PORT above), so the
+            // extension host and the server talk over TCP instead of stdio.
+            //
+            // Launching (not attaching) is what makes breakpoints in the
+            // server work: the debugger owns the process from the start.
+            "name": "Launch: SystemVerilog Language Server (C#)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-server",
+            "program": "${workspaceFolder}/../SystemVerilogLanguageServer/bin/Debug/net10.0/SystemVerilogLanguageServer.dll",
+            "args": [
+                "--port",
+                "9250"
+            ],
+            "cwd": "${workspaceFolder}/../SystemVerilogLanguageServer",
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "env": {
+                "DOTNET_ENVIRONMENT": "Development"
+            }
         }
     ]
 }

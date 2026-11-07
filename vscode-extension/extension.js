@@ -145,17 +145,42 @@ function showLog() {
 
 // ---- raw JSON-RPC (LSP over stdio) client, no external dependencies ----
 
+/**
+ * Transport abstraction so the client can talk to either a spawned server
+ * process (stdio, the default) or a server that is already listening on a TCP
+ * port (debugging: the C# debugger launches the server, see
+ * SVLSP_SERVER_PORT below).
+ *
+ * A transport exposes:
+ *   onData(cb)    - raw bytes from the server
+ *   onStderr(cb)  - server diagnostics (process transport only)
+ *   onExit(cb)    - the connection ended
+ *   write(buffer) - send raw bytes to the server
+ *   kill()        - tear the connection down
+ */
+function createProcessTransport(proc) {
+    return {
+        onData: (cb) => proc.stdout.on('data', cb),
+        onStderr: (cb) => proc.stderr.on('data', cb),
+        onExit: (cb) => proc.on('exit', (code) => cb(code)),
+        write: (buffer) => {
+            if (proc.stdin.writable) proc.stdin.write(buffer);
+        },
+        kill: () => { try { proc.kill(); } catch (e) { /* ignore */ } },
+    };
+}
+
 class RawLspClient {
-    constructor(process_) {
-        this.proc = process_;
+    constructor(transport) {
+        this.transport = transport;
         this.nextId = 1;
         this.pending = new Map(); // id -> {resolve, reject}
         this.notifications = new Map(); // method -> handler
         this.buffer = Buffer.alloc(0);
         this.closed = false;
 
-        this.proc.stdout.on('data', (chunk) => this.onData(chunk));
-        this.proc.stderr.on('data', (chunk) => {
+        this.transport.onData((chunk) => this.onData(chunk));
+        this.transport.onStderr((chunk) => {
             // Route the server's stderr (workspace scan progress, parse
             // failures, full stack traces) into the extension log file so the
             // user can see exactly what the server did.
@@ -165,7 +190,7 @@ class RawLspClient {
                 if (line.trim().length > 0) logLine('[server] ' + line);
             }
         });
-        this.proc.on('exit', (code) => {
+        this.transport.onExit((code) => {
             this.closed = true;
             for (const p of this.pending.values()) {
                 p.reject(new Error('server exited (code ' + code + ')'));
@@ -233,10 +258,10 @@ class RawLspClient {
     }
 
     write(text) {
-        if (this.closed || !this.proc.stdin.writable) return;
+        if (this.closed) return;
         const body = Buffer.from(text, 'utf8');
         const header = Buffer.from('Content-Length: ' + body.length + '\r\n\r\n', 'ascii');
-        this.proc.stdin.write(Buffer.concat([header, body]));
+        this.transport.write(Buffer.concat([header, body]));
     }
 
     onNotification(method, handler) {
@@ -245,7 +270,7 @@ class RawLspClient {
 
     dispose() {
         this.closed = true;
-        try { this.proc.kill(); } catch (e) { /* ignore */ }
+        this.transport.kill();
     }
 }
 
@@ -369,29 +394,134 @@ function withClient(fn) {
     });
 }
 
-function ensureClient() {
-    if (initPromise) return initPromise;
-    if (client) return Promise.resolve(client);
+/**
+ * Debug transport: when SVLSP_SERVER_PORT is set, the server is NOT spawned.
+ * Instead the extension connects to a server that is already listening on that
+ * loopback port. This is what makes "F5 starts both the extension host and the
+ * C# server" work: the C# debugger launches the server (so breakpoints in the
+ * server are hit) and the extension host connects to it.
+ *
+ * The port is read from the environment of the extension host, which the
+ * launch configuration in RtlEditor2.code-workspace sets via "env".
+ */
+function debugServerPort() {
+    const raw = process.env.SVLSP_SERVER_PORT;
+    if (!raw) return 0;
+    const port = parseInt(raw, 10);
+    return Number.isFinite(port) && port > 0 ? port : 0;
+}
+
+/**
+ * Connects to a server already listening on 127.0.0.1:<port>. Retries for a
+ * short while because the extension host and the server are launched in
+ * parallel by the compound launch: the server may still be starting up.
+ */
+function connectToDebugServer(port) {
+    const net = require('net');
+    const deadline = Date.now() + 30000;
+    return new Promise((resolve, reject) => {
+        const attempt = () => {
+            const socket = net.connect({ host: '127.0.0.1', port });
+            // `settled` guards the retry path: once the socket has connected
+            // (or the deadline passed) a later 'error' must not start another
+            // connection attempt.
+            let settled = false;
+            socket.once('connect', () => {
+                settled = true;
+                // Keep a permanent error handler so a later socket error is
+                // reported through the transport instead of being thrown as an
+                // unhandled 'error' event.
+                socket.on('error', (err) => logLine('debug server socket error: ' + err.message));
+                logLine('connected to debug server on 127.0.0.1:' + port);
+                resolve(socket);
+            });
+            socket.once('error', (err) => {
+                if (settled) return;
+                settled = true;
+                socket.destroy();
+                if (Date.now() > deadline) {
+                    reject(new Error('could not connect to the debug server on port ' + port + ': ' + err.message));
+                    return;
+                }
+                setTimeout(attempt, 250);
+            });
+        };
+        attempt();
+    });
+}
+
+/**
+ * Creates the LSP client for the current transport.
+ *
+ * Returns { client, spawnFailed }:
+ *   - client:      the RawLspClient (already wired to its transport)
+ *   - spawnFailed: a promise that rejects if the transport could not be
+ *                  established (missing binary, connection refused), so the
+ *                  pending initialize is rejected instead of hanging forever.
+ */
+function createClient() {
+    const debugPort = debugServerPort();
+    if (debugPort > 0) {
+        // Debugging: connect to the server the C# debugger launched. The
+        // socket is awaited before the client is built, so the transport is
+        // fully wired when the first request (initialize) is written.
+        logLine('debug transport: connecting to 127.0.0.1:' + debugPort + ' (server is not spawned)');
+        const socketPromise = connectToDebugServer(debugPort);
+        // Every transport method awaits the same socket promise. A failed
+        // connection is reported through spawnFailed (below), so the per-call
+        // rejections are swallowed here to avoid unhandled rejections.
+        const onSocket = (fn) => socketPromise.then(fn, () => { /* reported via spawnFailed */ });
+        const transport = {
+            onData: (cb) => onSocket((s) => s.on('data', cb)),
+            onStderr: () => { /* no separate stderr over TCP */ },
+            onExit: (cb) => onSocket((s) => {
+                s.on('close', () => cb('socket closed'));
+                s.on('error', (err) => cb('socket error: ' + err.message));
+            }),
+            write: (buffer) => onSocket((s) => { if (s.writable) s.write(buffer); }),
+            kill: () => onSocket((s) => { try { s.destroy(); } catch (e) { /* ignore */ } }),
+        };
+        return {
+            client: new RawLspClient(transport),
+            // Reject initialize if the connection never comes up.
+            spawnFailed: socketPromise.then(() => new Promise(() => { /* connected */ })),
+        };
+    }
 
     const server = resolveServerCommand(getContext());
     if (!server) {
-        return Promise.reject(new Error(
-            'server executable not found. The extension expects a bundled server under <extension>/server/ ' +
-            '(or set "systemverilogLsp.serverPath" to a published SystemVerilogLanguageServer binary). ' +
-            'To build it: dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release'
-        ));
+        return {
+            client: null,
+            spawnFailed: Promise.reject(new Error(
+                'server executable not found. The extension expects a bundled server under <extension>/server/ ' +
+                '(or set "systemverilogLsp.serverPath" to a published SystemVerilogLanguageServer binary). ' +
+                'To build it: dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release'
+            )),
+        };
     }
 
     logLine('starting server: ' + server.command + ' ' + server.args.join(' '));
     const proc = spawn(server.command, server.args, { stdio: ['pipe', 'pipe', 'pipe'] });
     proc.on('error', (err) => logLine('server spawn error: ' + err.message));
     proc.on('exit', (code) => logLine('server exited with code ' + code));
-    client = new RawLspClient(proc);
     // A spawn failure (missing binary, permission) must reject the pending
     // initialize instead of leaving the promise pending forever.
     const spawnFailed = new Promise((_, reject) => {
         proc.on('error', (err) => reject(new Error('server spawn failed: ' + err.message)));
     });
+    return { client: new RawLspClient(createProcessTransport(proc)), spawnFailed };
+}
+
+function ensureClient() {
+    if (initPromise) return initPromise;
+    if (client) return Promise.resolve(client);
+
+    const created = createClient();
+    if (!created.client) {
+        return created.spawnFailed;
+    }
+    client = created.client;
+    const spawnFailed = created.spawnFailed;
     spawnFailed.catch(() => { /* handled below via Promise.race */ });
     // Server-initiated "the hierarchy changed" push (non-standard notification,
     // vendor prefix rtl/). The server sends it on didSave / watched-file
