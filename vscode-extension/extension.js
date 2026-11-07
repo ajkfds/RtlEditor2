@@ -138,7 +138,20 @@ function crashLog(where, err) {
  * any unhandled promise rejection is written to the crash log instead of
  * silently killing the extension host.
  */
+// Guards against registering the process-level handlers more than once.
+//
+// activate() runs again on every "Reload Window" / extension host restart in
+// the same process, and process.on() appends a listener each time. After ten
+// activations Node prints
+//   MaxListenersExceededWarning: Possible EventEmitter memory leak detected.
+//   11 uncaughtException listeners added to [process].
+// and every crash is then reported N times. Worse, the handlers are what keep
+// the host alive on an uncaught exception, so a pile of them makes the failure
+// path itself unreliable. Register exactly once per process.
+let crashHandlersInstalled = false;
 function installCrashHandlers() {
+    if (crashHandlersInstalled) return;
+    crashHandlersInstalled = true;
     process.on('uncaughtException', (err) => {
         // This handler must never throw. If it does, Node aborts the whole
         // extension host with SIGABRT (exit code 134) instead of just logging
@@ -1109,6 +1122,11 @@ function toSelectionRange(r) {
     return new vscode.SelectionRange(range, parent);
 }
 
+// activate() can run more than once in the same extension host process (a
+// "Reload Window" re-activates without restarting the process). Registering the
+// providers / commands / listeners a second time would duplicate every event
+// handler, so the body runs once and later calls only refresh the context.
+let activated = false;
 function activate(context) {
     context_ = context;
     initLog(context);
@@ -1119,6 +1137,12 @@ function activate(context) {
     logLine('workspaceFolders: ' + JSON.stringify(workspaceFolderParams()));
     logLine('rootUri: ' + workspaceRootUri());
 
+    if (activated) {
+        logLine('activate called again in the same host; providers already registered');
+        return;
+    }
+    activated = true;
+
     // Everything below registers providers / commands. A throw here disables
     // the whole extension (VS Code reports it once and stops activating), so
     // record it in the crash log before re-throwing: without this the failure
@@ -1128,9 +1152,10 @@ function activate(context) {
     } catch (err) {
         const file = crashLog('activate', err);
         try {
-            vscode.window.showErrorMessage(
+            const shown = vscode.window.showErrorMessage(
                 'SystemVerilog LSP failed to activate: ' + (err && err.message) +
                 (file ? ' (see ' + file + ')' : ''));
+            if (shown && typeof shown.catch === 'function') shown.catch(() => { /* host closing */ });
         } catch (e) { /* ignore */ }
         throw err;
     }
@@ -1611,6 +1636,10 @@ function deactivate() {
     // deactivate() runs while the host is being torn down, so every step is
     // guarded: a throw here is reported as a failed deactivation and can take
     // the host down with it.
+    //
+    // The process-level crash handlers are intentionally NOT removed: they are
+    // installed once per process (see installCrashHandlers) and must stay in
+    // place for the next activation in the same process.
     try {
         if (client) {
             if (client.disposables) {
@@ -1624,6 +1653,8 @@ function deactivate() {
     } catch (e) { /* ignore */ }
     try { openedDocs.clear(); } catch (e) { /* ignore */ }
     try { if (diagnosticCollection) diagnosticCollection.clear(); } catch (e) { /* ignore */ }
+    // Allow the next activation to register everything again.
+    activated = false;
 }
 
 module.exports = { activate, deactivate };

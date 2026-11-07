@@ -3,6 +3,24 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張が起動に失敗する (再発、拡張ホストが exit code 134)** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: `起動に失敗しました。logを確認して`
+  - **ログの実測** (`main.log`): `Extension host with pid N exited with code: 134` / `crashed with code 134` が **20:25 / 21:13 / 21:56 / 22:00 に再発**。一方 20:18 / 20:26 のウィンドウは `exited with code: 0` で正常終了
+  - **決定的な手がかり** (`window1/renderer.log` 242-243 行):
+    ```
+    [Extension Host] MaxListenersExceededWarning: Possible EventEmitter memory leak detected.
+    11 uncaughtException listeners added to [process]. MaxListeners is 10.
+    [Extension Host] MaxListenersExceededWarning: ... 11 unhandledRejection listeners added to [process].
+    ```
+  - **根本原因 (`installCrashHandlers` が activate のたびにリスナを追加していた)**: `activate()` は **Reload Window / 拡張ホスト再起動のたびに同じプロセス内で再実行**される。`installCrashHandlers()` が毎回 `process.on('uncaughtException')` / `process.on('unhandledRejection')` を呼ぶため、10 回を超えると Node が `MaxListenersExceededWarning` を出し、**クラッシュが N 回重複報告される**。さらに**これらのハンドラは uncaughtException でホストを生かす役目**なので、溜まると失敗経路自体が不安定になり、ハンドラ内で再度 throw して SIGABRT (exit code 134) に至る
+  - 修正1 (`vscode-extension/extension.js` `installCrashHandlers`): `crashHandlersInstalled` フラグを新設し、**プロセスにつき 1 回だけ登録**するよう変更 (経緯コメント付き)
+  - 修正2 (同 `activate`): `activated` フラグを新設し、**2 回目以降の activate は早期 return** (providers / commands / イベントリスナの二重登録を防止)。`deactivate` で `activated = false` に戻す
+  - 修正3 (同 `activate` の catch): `showErrorMessage` の返り値 promise に `.catch()` を付け、ホスト終了中の reject でハンドラが落ちないようにした
+  - 修正4 (同 `deactivate`): クラッシュハンドラは**意図的に解除しない**旨をコメントで明記 (次回 activate でも必要)
+  - 検証: JS 4 ファイルの括弧バランス検証 → すべて balanced / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → **0 errors**
+  - 補足 (調査で確認した正常事項): ポート 9250 は空き。`SystemVerilogLanguageServer.csproj` のビルドは 0 errors。`bin/Debug/net10.0/SystemVerilogLanguageServer.dll` は存在。window5/7 は「9250 接続失敗 → spawn フォールバック」で正常動作していた
+  - Next: VS Code で Reload Window を繰り返しても (1) 拡張ホストが exit code 134 で落ちないこと (2) `MaxListenersExceededWarning` が出ないこと (3) 拡張のログに `activate called again in the same host; providers already registered` が出る (＝二重登録を防げている) ことを確認
+
 - **RTL Hierarchy の module instance をクリックするとインスタンス先 (sourceFile) が開く** → 調査完了・診断ログ追加 (サーバ側は全経路で正常と実測、クライアント側の実測待ち)
   - ユーザ報告: `module instance側をクリックしてもinstanceしたsourceFile側がloadされます`
   - **サーバ側は正常であることを3経路で実測** (プローブはコミット除外):
