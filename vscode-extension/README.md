@@ -15,6 +15,8 @@ or build step needed once it is packaged).
   Problems panel
 - **RTL Hierarchy** tree view (see below) with the same content as RtlEditor2's
   NavigatePanel
+- **Messages** pane (see below) on the right-hand side, the equivalent of
+  RtlEditor2's MessageView
 - **Snippets** from the editor (see below): alwaysFF block, module instance,
   port connection fill, port inversion, modport generation
 
@@ -65,6 +67,27 @@ Explorer container.
   interface instances, imported packages. A file with parse errors or warnings
   is tinted with the theme's error / warning colour, like the editor's
   NavigatePanel badge.
+
+## Messages pane
+
+The **SystemVerilog Messages** view lives in the Auxiliary Bar (the secondary
+side bar on the right-hand side of the window), so the parse messages stay
+visible next to the editor - the same role as RtlEditor2's MessageView.
+
+- Each entry shows a severity icon (error / warning / info / hint), the line
+  number and the message text, sorted by file and position with errors first.
+- Clicking an entry opens the file and selects the reported range.
+- The scope selector switches between **Current file** (the focused document,
+  like the editor) and **Whole workspace** (every file the server has parsed).
+- The view title shows the error / warning counts.
+- Open it with `SystemVerilog: Show Messages` from the command palette, or the
+  warning icon in the Auxiliary Bar.
+
+The pane renders the diagnostics the server already publishes through the
+standard `textDocument/publishDiagnostics` notification, so it adds no custom
+protocol and does not change the LSP standard. It complements (rather than
+replaces) VS Code's built-in Problems panel: the Problems panel groups by file
+in a tree, this pane is a flat, severity-coloured list like the editor's.
 
 ## Install
 

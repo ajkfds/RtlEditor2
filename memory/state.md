@@ -3,6 +3,33 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張に RtlEditor の MessageView 相当の右側ペインを追加 (Auxiliary Bar の WebviewView)** → 実装完了 (ビルド成功 0 errors、テスト 97 + sv-tests 1028 合格)
+  - ユーザ要求: vscode extension で RtlEditor の MessageView にあたるものを画面の右側に表示するペインを設けたい → 案B (`viewsContainers.auxiliarybar` の `WebviewView`) で実装
+  - 調査: RtlEditor の MessageView の実体は `CodeEditor2/Views/InfoView.axaml.cs` の `UpdateMessages` + `pluginVerilog/MessageView/MessageNode.cs`。現在のファイルのパースメッセージ (Error/Warning/Notice/Hint) を重要度アイコン + 行番号付きで並べ、クリックで `SetCaretPosition` / `SetSelection` してジャンプする
+  - 設計判断: **同じ情報は既に `textDocument/publishDiagnostics` で届いており `DiagnosticCollection` に格納済み**。新しいサーバプロトコルは不要で、標準 LSP を汚さずに「受信済み診断の別レンダラ」として実装できる (`memory/vscode_extension_architecture.md` の「判断・計算・知識 = C#、VS Code API 型への変換 = TS」に準拠。C# 変更ゼロ)
+  - 実装1 (`vscode-extension/messageView.js` 新規, 約 470 行):
+    - `MessageViewProvider` (`WebviewViewProvider`)。`diagnosticsByUri` (uri → `vscode.Diagnostic[]`) を保持し、`update` / `remove` / `setActiveUri` で更新
+    - `_collectEntries`: スコープ (`active` = フォーカス中のファイル / `workspace` = サーバがパースした全ファイル) のエントリを平坦化し、ファイル名 → 行 → 重要度の順にソート
+    - `_postState`: エントリ + 重要度別件数を webview に post。`WebviewView` には `badge` が無い (TreeView 専用) ため件数は `description` に出す
+    - `_reveal`: `openTextDocument` → `showTextDocument` → `Selection` + `revealRange` でジャンプ
+    - `_buildHtml`: CSP (`default-src 'none'` + nonce 付き script) 付きの HTML。重要度別の色 (`--vscode-errorForeground` 等のテーマ変数)、行番号、メッセージ、code を表示。スコープ切替の `<select>`、空状態メッセージ
+    - `registerMessageView`: `registerWebviewViewProvider` (`retainContextWhenHidden: true`) + `systemverilogLsp.showMessages` コマンド + `onDidChangeActiveTextEditor` でアクティブファイル追従
+  - 実装2 (`vscode-extension/package.json`):
+    - `contributes.viewsContainers.auxiliarybar` に `systemverilogLsp.messagesContainer` (title "SystemVerilog Messages", icon `$(warning)`) を追加 → **右側の Auxiliary Bar に出る**
+    - `contributes.views["systemverilogLsp.messagesContainer"]` に `systemverilogLsp.messageView` (`type: "webview"`) を追加
+    - `contributes.commands` に `systemverilogLsp.showMessages` (title "SystemVerilog: Show Messages", icon `$(warning)`) を追加
+    - `activationEvents` に `onView:systemverilogLsp.messageView` を追加
+    - 注: `viewsWelcome` は TreeView 専用のため messageView には追加しない (空状態は HTML 側で表示)
+  - 実装3 (`vscode-extension/extension.js`):
+    - `require('./messageView')` + `messageViewProviderRef` 変数を追加
+    - `publishDiagnostics` ハンドラで `messageViewProviderRef.update(params.uri, diags)` を呼ぶ (同じ診断を Problems パネルと Message view の両方に流す)
+    - `didClose` で `messageViewProviderRef.remove(key)`
+    - `activate` で `registerMessageView(context, logLine)` を呼ぶ
+  - 実装4 (`vscode-extension/README.md`): "Messages pane" 節を追加 (右側 Auxiliary Bar / 重要度アイコン + 行番号 / クリックでジャンプ / Current file と Whole workspace の切替 / Problems パネルとの違い)
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / テスト 97 + sv-tests 1028 合格 (C# 変更なしのため regression なし)
+  - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは未実施 (目視確認のみ)。`npm run package` と実際の .vsix 生成はユーザー環境で実行が必要
+  - Next: VS Code で Reload Window 後、(1) 右側 Auxiliary Bar に "SystemVerilog Messages" が出ること (2) エラーのあるファイルを開くとメッセージが重要度色 + 行番号付きで並ぶこと (3) クリックで該当位置にジャンプすること (4) スコープを Whole workspace にすると全ファイルのメッセージが出ること (5) コマンドパレットの "SystemVerilog: Show Messages" でペインが開くこと を確認
+
 - **VS Code 拡張の RTL Hierarchy で VerilogModuleInstance のアイコンが白い四角になり、展開しても下層が出ない** → 修正完了 (ビルド成功 0 errors、テスト 97 + sv-tests 1028 合格、publish 更新・同梱バイナリで実測済み)
   - ユーザ報告: vscode extension で使用したとき RTL Hierarchy view の VerilogModuleInstance の表示がおかしい。アイコンが白い四角になって、expand しても下層の item が表示されない
   - **原因1 (展開できない・最重要)**: `InMemorySystemVerilogCore.CreateDescriptor` がインスタンスノードの `Uri` を `ResolveItemUri(item)` (= インスタンス先モジュールのソースファイル) で作っていた。しかし `BuildFileNodes` は `ExpandToken.ForInstance(child.Uri, child.InstancePathSegments)` で **その Uri を展開トークンに埋め込む**。インスタンス文が書かれているのは親ファイル (top.sv) なのに、トークンはインスタンス先 (mid.sv) を指すため、次の展開要求が `mid.sv` の中から `u_mid` を探して見つからず空リストを返していた (矢印は出るが下層が空)

@@ -23,10 +23,20 @@
   "activationEvents": [
     "onLanguage:systemverilog",
     "onLanguage:verilog",
-    "onView:systemverilogLsp.hierarchy"
+    "onView:systemverilogLsp.hierarchy",
+    "onView:systemverilogLsp.messageView"
   ],
   "main": "./extension.js",
   "contributes": {
+    "viewsContainers": {
+      "auxiliarybar": [
+        {
+          "id": "systemverilogLsp.messagesContainer",
+          "title": "SystemVerilog Messages",
+          "icon": "$(warning)"
+        }
+      ]
+    },
     "views": {
       "explorer": [
         {
@@ -34,6 +44,14 @@
           "name": "RTL Hierarchy",
           "icon": "$(type-hierarchy)",
           "contextualTitle": "RTL Hierarchy"
+        }
+      ],
+      "systemverilogLsp.messagesContainer": [
+        {
+          "id": "systemverilogLsp.messageView",
+          "name": "Messages",
+          "type": "webview",
+          "contextualTitle": "SystemVerilog Messages"
         }
       ]
     },
@@ -109,6 +127,11 @@
         "command": "systemverilogLsp.snippet.modport",
         "title": "Generate Modport",
         "category": "SystemVerilog Snippet"
+      },
+      {
+        "command": "systemverilogLsp.showMessages",
+        "title": "SystemVerilog: Show Messages",
+        "icon": "$(warning)"
       },
       {
         "command": "systemverilogLsp.showLog",

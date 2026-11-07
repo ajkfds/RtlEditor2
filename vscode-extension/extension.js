@@ -3,6 +3,7 @@
 const vscode = require('vscode');
 const { spawn } = require('child_process');
 const { registerHierarchy } = require('./hierarchy');
+const { registerMessageView } = require('./messageView');
 
 let log = null;
 let logFilePath = null;
@@ -266,6 +267,9 @@ const openedDocs = new Map(); // uri -> open count
 // session is ready (the view can render before the client has started, in
 // which case the first fetch comes back empty).
 let hierarchyProviderRef = null;
+// set by activate(); the Message view (Auxiliary Bar) mirrors the diagnostics
+// the server publishes, so it is fed from the publishDiagnostics handler.
+let messageViewProviderRef = null;
 
 function withClient(fn) {
     return ensureClient().then(fn, (err) => {
@@ -327,6 +331,10 @@ function ensureClient() {
         });
         const collection = getDiagnosticCollection();
         collection.set(uri, diags);
+        // Mirror the same diagnostics into the Message view (the editor's
+        // MessageView equivalent). The view is a renderer for data the
+        // extension already holds, so no extra server protocol is involved.
+        if (messageViewProviderRef) messageViewProviderRef.update(params.uri, diags);
     });
 
     initPromise = Promise.race([
@@ -377,6 +385,7 @@ function ensureClient() {
                 openedDocs.delete(key);
                 client.send('textDocument/didClose', { textDocument: { uri: key } });
                 getDiagnosticCollection().delete(doc.uri);
+                if (messageViewProviderRef) messageViewProviderRef.remove(key);
             }
         });
         client.disposables = [openDisposable, changeDisposable, closeDisposable];
@@ -816,6 +825,11 @@ function activate(context) {
     // rendered in a Custom Tree View inside the Explorer container.
     const hierarchyProvider = registerHierarchy(context, () => ensureClient(), logLine, showLog);
     hierarchyProviderRef = hierarchyProvider;
+
+    // Message view (RtlEditor2's MessageView equivalent) in the Auxiliary Bar,
+    // i.e. a pane on the right-hand side of the editor. It renders the
+    // diagnostics the server already publishes, so it needs no extra protocol.
+    messageViewProviderRef = registerMessageView(context, logLine);
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument(async (doc) => {
             const lang = doc && doc.languageId;
