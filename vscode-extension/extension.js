@@ -418,32 +418,53 @@ function debugServerPort() {
  */
 function connectToDebugServer(port) {
     const net = require('net');
-    const deadline = Date.now() + 30000;
+    // Keep this short: while the connection is being retried, getChildren()
+    // (and therefore the RTL Hierarchy view) is still waiting, so a long
+    // timeout looks like "the tree never loads". The compound launch starts
+    // the server first, so a few seconds is plenty; after that the caller
+    // falls back to spawning the server.
+    const deadline = Date.now() + 10000;
+    let attemptCount = 0;
     return new Promise((resolve, reject) => {
         const attempt = () => {
+            attemptCount++;
             const socket = net.connect({ host: '127.0.0.1', port });
             // `settled` guards the retry path: once the socket has connected
             // (or the deadline passed) a later 'error' must not start another
             // connection attempt.
             let settled = false;
-            socket.once('connect', () => {
-                settled = true;
-                // Keep a permanent error handler so a later socket error is
-                // reported through the transport instead of being thrown as an
-                // unhandled 'error' event.
-                socket.on('error', (err) => logLine('debug server socket error: ' + err.message));
-                logLine('connected to debug server on 127.0.0.1:' + port);
-                resolve(socket);
-            });
-            socket.once('error', (err) => {
-                if (settled) return;
+            // A PERMANENT error listener (not `once`): socket.destroy() can
+            // emit a second error (ECONNRESET / ERR_STREAM_DESTROYED) and an
+            // unhandled 'error' event would crash the extension host. This was
+            // the source of the "unable to ... at Socket.<anonymous>" crash.
+            socket.on('error', (err) => {
+                if (settled) {
+                    logLine('debug server socket error (ignored): ' + err.message);
+                    return;
+                }
                 settled = true;
                 socket.destroy();
                 if (Date.now() > deadline) {
-                    reject(new Error('could not connect to the debug server on port ' + port + ': ' + err.message));
+                    reject(new Error(
+                        'could not connect to the debug server on 127.0.0.1:' + port +
+                        ' after ' + attemptCount + ' attempt(s): ' + err.message +
+                        '. Start "Launch: SystemVerilog Language Server (C#)" (or the ' +
+                        '"Extension + Language Server" compound) first, or unset ' +
+                        'SVLSP_SERVER_PORT to let the extension spawn the server itself.'));
                     return;
                 }
+                // Log the first attempt and then every 8th (~2s) so a wait is
+                // visible in the log instead of looking like a hang.
+                if (attemptCount === 1 || attemptCount % 8 === 0) {
+                    logLine('waiting for the debug server on 127.0.0.1:' + port +
+                        ' (attempt ' + attemptCount + '): ' + err.message);
+                }
                 setTimeout(attempt, 250);
+            });
+            socket.once('connect', () => {
+                settled = true;
+                logLine('connected to debug server on 127.0.0.1:' + port);
+                resolve(socket);
             });
         };
         attempt();
@@ -451,43 +472,15 @@ function connectToDebugServer(port) {
 }
 
 /**
- * Creates the LSP client for the current transport.
+ * Spawns the server and wraps it in a client (the normal, packaged path).
  *
  * Returns { client, spawnFailed }:
  *   - client:      the RawLspClient (already wired to its transport)
- *   - spawnFailed: a promise that rejects if the transport could not be
- *                  established (missing binary, connection refused), so the
- *                  pending initialize is rejected instead of hanging forever.
+ *   - spawnFailed: a promise that rejects if the process could not be started
+ *                  (missing binary, permission), so the pending initialize is
+ *                  rejected instead of hanging forever.
  */
-function createClient() {
-    const debugPort = debugServerPort();
-    if (debugPort > 0) {
-        // Debugging: connect to the server the C# debugger launched. The
-        // socket is awaited before the client is built, so the transport is
-        // fully wired when the first request (initialize) is written.
-        logLine('debug transport: connecting to 127.0.0.1:' + debugPort + ' (server is not spawned)');
-        const socketPromise = connectToDebugServer(debugPort);
-        // Every transport method awaits the same socket promise. A failed
-        // connection is reported through spawnFailed (below), so the per-call
-        // rejections are swallowed here to avoid unhandled rejections.
-        const onSocket = (fn) => socketPromise.then(fn, () => { /* reported via spawnFailed */ });
-        const transport = {
-            onData: (cb) => onSocket((s) => s.on('data', cb)),
-            onStderr: () => { /* no separate stderr over TCP */ },
-            onExit: (cb) => onSocket((s) => {
-                s.on('close', () => cb('socket closed'));
-                s.on('error', (err) => cb('socket error: ' + err.message));
-            }),
-            write: (buffer) => onSocket((s) => { if (s.writable) s.write(buffer); }),
-            kill: () => onSocket((s) => { try { s.destroy(); } catch (e) { /* ignore */ } }),
-        };
-        return {
-            client: new RawLspClient(transport),
-            // Reject initialize if the connection never comes up.
-            spawnFailed: socketPromise.then(() => new Promise(() => { /* connected */ })),
-        };
-    }
-
+function createSpawnedClient() {
     const server = resolveServerCommand(getContext());
     if (!server) {
         return {
@@ -512,17 +505,82 @@ function createClient() {
     return { client: new RawLspClient(createProcessTransport(proc)), spawnFailed };
 }
 
+/**
+ * Creates the LSP client for the current transport.
+ *
+ * When SVLSP_SERVER_PORT is set the extension first tries to CONNECT to a
+ * server that is already listening (the C# debugger launched it, so
+ * breakpoints in the server work). If that connection cannot be established
+ * the extension falls back to spawning the server, so "Run Extension" alone
+ * still works even though the launch configuration sets the variable.
+ */
+async function createClient() {
+    const debugPort = debugServerPort();
+    if (debugPort > 0) {
+        logLine('debug transport: connecting to 127.0.0.1:' + debugPort + ' (server is not spawned)');
+        let socket;
+        try {
+            socket = await connectToDebugServer(debugPort);
+        } catch (err) {
+            // Not fatal: fall back to spawning the server so a plain
+            // "Run Extension" (without the C# launch) keeps working.
+            logLine('debug transport unavailable, falling back to spawning the server: ' + err.message);
+            return createSpawnedClient();
+        }
+        const transport = {
+            onData: (cb) => socket.on('data', cb),
+            onStderr: () => { /* no separate stderr over TCP */ },
+            onExit: (cb) => {
+                socket.on('close', () => cb('socket closed'));
+                socket.on('error', (err) => cb('socket error: ' + err.message));
+            },
+            write: (buffer) => { if (socket.writable) socket.write(buffer); },
+            kill: () => { try { socket.destroy(); } catch (e) { /* ignore */ } },
+        };
+        return {
+            client: new RawLspClient(transport),
+            // The connection is already up, so nothing can fail here.
+            spawnFailed: new Promise(() => { /* never rejects */ }),
+        };
+    }
+
+    return createSpawnedClient();
+}
+
 function ensureClient() {
     if (initPromise) return initPromise;
     if (client) return Promise.resolve(client);
 
-    const created = createClient();
-    if (!created.client) {
-        return created.spawnFailed;
-    }
-    client = created.client;
-    const spawnFailed = created.spawnFailed;
-    spawnFailed.catch(() => { /* handled below via Promise.race */ });
+    // createClient() may await the TCP connection, so the whole setup runs
+    // inside initPromise: concurrent callers (getChildren, hover, ...) all
+    // await the same promise instead of racing to create a second client.
+    initPromise = createClient().then((created) => {
+        if (!created.client) {
+            // No client could be created: surface the reason to the caller.
+            return created.spawnFailed;
+        }
+        client = created.client;
+        return wireClient(client, created.spawnFailed);
+    }).catch((err) => {
+        // Allow a later retry (e.g. the user starts the server and reloads).
+        client = null;
+        initPromise = null;
+        throw err;
+    });
+    return initPromise;
+}
+
+/**
+ * Registers the server notifications and performs the LSP handshake.
+ * Split out of ensureClient so the transport setup (which may be async) stays
+ * readable.
+ *
+ * @param {RawLspClient} client
+ * @param {Promise<never>} spawnFailed rejects if the transport died before the
+ *        handshake finished (spawn error). It never resolves, so it is only
+ *        used to fail fast via Promise.race.
+ */
+function wireClient(client, spawnFailed) {
     // Server-initiated "the hierarchy changed" push (non-standard notification,
     // vendor prefix rtl/). The server sends it on didSave / watched-file
     // changes / workspace-folder changes / workspace-root inference, so the
@@ -557,7 +615,7 @@ function ensureClient() {
         if (messageViewProviderRef) messageViewProviderRef.update(params.uri, diags);
     });
 
-    initPromise = Promise.race([
+    return Promise.race([
         client.request('initialize', {
             processId: process.pid,
             rootUri: workspaceRootUri(),
@@ -613,10 +671,8 @@ function ensureClient() {
     }, (err) => {
         client.dispose();
         client = null;
-        initPromise = null;
         throw err;
     });
-    return initPromise;
 }
 
 let context_ = null;

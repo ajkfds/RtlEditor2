@@ -3,6 +3,19 @@
 
 ## 進行中タスク (最新)
 
+- **TCP デバッグ接続で RTL Hierarchy が取得できなくなる / Socket エラーで落ちる** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: `RTL Hierarchyの取得が終わらなくなりました` + `at Socket.<anonymous> (extension.js:443:28)` のスタック + ログ末尾が `debug transport: connecting to 127.0.0.1:9250` / `getChildren: <root>` で止まる
+  - 原因1 (**unhandled 'error' で拡張ホストが落ちる**): `connectToDebugServer` が `socket.once('error', ...)` で登録し、ハンドラ内で `socket.destroy()` を呼んでいた。`destroy()` は **2 回目の 'error' (ECONNRESET / ERR_STREAM_DESTROYED) を emit する**ことがあり、`once` は既に消費済みのため **unhandled 'error' イベント**になって拡張ホストごと落ちていた (スタックの `Socket.<anonymous>` がこれ)
+  - 原因2 (**接続待ちが長すぎて「終わらない」ように見える**): リトライ期限が 30 秒で、その間 `getChildren` は `ensureClient()` を await したまま。ログも最初の 1 回しか出ないため、ツリーが永久に読み込み中のままに見えた
+  - 原因3 (**接続失敗が致命的だった**): `SVLSP_SERVER_PORT` が設定されていると必ず TCP 接続を試み、失敗すると `spawnFailed` で initialize が reject されるだけだった。`Run Extension` 単体起動 (サーバを起動していない) では必ず失敗する
+  - 修正1 (`connectToDebugServer`): `socket.once('error')` → **`socket.on('error')` (恒久リスナ)** に変更。`settled` フラグで「接続確立後 / 期限切れ後」の error はログのみで無視し、再試行も reject もしない。これで unhandled 'error' が発生しない
+  - 修正2 (同): リトライ期限を 30 秒 → **10 秒**に短縮。待機中は 1 回目 + 8 回目ごと (~2 秒間隔) に `waiting for the debug server ... (attempt N)` をログ出力し、ハングに見えないようにした。期限切れのエラーメッセージには「C# の launch 構成を先に起動する」か「SVLSP_SERVER_PORT を外す」という対処を明記
+  - 修正3 (`createClient` を async 化 + `createSpawnedClient` 分離): TCP 接続に失敗したら **spawn にフォールバック**する。これで `Run Extension` 単体 (サーバ未起動) でも従来どおり動く
+  - 修正4 (`ensureClient` / `wireClient` の再構成): `createClient()` が TCP 接続を await するため、**セットアップ全体を `initPromise` の中で行う**ようにした (並行呼び出しが 2 つ目のクライアントを作る競合を防止)。`wireClient(client, spawnFailed)` は通知登録 + `initialize` ハンドシェイクを行い、`Promise.race([initialize, spawnFailed])` で spawn 失敗を即座に伝える。失敗時は `client = null` / `initPromise = null` に戻して再試行可能にした
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors
+  - Next: VS Code で (1) `Extension + Language Server` compound で F5 → RTL Hierarchy が表示されること (2) `Run Extension` 単体で F5 → 10 秒後に spawn へフォールバックしてツリーが出ること (3) サーバ未起動のまま `Run Extension (connect to C# debug server)` を単体実行 → 拡張ホストが落ちず、10 秒後にフォールバックすること を確認
+  - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは未実施 (目視確認のみ)
+
 - **RtlEditor2.code-workspace で F5 一発で TS (拡張) と C# (LSP サーバ) を同時起動・アタッチ** → 実装完了 (ビルド成功 0 errors)
   - ユーザ要求: `RtlEditor2.code-workspace` で VS Code 全体を開き、F5 一発で TS と C# を同時に起動・アタッチしたい。`vscode-extension/.vscode/launch.json` / `tasks.json` の修正が必要かも
   - 問題: 拡張はサーバを **stdio で spawn** する設計 (`resolveServerCommand` → `spawn`)。spawn した子プロセスには C# デバッガを後からアタッチしづらく、`extensionHost` と `coreclr` を 1 つの compound で起動してもサーバ側のブレークポイントが効かない
