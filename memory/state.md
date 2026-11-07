@@ -3,6 +3,19 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy で module instance のノードをクリックしてもエディタが切り替わらない** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: `rtl hierarchyでmodule instanceのノードをクリックしてもエディタ側が切り替わりません。`
+  - **根本原因 (`onDidChangeSelection` がエディタを開いていなかった)**: `hierarchy.js` の `view.onDidChangeSelection` ハンドラは `provider.reparseAndRefresh(node.uri)` しか呼んでおらず、**`openAt()` を呼んでいなかった**。エディタを開く処理は `TreeItem.command` (`systemverilogLsp.revealInEditor`) にしか無かった
+  - **なぜ command が走らないか**: VS Code は**展開可能ノード (`collapsible = Collapsed`) をクリックすると展開トグルだけを行い、`item.command` を実行しない**。module instance は子を持つ (= 展開可能) ため、クリックしても command が走らずエディタが切り替わらなかった。ファイルノード (子なし = `None`) は command が走るため、ファイルは開けていた (症状が instance だけなのはこのため)
+  - 修正 (`vscode-extension/hierarchy.js` `registerHierarchy`): `onDidChangeSelection` ハンドラで **`openAt(node.uri, node.startLine, node.startCharacter)` → `provider.reparseAndRefresh(node.uri)`** の順に両方実行するよう変更 (経緯コメント付き)
+    - **再入ガード `revealing` を新設**: `reparseAndRefresh()` は末尾で `refreshTree()` を呼び、それが選択を変えて `onDidChangeSelection` を再発火させ得るため、`revealing` フラグで「open → refresh」の無限往復を防止 (`finally` で必ず解除)
+    - `TreeItem.command` は残置 (リーフファイル / コマンドパレット / 右クリックメニュー経由では引き続き有効)
+  - 検証:
+    - JS 4 ファイルの括弧バランス検証 → すべて balanced (正規表現リテラルを考慮した検証ツールを一時作成し、`autoConnectView.js` の `/"/g` 誤検出も解消)
+    - `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → **0 errors**
+  - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは未実施 (括弧バランス検証 + 目視)
+  - Next: VS Code で Reload Window 後、(1) module instance ノードをクリックするとエディタがそのインスタンス宣言位置に切り替わること (2) 同時に階層/エラーが再 parse されて更新されること (3) 展開トグルも従来どおり動くこと (4) ファイルノードのクリックも従来どおり動くこと を確認
+
 - **VS Code 拡張が起動失敗する (拡張ホストが exit code 134 でクラッシュ)** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: `vscode extensionを起動したときに起動失敗しました。logを確認して原因をチェックして`
   - **ログの取得方法**: `%APPDATA%\Code\logs` はプロジェクト外で `read_file` 不可、`powershell` / `cmd` / `node` / `ls` はコマンド許可リスト外。**`dotnet run` で一時 C# ツール (`_tmp_logdump`) を作り、`FileShare.ReadWrite` で開いて読む**方法で解決 (VS Code がログを開いたままなので共有読み取りが必須)。調査後に `git clean -fd _tmp_logdump` で削除

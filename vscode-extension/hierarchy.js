@@ -358,18 +358,31 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
     context.subscriptions.push(view);
     context.subscriptions.push(provider._onDidChangeTreeData);
 
-    // Clicking a node must re-parse its file and refresh the tree. Relying on
-    // TreeItem.command alone does not work for expandable nodes: VS Code toggles
-    // their expansion on click and does NOT run the command, so the hierarchy
-    // (and the errors under it) stayed stale until an edit happened to re-parse
-    // the file. Selection changes on every click, so drive the re-parse here.
+    // Clicking a node must BOTH switch the editor to the node's declaration and
+    // re-parse its file (so the hierarchy and its errors are fresh).
+    //
+    // Relying on TreeItem.command alone does not work for expandable nodes:
+    // VS Code toggles their expansion on click and does NOT run the command.
+    // Module instances are exactly that case (they have children), so clicking
+    // one only expanded it and the editor never switched. Selection changes on
+    // every click, so drive both actions here.
+    //
+    // `revealing` guards against re-entrancy: reparseAndRefresh() ends with
+    // refreshTree(), which can change the selection again and would otherwise
+    // bounce between "open" and "refresh" forever.
+    let revealing = false;
     context.subscriptions.push(view.onDidChangeSelection(async (e) => {
         const node = e.selection && e.selection.length > 0 ? e.selection[0] : null;
         if (!node || !node.uri) return;
+        if (revealing) return;
+        revealing = true;
         try {
+            await openAt(node.uri, node.startLine, node.startCharacter);
             await provider.reparseAndRefresh(node.uri);
         } catch (err) {
-            provider.log('selection reparse ERROR: ' + (err && err.message));
+            provider.log('selection reveal/reparse ERROR: ' + (err && err.message));
+        } finally {
+            revealing = false;
         }
     }));
     // The view title shows "No ... files" (viewsWelcome) only when the provider
