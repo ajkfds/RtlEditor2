@@ -933,6 +933,88 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// An ORDERED port connection (<c>inst(sig)</c>) must run the same port
+    /// checks a named connection (<c>inst(.port(sig))</c>) does, so a width
+    /// mismatch is reported.
+    ///
+    /// <para>
+    /// The ordered path used to parse the expression and drop it: it neither
+    /// recorded the connection nor called the port checks, so a 4-bit signal
+    /// connected to an 8-bit port produced no diagnostic at all. Only the named
+    /// form was checked.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OrderedPortConnection_ReportsBitWidthMismatch()
+    {
+        File.WriteAllText(Path.Combine(_root, "child.sv"),
+            "module child (input [7:0] d);\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  wire [3:0] sig;\n  child u_child(sig);\nendmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new
+            {
+                uri = topUri,
+                languageId = "systemverilog",
+                version = 1,
+                text = File.ReadAllText(Path.Combine(_root, "top.sv")),
+            },
+        });
+
+        Assert.Contains(DiagnosticMessages(core, topUri),
+            m => m.Contains("bit width mismatch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The named form must keep reporting the same mismatch (the ordered fix
+    /// must not have moved the check into a path the named form no longer
+    /// reaches).
+    /// </summary>
+    [Fact]
+    public void NamedPortConnection_ReportsBitWidthMismatch()
+    {
+        File.WriteAllText(Path.Combine(_root, "child.sv"),
+            "module child (input [7:0] d);\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  wire [3:0] sig;\n  child u_child(.d(sig));\nendmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new
+            {
+                uri = topUri,
+                languageId = "systemverilog",
+                version = 1,
+                text = File.ReadAllText(Path.Combine(_root, "top.sv")),
+            },
+        });
+
+        Assert.Contains(DiagnosticMessages(core, topUri),
+            m => m.Contains("bit width mismatch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Diagnostic messages the server currently holds for a file.</summary>
+    private static List<string> DiagnosticMessages(InMemorySystemVerilogCore core, string uri)
+    {
+        InMemoryProject project = core.GetOrCreateProject("default");
+        InMemoryFile file = (InMemoryFile)project.FindFile(uri)!;
+        List<string> messages = new();
+        foreach (ISystemVerilogDiagnostic d in file.Diagnostics)
+        {
+            messages.Add(d.Message);
+        }
+        return messages;
+    }
+
+    /// <summary>
     /// The expression text of a parameter in the file's current parse result
     /// (e.g. "8" for the declared default, "4" after the instance override).
     /// </summary>

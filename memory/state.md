@@ -3,6 +3,23 @@
 
 ## 進行中タスク (最新)
 
+- **module instance 接続時の bitwidth check が効かない (ordered port connection)** → 修正完了 (ビルド成功 0 errors、テスト 1183/1183 合格、publish 更新・selftest 正常)
+  - ユーザ報告: `module instance接続時のbitwidth checkが効いてないです`
+  - **根本原因 (ordered port connection が port check を一切呼んでいなかった)**: `ModuleInstantiation.parseOrderedPortConnections` は `Expression.ParseCreateAcceptImplicitNet` で式を解析するだけで、(1) `PortConnection` への登録が `word.Prototype` のときのみ、(2) `checkPortConnection` を**一度も呼んでいなかった**。bitwidth check (`checkNetPortConnection` / `checkVariablePortConnection`) は named port connection 経路 (`parseNamedPortConnection` → `connectPort` → `checkPortConnection`) からしか到達できず、`inst(sig)` 形式では幅不一致が無警告だった (`.port(sig)` 形式のみ検出)
+  - **副次バグ (ordered port のインデックスが進まない)**: `parseOrderedPortConnections` のループに `i++` が無く、全接続が `PortsList[0]` と比較されていた (2 番目以降のポートで誤った幅・誤った hint になっていた)
+  - 修正1 (`CodeEditor2VerilogPlugin/Verilog/Items/ModuleInstantiation.cs` `parseOrderedPortConnections`): 式解析後、`connectPort(word, moduleInstantiation, instancedModule, pinName, expression)` を呼ぶよう変更。`connectPort` は named 経路と同一で、方向判定 (output は `AssertAssigned` + `checkPortConnection(..., true)` / input は `checkPortConnection(..., false)`)・`PortConnection` 登録・bitwidth / data type check をすべて行う
+  - 修正2 (同): ループ末尾に `i++` を追加 (ordered port のインデックスを進める)
+  - 回帰テスト追加 (`WorkspaceHierarchyTests`, 2 件):
+    - `OrderedPortConnection_ReportsBitWidthMismatch`: `child (input [7:0] d)` を `child u_child(sig)` (sig は 4bit) で接続 → `bit width mismatch` を検出
+    - `NamedPortConnection_ReportsBitWidthMismatch`: `.d(sig)` 形式でも引き続き検出 (named 経路の regression 防止)
+    - **修正を stash で戻すと ordered 側だけ失敗** (`Collection: ["undriven"]` = mismatch 無し) することを実証
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test` **1183 合格 / 0 失敗** (sv-tests 1028 含む、regression なし)
+    - publish 更新 (`vscode-extension/server`) + `--selftest` 正常
+  - Next: VS Code で Reload Window 後、ordered 接続 (`inst(sig)`) で幅が合わないときに波線 (bit width mismatch) が出ること、named 接続も従来どおり出ること、2 番目以降のポートでも正しいポートと比較されることを確認
+  - メモ: 検証用プローブは使用せず (stash による切り分けのみ)。`SystemVerilogLanguageServer.Tests/Debug*.cs` の既存プローブは従来どおりコミットから除外
+
 - **RTL Hierarchy の instance を開いても parameter override が parse 結果に反映されない** → 修正完了 (ビルド成功 0 errors、テスト 1181/1181 合格、stdio 実測済み。publish は VS Code 終了後に要実行)
   - ユーザ報告: `module instanceを開けるようになりましたが、instance時のparameter指定の値が正しくinstance側のparse結果に反映されていません。module側でinstance時にparameter指定してmodule instanceを開いた場合はparse結果にparameter overrideの結果が反映されるべきです`
   - **根本原因 (LSP はファイルを既定パラメータで 1 回だけ parse していた)**: クリックで開くのはインスタンス先の**ソースファイル**で、サーバはそれを通常のファイルとして parse する。デスクトップ版は `SetTextFileAsync(ModuleInstance)` で**インスタンス**を開き、`VerilogModuleInstance.CreateDocumentParser` が `new VerilogParser(this, moduleName, parameterOverrides, ...)` で override 適用済みの parse 結果を表示する。LSP にはこの経路が無く、`moduleSample #(.P_WIDTH(5))` でも既定値 `P_WIDTH = 8` のまま解析されていた
