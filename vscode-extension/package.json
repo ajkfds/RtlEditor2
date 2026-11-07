@@ -31,7 +31,7 @@
     "viewsContainers": {
       "auxiliarybar": [
         {
-          "id": "systemverilogLsp.messagesContainer",
+          "id": "systemverilogLsp-messagesContainer",
           "title": "SystemVerilog Messages",
           "icon": "$(warning)"
         }
@@ -46,7 +46,7 @@
           "contextualTitle": "RTL Hierarchy"
         }
       ],
-      "systemverilogLsp.messagesContainer": [
+      "systemverilogLsp-messagesContainer": [
         {
           "id": "systemverilogLsp.messageView",
           "name": "Messages",

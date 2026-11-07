@@ -82,7 +82,13 @@ function initLog(context) {
 }
 function logLine(msg) {
     const line = '[' + new Date().toISOString() + '] ' + msg;
-    if (log) log.appendLine(line);
+    // appendLine() throws "Channel has been closed" once the extension host is
+    // being torn down (window close / reload). logLine() is called from
+    // ChildProcess event handlers (e.g. the server's 'exit'), so an unguarded
+    // throw there becomes an uncaughtException, and the uncaughtException
+    // handler then fails the same way -> Node aborts the host with SIGABRT
+    // (exit code 134). Guard it exactly like crashLog() does.
+    try { if (log) log.appendLine(line); } catch (e) { /* channel closed */ }
     if (logFilePath) {
         try { require('fs').appendFileSync(logFilePath, line + '\n'); } catch (e) { /* ignore */ }
     }
@@ -134,22 +140,33 @@ function crashLog(where, err) {
  */
 function installCrashHandlers() {
     process.on('uncaughtException', (err) => {
+        // This handler must never throw. If it does, Node aborts the whole
+        // extension host with SIGABRT (exit code 134) instead of just logging
+        // the original error. showErrorMessage() rejects/throws once the host
+        // is shutting down ("Channel has been closed"), so it is wrapped and
+        // its promise is explicitly caught.
         const file = crashLog('uncaughtException', err);
         try {
-            vscode.window.showErrorMessage(
+            const shown = vscode.window.showErrorMessage(
                 'SystemVerilog LSP crashed: ' + (err && err.message) +
                 (file ? ' (see ' + file + ')' : ''));
+            if (shown && typeof shown.catch === 'function') shown.catch(() => { /* host closing */ });
         } catch (e) { /* ignore */ }
     });
     process.on('unhandledRejection', (reason) => {
+        // "Canceled" rejections are normal when the host is torn down; do not
+        // spam the crash log with them.
+        const message = reason && reason.message ? String(reason.message) : String(reason);
+        if (message === 'Canceled' || message === 'Canceled: Canceled') return;
         crashLog('unhandledRejection', reason);
     });
 }
 /** Reveals the OutputChannel (and reports the log file path). */
 function showLog() {
-    if (log) log.show(true);
+    // Same reasoning as logLine(): the channel may already be closed.
+    try { if (log) log.show(true); } catch (e) { /* channel closed */ }
     if (logFilePath) {
-        vscode.window.setStatusBarMessage('SystemVerilog LSP log: ' + logFilePath, 8000);
+        try { vscode.window.setStatusBarMessage('SystemVerilog LSP log: ' + logFilePath, 8000); } catch (e) { /* ignore */ }
     }
 }
 
@@ -399,7 +416,13 @@ let messageViewProviderRef = null;
 function withClient(fn) {
     return ensureClient().then(fn, (err) => {
         logLine('ERROR: ' + (err && err.stack ? err.stack : err.message));
-        vscode.window.showErrorMessage('SystemVerilog LSP: ' + err.message);
+        // Never let the error report itself throw: this runs inside a promise
+        // rejection handler, and an unguarded throw here would surface as an
+        // unhandledRejection (and, while the host is closing, as a crash).
+        try {
+            const shown = vscode.window.showErrorMessage('SystemVerilog LSP: ' + err.message);
+            if (shown && typeof shown.catch === 'function') shown.catch(() => { /* host closing */ });
+        } catch (e) { /* ignore */ }
         return undefined;
     });
 }
@@ -505,8 +528,11 @@ function createSpawnedClient() {
 
     logLine('starting server: ' + server.command + ' ' + server.args.join(' '));
     const proc = spawn(server.command, server.args, { stdio: ['pipe', 'pipe', 'pipe'] });
-    proc.on('error', (err) => logLine('server spawn error: ' + err.message));
-    proc.on('exit', (code) => logLine('server exited with code ' + code));
+    // These run from ChildProcess event handlers. logLine() is guarded, but the
+    // handlers are also wrapped so a throw can never escape into
+    // uncaughtException while the host is shutting down.
+    proc.on('error', (err) => { try { logLine('server spawn error: ' + err.message); } catch (e) { /* ignore */ } });
+    proc.on('exit', (code) => { try { logLine('server exited with code ' + code); } catch (e) { /* ignore */ } });
     // A spawn failure (missing binary, permission) must reject the pending
     // initialize instead of leaving the promise pending forever.
     const spawnFailed = new Promise((_, reject) => {
@@ -1582,15 +1608,22 @@ function registerAutoConnectCommand(context) {
 }
 
 function deactivate() {
-    if (client) {
-        if (client.disposables) {
-            for (const d of client.disposables) d.dispose();
+    // deactivate() runs while the host is being torn down, so every step is
+    // guarded: a throw here is reported as a failed deactivation and can take
+    // the host down with it.
+    try {
+        if (client) {
+            if (client.disposables) {
+                for (const d of client.disposables) {
+                    try { d.dispose(); } catch (e) { /* ignore */ }
+                }
+            }
+            client.dispose();
+            client = null;
         }
-        client.dispose();
-        client = null;
-    }
-    openedDocs.clear();
-    if (diagnosticCollection) diagnosticCollection.clear();
+    } catch (e) { /* ignore */ }
+    try { openedDocs.clear(); } catch (e) { /* ignore */ }
+    try { if (diagnosticCollection) diagnosticCollection.clear(); } catch (e) { /* ignore */ }
 }
 
 module.exports = { activate, deactivate };

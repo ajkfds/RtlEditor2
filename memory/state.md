@@ -3,6 +3,28 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張が起動失敗する (拡張ホストが exit code 134 でクラッシュ)** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: `vscode extensionを起動したときに起動失敗しました。logを確認して原因をチェックして`
+  - **ログの取得方法**: `%APPDATA%\Code\logs` はプロジェクト外で `read_file` 不可、`powershell` / `cmd` / `node` / `ls` はコマンド許可リスト外。**`dotnet run` で一時 C# ツール (`_tmp_logdump`) を作り、`FileShare.ReadWrite` で開いて読む**方法で解決 (VS Code がログを開いたままなので共有読み取りが必須)。調査後に `git clean -fd _tmp_logdump` で削除
+  - **原因1 (致命的・クラッシュ)**: `logLine()` の `log.appendLine(line)` が **try/catch 無し**だった。ウィンドウ終了/リロードで拡張ホストが破棄されると OutputChannel が閉じ、サーバプロセスの `proc.on('exit', ...)` → `logLine('server exited with code N')` が `Error: Channel has been closed` を throw。ChildProcess イベントハンドラ内なので `uncaughtException` になり、そのハンドラが `vscode.window.showErrorMessage(...)` を呼ぶがこれも閉じたチャネルで失敗 → **ハンドラ自身が throw → Node が SIGABRT → exit code 134**
+    - 実測ログ (`main.log`): `Extension host with pid 9020 exited with code: 134` / `crashed with code 134 and reason 'crashed'` が3回連続
+    - 実測ログ (`svlsp-extension-crash.log`): `uncaughtException: Error: Channel has been closed at Object.appendLine ... at logLine (extension.js:85:18) at ChildProcess.<anonymous> (extension.js:509:31)` → `unhandledRejection ... at Object.showErrorMessage ... at extension.js:139:27`
+  - **原因2 (マニフェスト不正・毎回起動時に記録)**: `package.json` の `viewsContainers.auxiliarybar[0].id` が `systemverilogLsp.messagesContainer` で **ドットを含んでいた**。VS Code のビューコンテナ ID は英数字 + `_` + `-` のみ許可のため拒否され、コンテナが作られず Messages ビューが Explorer に落ちていた
+    - 実測ログ (`renderer.log`、全ウィンドウで毎回): `[error] [rtleditor2.systemverilog-lsp]: property 'id' is mandatory and must be of type 'string' with non-empty value. Only alphanumeric characters, '_', and '-' are allowed.` + `[warning] View container 'systemverilogLsp.messagesContainer' does not exist and all views registered to it will be added to 'Explorer'.`
+  - 修正1 (`vscode-extension/extension.js` `logLine`): `try { if (log) log.appendLine(line); } catch (e) { /* channel closed */ }` に変更 (経緯コメント付き)。`crashLog` と同じ防御に揃えた
+  - 修正2 (同 `showLog`): `log.show(true)` / `setStatusBarMessage` を try/catch で保護
+  - 修正3 (同 `installCrashHandlers`): `uncaughtException` ハンドラ内の `showErrorMessage` を try/catch + 返り値 promise の `.catch()` で保護 (**ハンドラが throw すると Node が abort する**ため最重要)。`unhandledRejection` は `Canceled` / `Canceled: Canceled` を無視 (ホスト破棄時の正常な reject でログを汚さない)
+  - 修正4 (同 `withClient`): エラー通知の `showErrorMessage` を try/catch + `.catch()` で保護 (promise の rejection ハンドラ内なので未保護だと unhandledRejection になる)
+  - 修正5 (同 `createSpawnedClient`): `proc.on('error')` / `proc.on('exit')` の `logLine` 呼び出しを try/catch で包む
+  - 修正6 (同 `deactivate`): クライアント破棄 / `openedDocs.clear()` / `diagnosticCollection.clear()` をすべて try/catch で保護 (終了時に走るため)
+  - 修正7 (`vscode-extension/package.json`): コンテナ ID を `systemverilogLsp.messagesContainer` → **`systemverilogLsp-messagesContainer`** に変更し、`contributes.views` のキーも同 ID に更新 (参照は package.json 内の2箇所のみ、`messageView.js` 等に旧 ID の参照が無いことを grep で確認)
+  - 検証:
+    - `package.json` が **厳格 JSON** として妥当 (コメント・末尾カンマ無し) であること、コンテナ ID が `[A-Za-z0-9_-]+` に適合すること、`contributes.views` のキーと一致することを一時 C# ツールで機械検証 → OK
+    - `extension.js` / `hierarchy.js` / `messageView.js` の括弧バランス検証 → balanced (`autoConnectView.js` の指摘は正規表現リテラル `/"/g` による誤検出で、当該ファイルは未変更)
+    - `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → **0 errors** (796 warnings は既存)
+  - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは未実施 (括弧バランス検証 + 目視)。`CodeEditor2` の modified は本タスク外のユーザ変更のため除外
+  - Next: VS Code で Reload Window 後、(1) 拡張が起動し続けること (拡張ホストが exit code 134 で落ちないこと) (2) 右側 Auxiliary Bar に "SystemVerilog Messages" コンテナが作られること (Explorer に落ちないこと) (3) ウィンドウを閉じる/リロードしてもクラッシュログに `Channel has been closed` が出ないこと を確認
+
 - **Avalonia 依存の UI フォーム (AutoConnectWindow) を VS Code 拡張に追加** → 実装完了 (ビルド成功 0 errors、テスト 149 + sv-tests 1028 合格、publish 更新、コミット済み)
   - ユーザ要求: `SystemVerilogCore : Avalonia非依存のSystemVerilog一般機能` / `CodeEditor2VerilogPlugin : Avalonia依存のSystemVerilog編集機構` と考えたとき、Avalonia 依存の UI フォームを起動する snippet tool を Language Server に追加するにはどうするのがいいか → 案A (Webview) で実装
   - **設計判断 (LSP サーバに UI を持たせない)**: LSP サーバはヘッドレス (`OutputType=Exe`、Avalonia の `Dispatcher` / `TopLevel` が無い) ため `ShowDialogAsync` は永久にハングする。またクライアントが VS Code である以上、UI は VS Code が描くべき (`memory/vscode_extension_architecture.md` の「判断・計算・知識 = C#」「VS Code API 型への変換 = TS」に準拠)。よって **フォームを「データ生成 (C#)」と「描画 (TS)」に分離**した
