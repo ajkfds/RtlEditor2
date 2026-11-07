@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張が起動しなくなった (デバッグ起動時に例外の記録がどこにも残らない)** → 調査・防御実装完了 (ビルド成功 0 errors)
+  - ユーザ報告: 前回の Message view 修正後、拡張が起動失敗するようになった。デバッグ起動時に exception が出たときログはどこかに出ないのか
+  - **ログの現状 (調査結果)**:
+    - `initLog(context)` が `context.logUri` 配下に `svlsp-extension.log` を作り、`logLine()` が OutputChannel「SystemVerilog LSP」とそのファイルの両方に書く
+    - ただし **`activate()` が throw した場合はどこにも残らない**。`initLog` 実行前の失敗は OutputChannel すら無く、実行後でも Extension Development Host が落ちるとチャネルは消える。VS Code は通知を1回出すだけで拡張を無効化する
+    - さらに **`extension.js` 冒頭の `require('./messageView')` / `require('./hierarchy')` がトップレベル**だったため、兄弟モジュールの構文エラーや export 不備で **拡張全体が起動不能**になる構造だった (1 つの任意ペインの不具合で hover / 補完 / hierarchy まで全滅する)
+  - 修正1 (`vscode-extension/extension.js`): **crash log 機構を新設**
+    - `crashLog(where, err)` — メッセージ + スタックを OutputChannel / `svlsp-extension.log` / `svlsp-extension-crash.log` の3箇所へ書く。拡張ホストが落ちてもファイルは残る
+    - `getCrashLogPath()` — 出力先は `initLog` が記録した `crashLogDir` (拡張のログフォルダ) を優先し、無ければ `os.tmpdir()`
+    - `installCrashHandlers()` — `process.on('uncaughtException')` / `('unhandledRejection')` を登録し、activate 外へ漏れた例外も記録
+    - `crashLogDir` は `initLog` より前に宣言 (TDZ 回避)
+  - 修正2 (同): **`activate` を `activateCore` に分割**し、`activate` 側で try/catch。例外時は `crashLog('activate', err)` + `showErrorMessage` (crash log のパス付き) を出してから re-throw。起動失敗が必ずファイルに残る
+  - 修正3 (同): **兄弟モジュールの require をガード**
+    - `require('./hierarchy')` / `require('./messageView')` を try/catch で包み、失敗理由を `hierarchyLoadError` / `messageViewLoadError` に保持
+    - Message view は**任意機能**として扱い、ロード失敗時は `crashLog` + `logLine` のうえ**そのペインだけ無効化**して拡張は起動を継続
+    - hierarchy は必須なので、ロード失敗時は `crashLog` してから明示的なエラーで throw (原因が読める形にする)
+  - 検証: `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors (575 warnings は既存)。JS のみの変更のため C# 側 regression なし
+  - Next: VS Code で F5 (Extension Development Host) を起動し、(1) 起動できること (2) 失敗する場合は `%TEMP%` または拡張ログフォルダの `svlsp-extension-crash.log` に `activate: ...` のスタックが出ること (3) 通知に crash log のパスが出ること を確認。**crash log の内容を貼ってもらえれば原因を特定できる**
+  - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは未実施 (目視確認のみ)
+
 - **Message view の "Current file" スコープが常に空になる** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: error は whole workspace のときは表示されるが、current file では何も表示されない
   - 根本原因 (**URI 表記ゆれによるキー不一致**): `MessageViewProvider.diagnosticsByUri` を **生の URI 文字列**でキーイングしていた。サーバは `LspHandler.NormalizeUri` で診断を `file:///C:/dir/x.sv` (ドライブレター大文字・非エスケープ) 形式で publish するが、`setActiveUri` は VS Code の `editor.document.uri.toString()` = `file:///c%3A/dir/x.sv` (小文字・`%3A` エスケープ) を渡す。同じファイルが別キーになり、`scope === 'active'` の lookup が常に外れて空になっていた (workspace スコープは全キーを列挙するので表示される)

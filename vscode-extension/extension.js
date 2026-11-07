@@ -2,11 +2,41 @@
 
 const vscode = require('vscode');
 const { spawn } = require('child_process');
-const { registerHierarchy } = require('./hierarchy');
-const { registerMessageView } = require('./messageView');
+
+// Same reasoning as the guarded require of ./messageView below: a throw while
+// loading a sibling module would abort the whole extension. The hierarchy is
+// required (the view is core), but the failure is recorded so it is
+// diagnosable instead of a bare "extension failed to activate".
+let registerHierarchy = null;
+let hierarchyLoadError = null;
+try {
+    registerHierarchy = require('./hierarchy').registerHierarchy;
+} catch (err) {
+    hierarchyLoadError = err;
+}
+
+// The Message view lives in its own module. Requiring it at the top level
+// means a syntax error / bad export there throws while the extension module is
+// being loaded, which VS Code reports as "the extension failed to activate"
+// and then disables the whole extension - the RTL Hierarchy, hover, completion
+// and everything else stop working because of one optional pane.
+//
+// Load it defensively instead: a broken messageView.js then only disables that
+// pane, and the reason is recorded in the crash log.
+let registerMessageView = null;
+let messageViewLoadError = null;
+try {
+    registerMessageView = require('./messageView').registerMessageView;
+} catch (err) {
+    messageViewLoadError = err;
+}
 
 let log = null;
 let logFilePath = null;
+// Directory of the extension's own log file, recorded by initLog(). The crash
+// log lives next to it (see getCrashLogPath). Declared here, before initLog()
+// runs, so the assignment below is not a temporal-dead-zone reference.
+let crashLogDir = null;
 function initLog(context) {
     if (!log) {
         log = vscode.window.createOutputChannel('SystemVerilog LSP');
@@ -31,6 +61,8 @@ function initLog(context) {
             } else {
                 logFilePath = path.join(require('os').tmpdir(), 'svlsp-extension.log');
             }
+            // Keep the crash log next to the normal log (see getCrashLogPath).
+            crashLogDir = path.dirname(logFilePath);
             fs.writeFileSync(logFilePath, '');
         } catch (e) {
             logFilePath = null;
@@ -44,6 +76,64 @@ function logLine(msg) {
     if (logFilePath) {
         try { require('fs').appendFileSync(logFilePath, line + '\n'); } catch (e) { /* ignore */ }
     }
+}
+
+// ---- crash log -------------------------------------------------------
+//
+// An exception thrown from activate() (or an unhandled rejection anywhere in
+// the extension) makes VS Code show a one-line notification and then disables
+// the extension: the Extension Development Host window closes and nothing is
+// written to the OutputChannel, because initLog() may not have run yet and the
+// channel dies with the host. That made "the extension no longer starts"
+// impossible to diagnose.
+//
+// crashLog() therefore writes to a plain file that does not depend on the
+// extension host staying alive, and is also called from the process-level
+// handlers installed by installCrashHandlers().
+let crashLogPath = null;
+function getCrashLogPath() {
+    if (crashLogPath) return crashLogPath;
+    try {
+        const path = require('path');
+        const os = require('os');
+        crashLogPath = path.join(crashLogDir || os.tmpdir(), 'svlsp-extension-crash.log');
+    } catch (e) {
+        crashLogPath = null;
+    }
+    return crashLogPath;
+}
+
+/** Appends a crash record (message + stack) to the crash log and the channel. */
+function crashLog(where, err) {
+    const detail = err && err.stack ? err.stack : String(err);
+    const line = '[' + new Date().toISOString() + '] ' + where + ': ' + detail;
+    // OutputChannel first (visible while the host is alive), then the file.
+    try { if (log) log.appendLine(line); } catch (e) { /* ignore */ }
+    try { if (logFilePath) require('fs').appendFileSync(logFilePath, line + '\n'); } catch (e) { /* ignore */ }
+    const file = getCrashLogPath();
+    if (file) {
+        try { require('fs').appendFileSync(file, line + '\n'); } catch (e) { /* ignore */ }
+    }
+    return file;
+}
+
+/**
+ * Installs process-level handlers so an exception that escapes activate() or
+ * any unhandled promise rejection is written to the crash log instead of
+ * silently killing the extension host.
+ */
+function installCrashHandlers() {
+    process.on('uncaughtException', (err) => {
+        const file = crashLog('uncaughtException', err);
+        try {
+            vscode.window.showErrorMessage(
+                'SystemVerilog LSP crashed: ' + (err && err.message) +
+                (file ? ' (see ' + file + ')' : ''));
+        } catch (e) { /* ignore */ }
+    });
+    process.on('unhandledRejection', (reason) => {
+        crashLog('unhandledRejection', reason);
+    });
 }
 /** Reveals the OutputChannel (and reports the log file path). */
 function showLog() {
@@ -800,10 +890,32 @@ function toSelectionRange(r) {
 function activate(context) {
     context_ = context;
     initLog(context);
+    installCrashHandlers();
     logLine('extension activated');
     logLine('log file: ' + (logFilePath || '<unavailable>'));
+    logLine('crash log: ' + (getCrashLogPath() || '<unavailable>'));
     logLine('workspaceFolders: ' + JSON.stringify(workspaceFolderParams()));
     logLine('rootUri: ' + workspaceRootUri());
+
+    // Everything below registers providers / commands. A throw here disables
+    // the whole extension (VS Code reports it once and stops activating), so
+    // record it in the crash log before re-throwing: without this the failure
+    // left no trace anywhere.
+    try {
+        activateCore(context);
+    } catch (err) {
+        const file = crashLog('activate', err);
+        try {
+            vscode.window.showErrorMessage(
+                'SystemVerilog LSP failed to activate: ' + (err && err.message) +
+                (file ? ' (see ' + file + ')' : ''));
+        } catch (e) { /* ignore */ }
+        throw err;
+    }
+}
+
+/** Registers the providers, views and commands (the body of activate). */
+function activateCore(context) {
 
     // Let the user open the log without hunting through the Output dropdown.
     context.subscriptions.push(
@@ -823,13 +935,31 @@ function activate(context) {
     // RTL Hierarchy tree view (NavigatePanel equivalent). The standard File
     // Explorer cannot be extended with instance children, so the hierarchy is
     // rendered in a Custom Tree View inside the Explorer container.
+    if (!registerHierarchy) {
+        crashLog('require(./hierarchy)', hierarchyLoadError);
+        throw new Error('hierarchy module failed to load: ' +
+            (hierarchyLoadError && hierarchyLoadError.message));
+    }
     const hierarchyProvider = registerHierarchy(context, () => ensureClient(), logLine, showLog);
     hierarchyProviderRef = hierarchyProvider;
 
     // Message view (RtlEditor2's MessageView equivalent) in the Auxiliary Bar,
     // i.e. a pane on the right-hand side of the editor. It renders the
     // diagnostics the server already publishes, so it needs no extra protocol.
-    messageViewProviderRef = registerMessageView(context, logLine);
+    //
+    // The module is optional: if it failed to load (see the guarded require at
+    // the top of this file) the rest of the extension must still activate.
+    if (registerMessageView) {
+        try {
+            messageViewProviderRef = registerMessageView(context, logLine);
+        } catch (err) {
+            crashLog('registerMessageView', err);
+            logLine('Message view disabled: ' + (err && err.message));
+        }
+    } else {
+        crashLog('require(./messageView)', messageViewLoadError);
+        logLine('Message view disabled: ' + (messageViewLoadError && messageViewLoadError.message));
+    }
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument(async (doc) => {
             const lang = doc && doc.languageId;
