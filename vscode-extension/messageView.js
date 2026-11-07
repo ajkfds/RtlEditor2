@@ -22,6 +22,36 @@ const vscode = require('vscode');
 const SEVERITY_ORDER = { 1: 0, 2: 1, 3: 2, 4: 3 };
 
 /**
+ * Stable key for a document URI.
+ *
+ * The server canonicalises URIs before publishing diagnostics
+ * (`LspHandler.NormalizeUri` -> `file:///C:/dir/x.sv`), while VS Code hands us
+ * the form it uses on the wire (`file:///c%3A/dir/x.sv`: lower-case drive
+ * letter, colon percent-encoded). Keying the diagnostics map on the raw string
+ * therefore produced two entries for one file, so the "current file" scope
+ * (which looks the active document up by key) never matched and stayed empty
+ * while "whole workspace" (which lists every key) showed the messages.
+ *
+ * Keying on the normalised filesystem path makes both forms the same entry.
+ * Non-file schemes (untitled:, ...) keep their raw string.
+ * @param {string} uriString
+ * @returns {string}
+ */
+function canonicalKey(uriString) {
+    if (!uriString) return '';
+    try {
+        const uri = vscode.Uri.parse(uriString);
+        if (uri.scheme !== 'file') return uriString;
+        const fsPath = uri.fsPath;
+        // Windows paths are case-insensitive, so the drive letter / path case
+        // must not split the entry.
+        return process.platform === 'win32' ? fsPath.toLowerCase() : fsPath;
+    } catch (e) {
+        return uriString;
+    }
+}
+
+/**
  * One entry of the message list, flattened from a vscode.Diagnostic.
  * @typedef {{
  *   uri: string, fileName: string, line: number, character: number,
@@ -43,12 +73,19 @@ class MessageViewProvider {
         this.extensionUri = extensionUri;
         this.log = log || (() => {});
         this.view = null;
-        // uri string -> vscode.Diagnostic[] as last published by the server
+        // canonicalKey(uri) -> { uri, diagnostics } as last published by the
+        // server. The key is the normalised filesystem path so the server's
+        // canonical form and VS Code's wire form map to one entry (see
+        // canonicalKey); `uri` keeps the form the server sent, which is what
+        // the reveal request has to echo back.
         this.diagnosticsByUri = new Map();
         // 'active' (the file in the editor) or 'workspace' (every parsed file)
         this.scope = 'active';
-        // the file the view currently lists (only meaningful for scope=active)
+        // the file the view currently lists (only meaningful for scope=active):
+        // `activeUri` is the raw URI (for display) and `activeKey` the
+        // canonicalKey used to look the diagnostics up.
         this.activeUri = null;
+        this.activeKey = null;
     }
 
     /** Called by VS Code when the view is created (and again on restore). */
@@ -92,25 +129,28 @@ class MessageViewProvider {
      */
     update(uriString, diagnostics) {
         if (!uriString) return;
+        const key = canonicalKey(uriString);
         if (!diagnostics || diagnostics.length === 0) {
-            this.diagnosticsByUri.delete(uriString);
+            this.diagnosticsByUri.delete(key);
         } else {
-            this.diagnosticsByUri.set(uriString, diagnostics);
+            this.diagnosticsByUri.set(key, { uri: uriString, diagnostics });
         }
         this._postState();
     }
 
     /** Drops the diagnostics of a document that was closed. */
     remove(uriString) {
-        if (uriString && this.diagnosticsByUri.delete(uriString)) {
+        if (uriString && this.diagnosticsByUri.delete(canonicalKey(uriString))) {
             this._postState();
         }
     }
 
     /** Follows the focused editor (used by the "active file" scope). */
     setActiveUri(uriString) {
-        if (this.activeUri === uriString) return;
-        this.activeUri = uriString;
+        const key = uriString ? canonicalKey(uriString) : null;
+        if (this.activeKey === key) return;
+        this.activeKey = key;
+        this.activeUri = uriString || null;
         if (this.scope === 'active') this._postState();
     }
 
@@ -138,15 +178,16 @@ class MessageViewProvider {
      */
     _collectEntries() {
         const entries = [];
-        const uris = this.scope === 'active'
-            ? (this.activeUri ? [this.activeUri] : [])
+        const keys = this.scope === 'active'
+            ? (this.activeKey ? [this.activeKey] : [])
             : Array.from(this.diagnosticsByUri.keys());
 
-        for (const uriString of uris) {
-            const diagnostics = this.diagnosticsByUri.get(uriString);
-            if (!diagnostics) continue;
+        for (const key of keys) {
+            const record = this.diagnosticsByUri.get(key);
+            if (!record) continue;
+            const uriString = record.uri;
             const fileName = this._fileName(uriString);
-            for (const d of diagnostics) {
+            for (const d of record.diagnostics) {
                 entries.push({
                     uri: uriString,
                     fileName,

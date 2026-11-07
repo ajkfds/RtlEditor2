@@ -3,6 +3,17 @@
 
 ## 進行中タスク (最新)
 
+- **Message view の "Current file" スコープが常に空になる** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: error は whole workspace のときは表示されるが、current file では何も表示されない
+  - 根本原因 (**URI 表記ゆれによるキー不一致**): `MessageViewProvider.diagnosticsByUri` を **生の URI 文字列**でキーイングしていた。サーバは `LspHandler.NormalizeUri` で診断を `file:///C:/dir/x.sv` (ドライブレター大文字・非エスケープ) 形式で publish するが、`setActiveUri` は VS Code の `editor.document.uri.toString()` = `file:///c%3A/dir/x.sv` (小文字・`%3A` エスケープ) を渡す。同じファイルが別キーになり、`scope === 'active'` の lookup が常に外れて空になっていた (workspace スコープは全キーを列挙するので表示される)
+  - 修正 (`vscode-extension/messageView.js`):
+    - `canonicalKey(uriString)` を新設。`vscode.Uri.parse` → `uri.fsPath` をキーにし、Windows では `toLowerCase()` で大文字小文字差も吸収。`file` 以外の scheme (untitled: 等) は生文字列のまま
+    - `diagnosticsByUri` の値を `vscode.Diagnostic[]` → `{ uri, diagnostics }` に変更。キーは `canonicalKey`、`uri` はサーバが送った形式を保持 (reveal 要求にそのまま返すため)
+    - `update` / `remove` / `setActiveUri` を `canonicalKey` 経由に統一。`activeUri` (表示用の生 URI) と `activeKey` (lookup 用) を分離
+    - `_collectEntries` は `activeKey` で lookup し、`record.uri` をエントリの `uri` に使う
+  - 検証: `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors (797 warnings は既存)。JS のみの変更のため C# 側の regression なし
+  - Next: VS Code で Reload Window 後、(1) エラーのあるファイルを開いて Current file にメッセージが出ること (2) Whole workspace との切替が正しいこと (3) クリックで該当位置にジャンプすること を確認
+
 - **VS Code 拡張に RtlEditor の MessageView 相当の右側ペインを追加 (Auxiliary Bar の WebviewView)** → 実装完了 (ビルド成功 0 errors、テスト 97 + sv-tests 1028 合格)
   - ユーザ要求: vscode extension で RtlEditor の MessageView にあたるものを画面の右側に表示するペインを設けたい → 案B (`viewsContainers.auxiliarybar` の `WebviewView`) で実装
   - 調査: RtlEditor の MessageView の実体は `CodeEditor2/Views/InfoView.axaml.cs` の `UpdateMessages` + `pluginVerilog/MessageView/MessageNode.cs`。現在のファイルのパースメッセージ (Error/Warning/Notice/Hint) を重要度アイコン + 行番号付きで並べ、クリックで `SetCaretPosition` / `SetSelection` してジャンプする
