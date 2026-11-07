@@ -22,6 +22,7 @@
   - 検証: `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors (575 warnings は既存)。JS のみの変更のため C# 側 regression なし
   - Next: VS Code で F5 (Extension Development Host) を起動し、(1) 起動できること (2) 失敗する場合は `%TEMP%` または拡張ログフォルダの `svlsp-extension-crash.log` に `activate: ...` のスタックが出ること (3) 通知に crash log のパスが出ること を確認。**crash log の内容を貼ってもらえれば原因を特定できる**
   - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは未実施 (目視確認のみ)
+  - **デバッグ情報を `memory/vscode_extension_debugging.md` に集約** (ログの出力先3種 / `<拡張ログフォルダ>` の実体 / サーバ stderr の流れ方 / 起動失敗の切り分け手順 / 症状別の一次情報 / publish 更新の注意)
 
 - **Message view の "Current file" スコープが常に空になる** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: error は whole workspace のときは表示されるが、current file では何も表示されない
