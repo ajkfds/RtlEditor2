@@ -335,6 +335,19 @@ public class StandardLspFeatureTests : IDisposable
         Assert.Equal("module", inst.GetProperty("icon").GetString());
         Assert.Equal("u_leaf", inst.GetProperty("instancePath").GetString());
         Assert.Contains("u_leaf", inst.GetProperty("tooltip").GetString() ?? "");
+
+        // Clicking the instance opens the INSTANTIATED module's own source
+        // (leaf.sv), exactly like the editor's NavigatePanel - not the file the
+        // instantiation is written in (top.sv). The expand token still
+        // addresses the instance inside top.sv, which is why the two are
+        // separate fields.
+        Assert.EndsWith("leaf.sv", inst.GetProperty("uri").GetString() ?? "");
+        Assert.EndsWith("leaf.sv", inst.GetProperty("fsPath").GetString() ?? "");
+
+        // startLine / startCharacter are 0-based LSP positions of the module
+        // declaration in leaf.sv ("module leaf;" -> line 0, character 7).
+        Assert.Equal(0, inst.GetProperty("startLine").GetInt32());
+        Assert.Equal(7, inst.GetProperty("startCharacter").GetInt32());
     }
 
     [Fact]

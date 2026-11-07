@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy の instance をクリックするとインスタンスされた側ではなくインスタンスした側が開く** → 修正完了 (ビルド成功 0 errors、テスト 1180/1180 合格、publish 更新・stdio 実測済み)
+  - ユーザ報告: `RTL HierarchyのVerilogFile下のInstanceをクリックしたときにInstanceされた側ではなくInstaceした側がopenされる問題が直ってません。PartialAssign下のAAA instance(対象はmoduleSample)をクリックしたときのログです。`
+  - 実測ログ (ユーザ提供): `selection: instance AAA -> uri=file:///D:/.../PartialAssign.sv line=11 char=0 (fsPath=D:\...\moduleSample.v)` → `openAt: opened .../PartialAssign.sv at 11:0`。**サーバが `uri` に「インスタンス文が書かれた親ファイル」を返し、クライアントがそれを開いていた**
+  - **根本原因 (`CreateDescriptor` が `Uri` に親ファイルを入れていた)**: 以前の修正で「展開トークンはインスタンスが書かれたファイルを指す必要がある」ことを直した際、`Uri` も同じ `documentUri` (親ファイル) にしてしまっていた。デスクトップ版 NavigatePanel は `VerilogModuleInstanceNode.OnSelected` が `SetTextFileAsync(ModuleInstance, true)` を呼び、**インスタンスされた側のソースファイル**を開く。つまり「クリックで開く対象」と「展開トークンの基準ファイル」は別物
+  - 修正1 (`SystemVerilogLanguageServer/RtlHierarchy.cs`): `HierarchyNodeDescriptor` に `ExpandUri` を新設。`Uri` の doc コメントを「クリックで開くファイル (インスタンスならインスタンス先のソース)」に、`ExpandUri` を「インスタンス文が書かれたファイル (展開トークン用)」に整理
+  - 修正2 (`Server/InMemorySystemVerilogCore.cs` `CreateDescriptor`): `Uri = ResolveItemUri(item)` (インスタンス先) / `ExpandUri = documentUri ?? ResolveItemUri(item)` (親ファイル) に分離。`document` 引数は不要になったため削除
+  - 修正3 (同 `CreateDescriptor`): クリック位置 (`StartLine` / `StartCharacter`) を「インスタンス文の位置 (親ドキュメント基準)」から「**インスタンス先モジュールの宣言位置** (`inst.GetInstancedBuildingBlock().NameReference` を `instanced.File.CodeDocument` 上で解決)」に変更。開くファイルが変わったため位置の基準も合わせる必要があった。解決失敗 (未解決 cross-project instance) は try/catch で握りつぶし、位置だけ諦めてツリーは継続
+  - 修正4 (`Server/LspHandler.cs` `BuildFileNodes`): `ExpandToken.ForInstance` に `child.Uri` ではなく **`child.ExpandUri`** を渡すよう変更 (展開は親ファイル、クリックはインスタンス先)
+  - 修正5 (`Server/InMemorySystemVerilogCore.cs` `GetLineOfIndex`): **1-based → 0-based 変換漏れを修正**。`CodeDocument.GetLineAt` は AvaloniaEdit の 1-based `LineNumber` を返すが、LSP の `startLine` は 0-based。実測で `startLine=1` (期待 0) になっていたため `- 1` を追加 (`GetCharacterOfIndex` は `GetLineStartIndex` に同じ 1-based 行を渡すため整合、コメントで明記)
+  - 修正6 (`vscode-extension/hierarchy.js`): `selection:` ログと `getTreeItem` のコメントを新仕様 (uri = インスタンス先) に更新 (挙動は不変)
+  - 回帰テスト更新 (`WorkspaceHierarchyTests.InstanceNode_ExpandToken_ExpandsToItsChildren`): `u_mid` の `uri` 期待値を `top.sv` → **`mid.sv`** に変更 (旧仕様の検証だった)。doc コメントに「uri = クリック対象 / expandToken = 親ファイル」の区別を明記
+  - 回帰テスト追加 (`StandardLspFeatureTests.HierarchyNodes_CarryPresentationMetadata`): `uri` / `fsPath` が `leaf.sv` (インスタンス先) であること、`startLine=0` / `startCharacter=7` (0-based のモジュール宣言位置) を assert
+  - 検証:
+    - `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test` **1180 合格 / 0 失敗** (sv-tests 1028 含む)
+    - publish 更新 (`vscode-extension/server`) + `--selftest` 正常
+    - **同梱バイナリを stdio 起動し実サンプルで実測** (プローブは削除): `PartialAssign.sv` の `AAA` → `uri=.../moduleSample.v` / `fsPath=...\moduleSample.v` / `startLine=0` / `startCharacter=7` (= `module moduleSample(` の `moduleSample` 位置)。修正前は `uri=PartialAssign.sv` / `startLine=1`
+  - Next: VS Code で Reload Window 後、RTL Hierarchy の instance をクリックすると (1) インスタンスされた側のソースが開くこと (2) カーソルがそのモジュール宣言位置に来ること (3) 展開は従来どおり動くこと を確認
+  - メモ: 検証用プローブ (`DebugInstanceClickProbe.cs`) は削除済み。`SystemVerilogLanguageServer.Tests/Debug*.cs` の既存プローブは従来どおりコミットから除外
+
 - **VS Code 拡張が起動に失敗する (3回目、compound 起動の `stopAll: true` が原因)** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: `再度起動失敗しました。原因を調査して`
   - **決定的な切り分け (ログの実測)**: クラッシュしたウィンドウと成功したウィンドウで **`exthost` フォルダの有無**が完全に分かれた

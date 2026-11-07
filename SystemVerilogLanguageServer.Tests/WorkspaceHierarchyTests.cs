@@ -362,6 +362,12 @@ public class WorkspaceHierarchyTests : IDisposable
     /// </para>
     ///
     /// <para>
+    /// The node's <c>uri</c> (the click target) is a different thing: it is the
+    /// instantiated module's own source, matching the editor's NavigatePanel.
+    /// Both are asserted here so the two cannot drift back together.
+    /// </para>
+    ///
+    /// <para>
     /// The other hierarchy tests build their tokens by hand from the file they
     /// queried, which is why they never caught this: only the server-emitted
     /// token is exercised here.
@@ -386,10 +392,12 @@ public class WorkspaceHierarchyTests : IDisposable
         JsonElement mid = FindNode(level0, "u_mid");
         Assert.True(mid.GetProperty("hasChildren").GetBoolean());
 
-        // the instance node must open the file the instantiation is written in
-        // (its startLine / startCharacter are offsets into that document), not
-        // the instantiated module's source file
-        Assert.EndsWith("top.sv", mid.GetProperty("uri").GetString() ?? "");
+        // Clicking the instance node opens the INSTANTIATED module's own source
+        // (mid.sv), exactly like the editor's NavigatePanel: selecting a module
+        // instance shows the instantiated module, not the file the
+        // instantiation is written in. The expand token, by contrast, still
+        // addresses the instance inside top.sv (checked below).
+        Assert.EndsWith("mid.sv", mid.GetProperty("uri").GetString() ?? "");
 
         // expand u_mid with the token the SERVER issued (exactly what the client
         // does: it never builds a token itself)

@@ -203,7 +203,10 @@ class HierarchyProvider {
         const iconPath = this._resolveIconPath(element.icon, iconColor);
         if (iconPath) item.iconPath = iconPath;
 
-        // default click action: open the file / reveal the instance
+        // Default click action: open the node's own file. For an instance the
+        // server sends the instantiated module's source as `uri` (matching the
+        // editor's NavigatePanel), so clicking "AAA" under PartialAssign.sv
+        // opens moduleSample.v, not PartialAssign.sv.
         if (element.kind === 'file') {
             item.command = {
                 command: 'systemverilogLsp.openHierarchyNode',
@@ -377,10 +380,13 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
         if (revealing) return;
         revealing = true;
         try {
-            // Log the exact target: the server sends the file the instantiation
-            // is WRITTEN IN (uri) plus the instantiated module's own source
-            // (fsPath). If the editor opens the wrong file, this line shows
-            // which uri the client actually used.
+            // Log the exact target. `uri` is the file the node OPENS: for an
+            // instance that is the instantiated module's own source (the
+            // editor's NavigatePanel opens the instance's source too), and
+            // `startLine` / `startCharacter` point at the module declaration
+            // there. `fsPath` is the same file as an absolute path. If the
+            // editor opens the wrong file, this line shows which uri the
+            // client actually used.
             provider.log('selection: ' + node.kind + ' ' + node.label
                 + ' -> uri=' + node.uri
                 + ' line=' + node.startLine + ' char=' + node.startCharacter
