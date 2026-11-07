@@ -3,6 +3,31 @@
 
 ## 進行中タスク (最新)
 
+- **Avalonia 依存の UI フォーム (AutoConnectWindow) を VS Code 拡張に追加** → 実装完了 (ビルド成功 0 errors、テスト 149 + sv-tests 1028 合格、publish 更新、コミット済み)
+  - ユーザ要求: `SystemVerilogCore : Avalonia非依存のSystemVerilog一般機能` / `CodeEditor2VerilogPlugin : Avalonia依存のSystemVerilog編集機構` と考えたとき、Avalonia 依存の UI フォームを起動する snippet tool を Language Server に追加するにはどうするのがいいか → 案A (Webview) で実装
+  - **設計判断 (LSP サーバに UI を持たせない)**: LSP サーバはヘッドレス (`OutputType=Exe`、Avalonia の `Dispatcher` / `TopLevel` が無い) ため `ShowDialogAsync` は永久にハングする。またクライアントが VS Code である以上、UI は VS Code が描くべき (`memory/vscode_extension_architecture.md` の「判断・計算・知識 = C#」「VS Code API 型への変換 = TS」に準拠)。よって **フォームを「データ生成 (C#)」と「描画 (TS)」に分離**した
+  - **QuickPick では代替できない理由**: `AutoConnectWindow` は全ポートを**同時に**一覧表示し、行ごとに Accept/Reject する UI。`showQuickPick` は 1 回の呼び出しで 1 項目しか選べず、`canPickMany` でも「ポートごとに別々の候補を選ぶ」ことはできない。よって Webview を採用
+  - 実装1 (`SystemVerilogCore/AutoConnect/AutoConnectModel.cs` 新規): `AutoConnectPort` (Name / Direction / PortGroup / CurrentConnection / Candidates / IsSettled) と `AutoConnectModel` (ModuleName / InstanceName / Ports / Message)。Avalonia 非依存の純粋なデータ
+  - 実装2 (`CodeEditor2VerilogPlugin/CoreBridge/AutoConnectAdapter.cs` 新規, UI フリー):
+    - `Build(file, parsedDocument, index)`: `AutoConnectWindow` の L54-86 のロジックを移設。`GetBuildingBlockAt` → `GetBuildingBlockInstantiations` で caret 位置の `ModuleInstantiation` を特定し、`IPortNameSpace.PortsList` を列挙
+    - 候補照合はエディタと同じ規則 (`ConnectionItem.GetCantidates`): ポート名と完全一致、または `_I` / `_O` / `_IO` を除いた名前と一致 (大文字小文字無視)
+    - `Apply(...)`: `AutoConnectWindow.Complete()` と同じく `PortConnection` を更新して `CreateString(indent)` で再生成
+  - 実装3 (`SystemVerilogLanguageServer/Server/LspHandler.AutoConnect.cs` 新規):
+    - `rtl/autoConnect`: フォームの行を JSON で返す (`AutoConnectDto` / `AutoConnectPortDto`)
+    - `rtl/autoConnectApply`: 選択結果 (`selections: { portName: signal|null }`) を受け、インスタンス全体を置換する `TextEdit` を返す。`TryGetInstantiationRange` で `BeginIndexReference`〜`LastIndexReference` を範囲化、`GetLineIndent` で行頭インデントを再利用
+    - `LspHandler.cs` に 2 ハンドラ登録
+  - 実装4 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`): `GetAutoConnectModel` / `ApplyAutoConnect` を追加。`InMemoryFile.ParsedDocument` 内部アクセサを新設 (LSP ハンドラがパースツリーを辿れるように)
+  - 実装5 (`vscode-extension/autoConnectView.js` 新規, 約 250 行): `showAutoConnect(deps)` が `rtl/autoConnect` を要求し `createWebviewPanel` で全ポートをテーブル表示。各行は `<select>` で候補を選ぶ。ポートグループはコメント行。Apply で `rtl/autoConnectApply` → `WorkspaceEdit` 適用。CSP (`default-src 'none'` + nonce) 付き
+  - 実装6 (`vscode-extension/extension.js`): `autoConnectView` を防御的 require (失敗時は crashLog + そのコマンドのみ無効化)、`registerAutoConnectCommand` を追加
+  - 実装7 (`vscode-extension/package.json`): `systemverilogLsp.autoConnect` コマンド (category `SystemVerilog Snippet`) + `editor/context` メニュー (`systemverilogSnippet@6`)
+  - 実装8 (`vscode-extension/README.md`): "Auto Connect" 節を追加 (全ポート一覧 / 候補 / Apply / QuickPick でなく Webview の理由)
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/AutoConnectTests.cs`, 5 件): 全ポート列挙 + 候補 / `_I`・`_O` サフィックス照合 / Apply でインスタンス再生成 / Reject したポートは空接続 / インスタンス外では message
+  - 検証: `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **149 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗** / publish 更新 (`vscode-extension/server`) + `--selftest` 正常
+  - コミット: SystemVerilogCore `f580251` / CodeEditor2VerilogPlugin `36f328e` / SystemVerilogLanguageServer `84b04d9`、メイン `378af10` (submodule pointer + autoConnectView.js + extension.js + package.json + README + AutoConnectTests.cs)
+  - Next: VS Code で Reload Window 後、(1) インスタンス上で右クリック → "Auto Connect Ports" で Webview パネルが開くこと (2) 全ポートが一覧表示され候補が選択済みになること (3) Apply でインスタンスが書き換わること (4) Cancel で何も変わらないこと を確認
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/Debug*.cs`) は従来どおりコミットから除外し作業ツリーに残置。`CodeEditor2` の modified は本タスク外のユーザ変更のため除外
+  - 残課題 (将来): デスクトップ版 `AutoConnectWindow` も `AutoConnectAdapter` を使うよう痩せさせれば、計算ロジックの二重管理を解消できる (現状は両者が同じ規則を別実装で持っている)
+
 - **VS Code でコード上をクリックしたときのハイライト範囲がおかしい** → 修正完了 (ビルド成功 0 errors、テスト 144 + sv-tests 1028 合格、publish 更新、コミット済み)
   - ユーザ報告: `vscodeでコード上をクリックしたときにハイライトされる範囲がおかしいです。本来、CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor\CodeDocument.cs の GetWord でとれる値であるべきです`
   - 実測 (プローブ `DebugHighlightProbe.cs`、コミット除外): `wire sig; // trailing comment here` の `sig` 宣言 (1:7) をハイライトすると **1:7–1:29** (行末コメントまで)、`data_bus` 宣言 (3:14) は **3:14–6:0** (文書末まで)。要素の生レンジも `start=19 len=22 text='sig; // trailing comme'` で、明らかに長すぎた
