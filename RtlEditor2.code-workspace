@@ -71,9 +71,18 @@
 					"Run Extension"
 				],
 				// The server must be listening before the extension host tries
-				// to connect. The extension retries for 30s, so this is only a
-				// nicety, but it makes the first connection immediate.
-				"stopAll": true
+				// to connect. The extension retries for 10s and then falls back
+				// to spawning the server itself, so the order is not critical.
+				//
+				// stopAll MUST stay false. With true, a failure of the C# server
+				// session (a failing preLaunchTask, a port already in use, the
+				// debugger detaching, ...) also kills the extension host. That
+				// shows up as "the extension failed to start" with the host
+				// exiting with code 134 *before any extension code runs* - no
+				// exthost log folder is even created, so nothing is diagnosable.
+				// Keeping it false lets the extension host survive and fall back
+				// to spawning the server over stdio.
+				"stopAll": false
 			}
 		]
 	},

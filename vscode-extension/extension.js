@@ -469,7 +469,12 @@ function connectToDebugServer(port) {
     // timeout looks like "the tree never loads". The compound launch starts
     // the server first, so a few seconds is plenty; after that the caller
     // falls back to spawning the server.
-    const deadline = Date.now() + 10000;
+    //
+    // 4s (was 10s): the fallback is what actually makes the extension work
+    // when the C# debug session is not running, so waiting longer only delays
+    // a working state. The compound launch starts the server first, so a
+    // healthy debug session connects on the first attempt anyway.
+    const deadline = Date.now() + 4000;
     let attemptCount = 0;
     return new Promise((resolve, reject) => {
         const attempt = () => {

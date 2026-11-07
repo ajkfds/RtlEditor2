@@ -3,6 +3,31 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張が起動に失敗する (3回目、compound 起動の `stopAll: true` が原因)** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: `再度起動失敗しました。原因を調査して`
+  - **決定的な切り分け (ログの実測)**: クラッシュしたウィンドウと成功したウィンドウで **`exthost` フォルダの有無**が完全に分かれた
+    | window | exthost | 拡張ログ | 結果 |
+    |---|---|---|---|
+    | 5 / 7 / 11 / 14 | あり | あり | `exited with code: 0` (正常) |
+    | 6 / 8 / 9 / 10 / 12 / 13 / 15 | **なし** | なし | `crashed with code 134` |
+    - **`exthost` フォルダが無い = 拡張の JS が 1 行も実行されていない**。つまり `activate()` すら到達していない (window15 は起動 06:12:14.001 → クラッシュ 06:12:15.234 の **1.2 秒**)
+    - 成功したウィンドウはすべて `debug transport: connecting to 127.0.0.1:9250 ... falling back to spawning the server` を記録 = **C# デバッグサーバが起動していない状態で拡張ホストだけが動いた**ケース
+  - **サーバ側はすべて正常であることを実測で確認** (プローブは一時作成し削除):
+    - `dotnet <bin/Debug/net10.0/SystemVerilogLanguageServer.dll> --port 9250` → **`listening for an LSP client on 127.0.0.1:9250` で待ち受け成功**
+    - `build-server` タスク相当の `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` → **exit 0**
+    - `bin/Debug/net10.0` の DLL/EXE ロック検査 → **0 / 102 ファイルがロック** (残留サーバプロセスなし)
+    - ポート 9250 → **空き**、`SystemVerilogLanguageServer` プロセス → **0 個**
+  - **根本原因 (`stopAll: true`)**: `RtlEditor2.code-workspace` / `vscode-extension/.vscode/launch.json` の compound `Extension + Language Server` が **`stopAll: true`** だった。C# サーバ側のデバッグセッションが何らかの理由で終了すると、**`stopAll` が拡張ホストも道連れに kill** する。これが「拡張コードが走る前の exit code 134」の正体で、`exthost` フォルダが作られないため**何も診断できない**状態になっていた
+  - 修正1 (`RtlEditor2.code-workspace`): compound の `stopAll` を **`true` → `false`** に変更 (経緯コメント付き)。サーバ側が失敗しても拡張ホストは生き残り、stdio spawn にフォールバックして動く
+  - 修正2 (`vscode-extension/.vscode/launch.json`): 同 compound の `stopAll` を **`true` → `false`** に変更 (同じ理由のコメント付き)
+  - 修正3 (`vscode-extension/extension.js` `connectToDebugServer`): デバッグサーバ接続の待機を **10 秒 → 4 秒**に短縮。`stopAll: false` で拡張ホストが生き残るため、待つより spawn フォールバックを早めた方が「動く状態」に早く到達する (compound 起動時はサーバが先に立つので初回接続で成功する)
+  - 検証:
+    - JS 4 ファイルの括弧バランス検証 → すべて balanced
+    - `package.json` / `launch.json` / `tasks.json` が妥当な JSON、`RtlEditor2.code-workspace` が妥当な JSONC であることを機械検証 → OK。**compound の `stopAll=False` を読み出して確認**
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → **0 errors**
+  - 教訓: **`exthost` フォルダの有無で「拡張コードが走ったか」を判定できる**。無ければ拡張のバグではなく、ホスト自体が起動前に殺されている (= デバッグ構成 / 起動方法の問題) と切り分けられる
+  - Next: VS Code で F5 (compound `Extension + Language Server`) を実行し、(1) 拡張ホストが exit code 134 で落ちないこと (2) C# サーバのデバッグが失敗しても拡張が spawn フォールバックで動くこと (3) `exthost` フォルダと `svlsp-extension.log` が作られること を確認
+
 - **VS Code 拡張が起動に失敗する (再発、拡張ホストが exit code 134)** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: `起動に失敗しました。logを確認して`
   - **ログの実測** (`main.log`): `Extension host with pid N exited with code: 134` / `crashed with code 134` が **20:25 / 21:13 / 21:56 / 22:00 に再発**。一方 20:18 / 20:26 のウィンドウは `exited with code: 0` で正常終了

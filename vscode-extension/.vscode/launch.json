@@ -86,13 +86,21 @@
         {
             // One F5 starts both sides. The server is listed first so it is
             // already listening when the extension host connects (the
-            // extension also retries for 30s, so the order is not critical).
+            // extension also retries for 10s and then spawns the server
+            // itself, so the order is not critical).
+            //
+            // stopAll MUST stay false. With true, a failure of the C# server
+            // session (a failing preLaunchTask, a port already in use, the
+            // debugger detaching, ...) also kills the extension host. That
+            // shows up as "the extension failed to start" with the host
+            // exiting with code 134 *before any extension code runs* - no
+            // exthost log folder is even created, so nothing is diagnosable.
             "name": "Extension + Language Server",
             "configurations": [
                 "Launch: SystemVerilog Language Server (C#)",
                 "Run Extension (connect to C# debug server)"
             ],
-            "stopAll": true
+            "stopAll": false
         }
     ]
 }
