@@ -13,3 +13,6 @@ node_modules/.package-lock.json
 server/**/*.pdb
 server/.playwright/**
 server/**/*.xml
+
+# icons/** IS shipped: the RTL Hierarchy tree uses the plugin's own SVG
+# assets (light + dark variants) so it matches the desktop editor.

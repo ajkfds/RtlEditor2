@@ -15,6 +15,42 @@
 // builds a path or an index itself.
 
 const vscode = require('vscode');
+const path = require('path');
+
+// ---- icons -------------------------------------------------------------
+//
+// The tree uses the plugin's own SVG assets (copied into icons/) so the view
+// matches the desktop editor's NavigatePanel. Each icon ships in a light and a
+// dark variant: the plugin SVGs are filled with a fixed dark grey (#4b4b4b),
+// which is invisible on a dark theme, so the dark variant uses a light grey.
+//
+// The server sends a stable icon *name* ("module" / "interface" / "package" /
+// "header" / "systemverilog-document" / "verilog-document" /
+// "verilog-header-document"); the client maps it onto the two files. An
+// unknown name falls back to a codicon so a new server-side kind still renders
+// something.
+const ICON_NAMES = new Set([
+    'module',
+    'interface',
+    'package',
+    'header',
+    'systemverilog-document',
+    'verilog-document',
+    'verilog-header-document',
+]);
+
+// codicon fallbacks for names the client does not ship an SVG for
+const ICON_FALLBACKS = {
+    folder: 'folder',
+    file: 'file',
+    module: 'symbol-module',
+    interface: 'symbol-interface',
+    package: 'symbol-package',
+    header: 'file-code',
+    'systemverilog-document': 'file-code',
+    'verilog-document': 'file-code',
+    'verilog-header-document': 'file-code',
+};
 
 /** One node of the RTL hierarchy tree. */
 class HierarchyItem {
@@ -57,9 +93,11 @@ class HierarchyProvider {
      * @param {() => Promise<any>} ensureClient resolves the LSP client
      * @param {(msg: string) => void} [log] optional logger (OutputChannel)
      * @param {() => void} [revealLog] optional: reveal the log output channel
+     * @param {vscode.Uri} [extensionUri] root of the extension (for icons/)
      */
-    constructor(ensureClient, log, revealLog) {
+    constructor(ensureClient, log, revealLog, extensionUri) {
         this.ensureClient = ensureClient;
+        this.extensionUri = extensionUri;
         this.log = log || (() => {});
         this.revealLog = revealLog || (() => {});
         // set once we auto-revealed the log for an empty top level, so we do
@@ -156,29 +194,14 @@ class HierarchyProvider {
         if (element.tooltip) item.tooltip = element.tooltip;
         if (element.detail) item.description = element.detail;
 
-        // The server decides the codicon id and (optionally) a theme colour id
-        // used to flag files with errors / warnings. Codicons are used instead
-        // of the plugin's own SVG assets because those are filled with a fixed
-        // dark grey and would be invisible on a dark theme.
+        // The server decides the icon name and (optionally) a theme colour id
+        // used to flag files with errors / warnings.
         const iconColor = element.iconColor
             ? new vscode.ThemeColor(element.iconColor)
             : undefined;
 
-        if (element.kind === 'file' && element.uri) {
-            // resourceUri drives the real file-type icon. A file with errors /
-            // warnings keeps that icon but is tinted with the theme colour, so
-            // the tree flags broken files like the editor's NavigatePanel.
-            try {
-                item.resourceUri = vscode.Uri.parse(element.uri);
-                if (iconColor) {
-                    item.iconPath = new vscode.ThemeIcon('file', iconColor);
-                }
-            } catch (e) {
-                item.iconPath = new vscode.ThemeIcon(element.icon || 'file', iconColor);
-            }
-        } else if (element.icon) {
-            item.iconPath = new vscode.ThemeIcon(element.icon, iconColor);
-        }
+        const iconPath = this._resolveIconPath(element.icon, iconColor);
+        if (iconPath) item.iconPath = iconPath;
 
         // default click action: open the file / reveal the instance
         if (element.kind === 'file') {
@@ -195,6 +218,25 @@ class HierarchyProvider {
             };
         }
         return item;
+    }
+
+    /**
+     * Maps the server's icon name onto a VS Code icon.
+     *
+     * The plugin's own SVGs are shipped in icons/ (light + dark variants) so
+     * the tree matches the desktop editor. When the name has no shipped SVG
+     * (a folder, or a kind added on the server later) a codicon is used, which
+     * also carries the error / warning theme colour.
+     */
+    _resolveIconPath(iconName, iconColor) {
+        if (iconName && ICON_NAMES.has(iconName) && this.extensionUri) {
+            return {
+                light: vscode.Uri.joinPath(this.extensionUri, 'icons', iconName + '.svg'),
+                dark: vscode.Uri.joinPath(this.extensionUri, 'icons', iconName + '-dark.svg'),
+            };
+        }
+        const codicon = ICON_FALLBACKS[iconName] || iconName || 'file';
+        return new vscode.ThemeIcon(codicon, iconColor);
     }
 
     async getChildren(element) {
@@ -308,7 +350,7 @@ class HierarchyProvider {
  * @param {(msg: string) => void} [log] optional logger (OutputChannel)
  */
 function registerHierarchy(context, ensureClient, log, revealLog) {
-    const provider = new HierarchyProvider(ensureClient, log, revealLog);
+    const provider = new HierarchyProvider(ensureClient, log, revealLog, context.extensionUri);
     const view = vscode.window.createTreeView('systemverilogLsp.hierarchy', {
         treeDataProvider: provider,
         showCollapseAll: true,

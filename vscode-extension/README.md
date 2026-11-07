@@ -60,6 +60,11 @@ Explorer container.
 - Right-click menu (mirrors the editor's NavigatePanel): Add Folder, Add Blank
   File, Delete, Open in Explorer, Copy Path, Property, Reveal in Editor, Copy
   Instance Path (e.g. `u_mid.u_leaf`).
+- Icons come from the editor's own SVG assets (shipped in `icons/`, light and
+  dark variants): SystemVerilog / Verilog / header documents, module and
+  interface instances, imported packages. A file with parse errors or warnings
+  is tinted with the theme's error / warning colour, like the editor's
+  NavigatePanel badge.
 
 ## Install
 

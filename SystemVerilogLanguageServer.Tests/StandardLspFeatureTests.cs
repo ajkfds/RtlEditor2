@@ -263,7 +263,8 @@ public class StandardLspFeatureTests : IDisposable
         }
         Assert.NotEqual(JsonValueKind.Undefined, fileNode.ValueKind);
         Assert.Equal("rtlFile", fileNode.GetProperty("contextValue").GetString());
-        Assert.Equal("file", fileNode.GetProperty("icon").GetString());
+        // the icon name mirrors the editor's NavigatePanel document icon
+        Assert.Equal("systemverilog-document", fileNode.GetProperty("icon").GetString());
         Assert.Equal("collapsed", fileNode.GetProperty("collapsible").GetString());
         Assert.True(fileNode.TryGetProperty("fsPath", out JsonElement fsPath));
         Assert.EndsWith("top.sv", fsPath.GetString());
@@ -279,8 +280,8 @@ public class StandardLspFeatureTests : IDisposable
         JsonElement inst = children[0];
         Assert.Equal("rtlInstance", inst.GetProperty("contextValue").GetString());
         // the icon reflects the instantiated building block kind (module here),
-        // not a single generic "symbol-class" for every instance
-        Assert.Equal("symbol-module", inst.GetProperty("icon").GetString());
+        // not a single generic icon for every instance
+        Assert.Equal("module", inst.GetProperty("icon").GetString());
         Assert.Equal("u_leaf", inst.GetProperty("instancePath").GetString());
         Assert.Contains("u_leaf", inst.GetProperty("tooltip").GetString() ?? "");
     }
@@ -312,8 +313,8 @@ public class StandardLspFeatureTests : IDisposable
         {
             icons[n.GetProperty("label").GetString() ?? ""] = n.GetProperty("icon").GetString() ?? "";
         }
-        Assert.Equal("symbol-module", icons["u_leaf"]);
-        Assert.Equal("symbol-interface", icons["u_bus"]);
+        Assert.Equal("module", icons["u_leaf"]);
+        Assert.Equal("interface", icons["u_bus"]);
     }
 
     [Fact]

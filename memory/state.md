@@ -3,6 +3,27 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy の VerilogFile / VerilogModuleInstance にアイコンが表示されない** → 修正完了 (ビルド成功 0 errors、テスト 140 合格、publish 更新、コミット済み)
+  - ユーザ報告: rtl hierarchy の VerilogFile, VerilogModuleInstance にアイコンが表示されていない
+  - 調査 (プローブ `DebugIconProbe.cs` 新設、コミット除外): サーバーは `icon` を正しく返していた (file → `"file"`、instance → `"symbol-module"`)。つまり**サーバー側のデータは正常**で、問題は (a) クライアントが codicon しか使っておらず**プラグインのアイコンになっていない**こと、(b) ファイルノードは `resourceUri` を設定していたため VS Code のファイルアイコンが出るが、インスタンスは codicon でプラグインの見た目と違う、という「要望との不一致」
+  - 方針転換: codicon ではなく**プラグインの SVG アセットを拡張に同梱して実際に表示する**。プラグイン SVG は `fill:#4b4b4b` 固定でダークテーマでは見えないため、**light / dark の 2 バリアント**を用意する
+  - 修正1 (`vscode-extension/icons/` 新設、14 ファイル): `module` / `interface` / `package` / `header` / `systemverilog-document` / `verilog-document` / `verilog-header-document` の各 `.svg` (fill `#4b4b4b`) と `-dark.svg` (fill `#c5c5c5`)。プラグインの `Assets/Icons/*.svg` の path データを流用
+  - 修正2 (`SystemVerilogLanguageServer/RtlHierarchy.cs`): `Icon` の意味を「VS Code codicon id」から**安定したアイコン名**に変更 (doc コメント更新)
+  - 修正3 (`Server/InMemorySystemVerilogCore.cs`): `ResolveItemIcon` の戻り値を codicon からアイコン名に変更 (`symbol-module` → `module` / `symbol-interface` → `interface` / `symbol-package` → `package` / `file-code` → `header`)
+  - 修正4 (`Server/LspHandler.cs`):
+    - ファイルノードのアイコンを拡張子で決定 (`.sv` → `systemverilog-document` / `.svh`・`.vh` → `verilog-header-document` / `.v` → `verilog-document` / その他 → `file`)
+    - インスタンスノードのフォールバックを `symbol-module` → `module` に変更
+  - 修正5 (`vscode-extension/hierarchy.js`):
+    - `ICON_NAMES` (同梱 SVG がある名前) と `ICON_FALLBACKS` (codicon フォールバック) を新設
+    - `HierarchyProvider` に `extensionUri` を渡し、`_resolveIconPath(iconName, iconColor)` を新設: 同梱 SVG があれば `{ light, dark }` の Uri ペアを返し、無ければ `new ThemeIcon(codicon, iconColor)` を返す
+    - `getTreeItem` を `_resolveIconPath` 経由に統一 (ファイルノードの `resourceUri` 依存を廃止し、プラグインのドキュメントアイコンを使う)
+    - `registerHierarchy` で `context.extensionUri` を渡す
+  - 修正6 (`vscode-extension/.vscodeignore` / `README.md`): `icons/**` が同梱されることを明記、README の RTL Hierarchy 節にアイコンの説明を追加
+  - テスト更新 (`StandardLspFeatureTests.cs`): `icon` の期待値を `file` → `systemverilog-document` / `symbol-module` → `module` / `symbol-interface` → `interface` に更新
+  - 検証: プローブで `icon: "systemverilog-document"` (file) / `icon: "module"` (instance) を実測確認 / `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **140 合格 / 0 失敗** / publish 更新 + `--selftest` 正常
+  - コミット: SystemVerilogLanguageServer `331e921`、メイン (submodule pointer + icons/ + hierarchy.js + README + .vscodeignore + tests + state.md)
+  - Next: VS Code で Reload Window 後、(1) ファイルノードに SystemVerilog / Verilog / ヘッダのアイコンが出ること (2) module instance と interface instance でアイコンが変わること (3) ダークテーマでもアイコンが見えること を確認
+
 - **RTL Hierarchy のアイコン対応後に「起動できないケースが増えた」** → 修正完了 (ビルド成功 0 errors、テスト 138 合格、コミット済み)
   - ユーザ報告: 起動できないケースが増えました (直前のアイコン対応コミット `01f878d` の後)
   - 根本原因 (**スレッド安全性**): `BuildDirectoryNodes` が `parsedFile.Diagnostics` を `foreach` で列挙していたが、`InMemoryFile._diagnostics` は素の `List<>` で、バックグラウンドのワークスペース parse が `SetDiagnostics` (`Clear` + `AddRange`) で同時に書き換える。列挙中に変更されると `InvalidOperationException: Collection was modified` が発生し、`HandleHierarchy` の catch が `IOException` / `UnauthorizedAccessException` のみだったため**素通りして `rtl/hierarchy` 全体がエラー** → クライアントは空ツリーを描画し「起動できない」ように見えた。大きいワークスペース (バックグラウンド parse が走る) ほど発生しやすい
