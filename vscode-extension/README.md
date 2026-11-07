@@ -166,9 +166,11 @@ The two talk over TCP instead of stdio: the launch configuration sets
 spawning it. Without that variable the extension spawns the server as usual
 (stdio), which is what the packaged `.vsix` does.
 
-The same two configurations (and the compound) are also defined in
+The same configurations (and the compound) are also defined in
 `vscode-extension/.vscode/launch.json`, so opening the `vscode-extension`
-folder directly and pressing `F5` works too.
+folder directly and pressing `F5` works too. There, **Run Extension** spawns
+the server as usual and **Run Extension (connect to C# debug server)** is the
+TCP variant used by the compound.
 
 Notes:
 
@@ -178,10 +180,12 @@ Notes:
   between the two configurations does not matter.
 - `Developer: Reload Window` in the Extension Development Host reconnects to
   the same server (the server accepts connections in a loop).
-- To debug only the extension, run **Run Extension** alone; it will then try to
-  connect to port 9250 and fail unless a server is listening. Unset
-  `SVLSP_SERVER_PORT` (or use the `serverPath` setting) to spawn a server
-  instead.
+- In a `.code-workspace` file the plain `${workspaceFolder}` variable cannot be
+  resolved (a workspace may contain several folders), so the entries there use
+  `${workspaceFolder:RtlEditor2}` and the folder is given an explicit `name`.
+  If you rename the folder, update those variables too.
+- To debug only the extension, run **Run Extension** (the non-TCP one); it
+  spawns the server itself and needs no other configuration.
 
 ### Spawning a published server
 

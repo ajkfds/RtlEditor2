@@ -1,6 +1,11 @@
 {
 	"folders": [
 		{
+			// The folder needs an explicit name: in a .code-workspace file the
+			// plain ${workspaceFolder} variable cannot be resolved (a workspace
+			// may contain several folders), so launch.json / tasks.json entries
+			// defined here must use ${workspaceFolder:RtlEditor2} instead.
+			"name": "RtlEditor2",
 			"path": "."
 		}
 	],
@@ -23,20 +28,20 @@
 				"type": "extensionHost",
 				"request": "launch",
 				"args": [
-					"--extensionDevelopmentPath=${workspaceFolder}/vscode-extension"
+					"--extensionDevelopmentPath=${workspaceFolder:RtlEditor2}/vscode-extension"
 				],
 				"env": {
 					"SVLSP_SERVER_PORT": "9250"
 				},
 				"outFiles": [
-					"${workspaceFolder}/vscode-extension/*.js"
+					"${workspaceFolder:RtlEditor2}/vscode-extension/*.js"
 				],
 				"sourceMaps": false,
 				"resolveSourceMapLocations": [
-					"${workspaceFolder}/vscode-extension/*.js"
+					"${workspaceFolder:RtlEditor2}/vscode-extension/*.js"
 				],
 				"skipFiles": [
-					"${workspaceFolder}/vscode-extension/server/**"
+					"${workspaceFolder:RtlEditor2}/vscode-extension/server/**"
 				],
 				"internalConsoleOptions": "openOnSessionStart"
 			},
@@ -45,12 +50,12 @@
 				"type": "coreclr",
 				"request": "launch",
 				"preLaunchTask": "build-server",
-				"program": "${workspaceFolder}/SystemVerilogLanguageServer/bin/Debug/net10.0/SystemVerilogLanguageServer.dll",
+				"program": "${workspaceFolder:RtlEditor2}/SystemVerilogLanguageServer/bin/Debug/net10.0/SystemVerilogLanguageServer.dll",
 				"args": [
 					"--port",
 					"9250"
 				],
-				"cwd": "${workspaceFolder}/SystemVerilogLanguageServer",
+				"cwd": "${workspaceFolder:RtlEditor2}/SystemVerilogLanguageServer",
 				"console": "internalConsole",
 				"stopAtEntry": false,
 				"env": {
@@ -81,11 +86,11 @@
 				"command": "dotnet",
 				"args": [
 					"build",
-					"${workspaceFolder}/SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj",
+					"${workspaceFolder:RtlEditor2}/SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj",
 					"-clp:ErrorsOnly"
 				],
 				"options": {
-					"cwd": "${workspaceFolder}/SystemVerilogLanguageServer"
+					"cwd": "${workspaceFolder:RtlEditor2}/SystemVerilogLanguageServer"
 				},
 				"problemMatcher": "$msCompile",
 				"group": "build"

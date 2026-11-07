@@ -2,23 +2,15 @@
     "version": "0.2.0",
     "configurations": [
         {
-            // Debugs the extension host (TypeScript/JavaScript side).
-            //
-            // The language server is NOT spawned by the extension in this
-            // configuration: SVLSP_SERVER_PORT tells extension.js to connect to
-            // a server that is already listening on that loopback port. The
-            // server itself is launched by the "Attach: SystemVerilog Language
-            // Server (C#)" configuration below, so both sides can be debugged
-            // at once from the compound launch in RtlEditor2.code-workspace.
+            // Debugs the extension host (TypeScript/JavaScript side) on its own.
+            // The extension spawns the language server over stdio as usual, so
+            // this works without any other configuration running.
             "name": "Run Extension",
             "type": "extensionHost",
             "request": "launch",
             "args": [
                 "--extensionDevelopmentPath=${workspaceFolder}"
             ],
-            "env": {
-                "SVLSP_SERVER_PORT": "9250"
-            },
             // This is a plain-JS extension: only the two source files at the
             // extension root are debuggable. Do NOT glob **/*.js here: the
             // bundled server under server/ (a publish output, git-ignored)
@@ -27,6 +19,33 @@
             // source maps for thousands of files, which kills the debug
             // session and closes the Extension Development Host window right
             // after it opens.
+            "outFiles": [
+                "${workspaceFolder}/*.js"
+            ],
+            "sourceMaps": false,
+            "resolveSourceMapLocations": [
+                "${workspaceFolder}/*.js"
+            ],
+            "skipFiles": [
+                "${workspaceFolder}/server/**"
+            ],
+            "internalConsoleOptions": "openOnSessionStart"
+        },
+        {
+            // Debugs the extension host AND connects to a language server that
+            // is already listening on 127.0.0.1:9250 instead of spawning it.
+            // Use this together with "Launch: SystemVerilog Language Server
+            // (C#)" (or the "Extension + Language Server" compound) so
+            // breakpoints in the C# server are hit.
+            "name": "Run Extension (connect to C# debug server)",
+            "type": "extensionHost",
+            "request": "launch",
+            "args": [
+                "--extensionDevelopmentPath=${workspaceFolder}"
+            ],
+            "env": {
+                "SVLSP_SERVER_PORT": "9250"
+            },
             "outFiles": [
                 "${workspaceFolder}/*.js"
             ],
@@ -61,6 +80,19 @@
             "env": {
                 "DOTNET_ENVIRONMENT": "Development"
             }
+        }
+    ],
+    "compounds": [
+        {
+            // One F5 starts both sides. The server is listed first so it is
+            // already listening when the extension host connects (the
+            // extension also retries for 30s, so the order is not critical).
+            "name": "Extension + Language Server",
+            "configurations": [
+                "Launch: SystemVerilog Language Server (C#)",
+                "Run Extension (connect to C# debug server)"
+            ],
+            "stopAll": true
         }
     ]
 }
