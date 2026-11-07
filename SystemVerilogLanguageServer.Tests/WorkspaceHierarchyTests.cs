@@ -155,6 +155,25 @@ public class WorkspaceHierarchyTests : IDisposable
     private static JsonElement QueryTop(LspHandler handler) => Query(handler, new { });
 
     /// <summary>
+    /// Sends <c>rtl/hierarchy</c> with the parameters verbatim, without the
+    /// readable-parameter translation <see cref="Query"/> performs.
+    ///
+    /// <para>
+    /// <see cref="Query"/> builds the expand token itself from
+    /// <c>folderPath</c> / <c>uri</c> + <c>nodePath</c>, so it can never
+    /// exercise a token the SERVER emitted. Tests that must follow the real
+    /// client (store the token, echo it back) use this instead.
+    /// </para>
+    /// </summary>
+    private static JsonElement QueryRaw(LspHandler handler, object parameters)
+    {
+        using JsonDocument requestDoc = JsonDocument.Parse(JsonSerializer.Serialize(parameters));
+        handler.TryHandleRequest("rtl/hierarchy", requestDoc.RootElement, default, out object? result);
+        string resultJson = JsonSerializer.Serialize(result);
+        return JsonDocument.Parse(resultJson).RootElement.Clone();
+    }
+
+    /// <summary>
     /// Expands the node with the given label in <paramref name="parent"/> by
     /// echoing back the opaque expand token the server issued for it. This is
     /// exactly what the client does, so the tests exercise the real protocol.
@@ -327,6 +346,67 @@ public class WorkspaceHierarchyTests : IDisposable
         // third level: leaf has no instances
         JsonElement level2 = Query(handler, new { uri, nodePath = new[] { 0, 0 } });
         Assert.Empty(Labels(level2, "instance"));
+    }
+
+    /// <summary>
+    /// The expand token the server issues for an INSTANCE node must resolve back
+    /// to that instance.
+    ///
+    /// <para>
+    /// The client never builds a token itself: it stores the one the server sent
+    /// and echoes it back verbatim. So the token has to name the file the
+    /// instance LIVES IN (the file being expanded) together with the instance
+    /// path inside it. Naming the instantiated module's own source file instead
+    /// makes the next request look for the instance inside the wrong file: the
+    /// expand arrow is drawn but the level comes back empty.
+    /// </para>
+    ///
+    /// <para>
+    /// The other hierarchy tests build their tokens by hand from the file they
+    /// queried, which is why they never caught this: only the server-emitted
+    /// token is exercised here.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void InstanceNode_ExpandToken_ExpandsToItsChildren()
+    {
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; mid u_mid(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "mid.sv"), "module mid; leaf u_leaf(); endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"), "module leaf; endmodule\n");
+
+        LspHandler handler = CreateInitializedHandler();
+
+        // top level -> the top.sv file node
+        JsonElement fileNode = FindNode(QueryTop(handler), "top.sv");
+        string fileToken = fileNode.GetProperty("expandToken").GetString() ?? "";
+        Assert.False(string.IsNullOrEmpty(fileToken));
+
+        // expand the file: u_mid
+        JsonElement level0 = QueryRaw(handler, new { expandToken = fileToken });
+        JsonElement mid = FindNode(level0, "u_mid");
+        Assert.True(mid.GetProperty("hasChildren").GetBoolean());
+
+        // the instance node must open the file the instantiation is written in
+        // (its startLine / startCharacter are offsets into that document), not
+        // the instantiated module's source file
+        Assert.EndsWith("top.sv", mid.GetProperty("uri").GetString() ?? "");
+
+        // expand u_mid with the token the SERVER issued (exactly what the client
+        // does: it never builds a token itself)
+        string instanceToken = mid.GetProperty("expandToken").GetString() ?? "";
+        Assert.False(string.IsNullOrEmpty(instanceToken), "instance node must carry an expand token");
+        JsonElement level1 = QueryRaw(handler, new { expandToken = instanceToken });
+        Assert.Equal(new[] { "u_leaf" }, Labels(level1, "instance"));
+    }
+
+    /// <summary>Finds the node with the given label in a hierarchy response.</summary>
+    private static JsonElement FindNode(JsonElement result, string label)
+    {
+        foreach (JsonElement node in result.GetProperty("nodes").EnumerateArray())
+        {
+            if (node.GetProperty("label").GetString() == label) return node;
+        }
+        throw new InvalidOperationException($"node '{label}' not found");
     }
 
     /// <summary>

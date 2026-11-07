@@ -3,6 +3,32 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張の RTL Hierarchy で VerilogModuleInstance のアイコンが白い四角になり、展開しても下層が出ない** → 修正完了 (ビルド成功 0 errors、テスト 97 + sv-tests 1028 合格、publish 更新・同梱バイナリで実測済み)
+  - ユーザ報告: vscode extension で使用したとき RTL Hierarchy view の VerilogModuleInstance の表示がおかしい。アイコンが白い四角になって、expand しても下層の item が表示されない
+  - **原因1 (展開できない・最重要)**: `InMemorySystemVerilogCore.CreateDescriptor` がインスタンスノードの `Uri` を `ResolveItemUri(item)` (= インスタンス先モジュールのソースファイル) で作っていた。しかし `BuildFileNodes` は `ExpandToken.ForInstance(child.Uri, child.InstancePathSegments)` で **その Uri を展開トークンに埋め込む**。インスタンス文が書かれているのは親ファイル (top.sv) なのに、トークンはインスタンス先 (mid.sv) を指すため、次の展開要求が `mid.sv` の中から `u_mid` を探して見つからず空リストを返していた (矢印は出るが下層が空)
+    - 実測 (プローブ): `u_mid` の `uri` が `mid.sv`、`expandToken` の `u` も `mid.sv` → L1 が `{"nodes":[]}`
+  - **原因2 (アイコンが白い四角)**: `vscode-extension/icons/module.svg` / `module-dark.svg` の path データが **単なる塗りつぶしの角丸四角形だけ** で、内側の枠線が無かった。ダークテーマでは `module-dark.svg` (`#c5c5c5` = ほぼ白) が使われるため「白い四角」に見えていた。プラグインの `Assets/Icons/instance.svg` (外枠 + 内側の四角) の形状に差し替え
+  - 修正1 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`):
+    - `GetHierarchyChildren` で、子のインスタンス文を含むドキュメント (= 展開中の item の `CodeDocument`) とその URI (`GetUriForRelativePath(current.RelativePath)`) を求め、`CreateDescriptor(child, documentUri, document)` に渡す
+    - `CreateDescriptor` の `Uri` を `documentUri ?? ResolveItemUri(item)` に変更 (インスタンス文が書かれたファイルを開く。`startLine` / `startCharacter` もそのドキュメントのオフセットなので整合する)
+    - `GetLineOfIndex` / `GetCharacterOfIndex` を `CodeDocument?` 引数付きの static に変更 (従来は `_parsedDocument` 固定で、親ファイル以外のドキュメントの位置を解決できなかった)
+  - 修正2 (`vscode-extension/icons/module.svg` / `module-dark.svg`): 外枠 + 内側の四角の 2 path に差し替え (プラグイン `instance.svg` の形状)
+  - 修正3 (`vscode-extension/icons/*.svg` 全 14 ファイル): `width="100%" height="100%"` → `width="16" height="16"` に統一 (VS Code のツリーアイコンは 16×16 が標準で、`100%` はサイズ不定になり得るため)
+  - 回帰テスト追加 (`SystemVerilogLanguageServer.Tests/WorkspaceHierarchyTests.cs`, 1 件): `InstanceNode_ExpandToken_ExpandsToItsChildren`
+    - **サーバが発行した expandToken をそのまま返送する** フローを検証 (既存テストは `Query` ヘルパーが `folderPath`/`uri` + `nodePath` からトークンを自前で組み立てていたため、この不具合を検出できなかった)
+    - `QueryRaw` ヘルパーを新設 (パラメータをそのまま送る。`Query` の読みやすいパラメータ変換を通さない)
+    - 検証内容: `u_mid` の `uri` が `top.sv` であること / サーバ発行トークンで展開すると `u_leaf` が返ること
+    - **修正前は `node 'u_mid' not found` で失敗** することを実証済み
+  - 検証:
+    - `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` **97 合格 / 0 失敗**
+    - `dotnet test --filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗** (regression なし)
+    - publish 更新 (`dotnet publish ... -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=false`) + `--selftest` 正常
+    - **同梱バイナリ (`vscode-extension/server/SystemVerilogLanguageServer.exe`) を stdio 起動し VS Code と同じ URI (`file:///c%3A/...`) で実測**: top → `rtl` フォルダ → `top.sv` → `u_mid` (uri=`top.sv`, startLine=1) → サーバ発行トークンで展開 → `u_leaf` (uri=`mid.sv`) を確認
+  - 教訓: **階層テストでトークンを自前で組み立てると、サーバが発行するトークンの不具合を見逃す**。実クライアントと同じ「サーバ発行トークンをそのまま返送する」経路をテストすること
+  - Next: VS Code で Reload Window 後、(1) module instance のアイコンが枠付きの四角 (白い塗りつぶしでない) になること (2) instance を expand すると下層の instance が表示されること (3) ダーク/ライト両テーマでアイコンが見えること を確認
+  - メモ: 検証用プローブ (`DebugTokenDumpProbe.cs` / `DebugSpawnExpandProbe.cs`) は従来どおりコミットから除外し作業ツリーに残置
+
 - **RTL Hierarchy の VerilogFile / VerilogModuleInstance にアイコンが表示されない** → 修正完了 (ビルド成功 0 errors、テスト 140 合格、publish 更新、コミット済み)
   - ユーザ報告: rtl hierarchy の VerilogFile, VerilogModuleInstance にアイコンが表示されていない
   - 調査 (プローブ `DebugIconProbe.cs` 新設、コミット除外): サーバーは `icon` を正しく返していた (file → `"file"`、instance → `"symbol-module"`)。つまり**サーバー側のデータは正常**で、問題は (a) クライアントが codicon しか使っておらず**プラグインのアイコンになっていない**こと、(b) ファイルノードは `resourceUri` を設定していたため VS Code のファイルアイコンが出るが、インスタンスは codicon でプラグインの見た目と違う、という「要望との不一致」
