@@ -29,6 +29,59 @@
 - コマンドパレット → `SystemVerilog LSP: Copy Log File Path` … パスをクリップボードへ
 - 起動失敗時は**エラー通知にクラッシュログのパスが含まれる**
 
+## 1.5 エージェント (AI) 環境からログを読む方法
+
+**ログはプロジェクトルートの外 (`%APPDATA%\Code\logs`) にあるため、`read_file` では読めない**
+(`Permission denied. Cannot read files outside of the project root.`)。さらに `powershell` /
+`cmd` / `node` / `ls` / `cat` は**コマンド許可リスト外**で実行できない。
+
+→ **`dotnet run` で一時的な C# ツールを作り、`FileShare.ReadWrite` で開いて読む**のが確実。
+VS Code がログファイルを開いたままなので、共有読み取りを指定しないと
+`The process cannot access the file ... because it is being used by another process.` になる。
+
+手順:
+
+1. `_tmp_logdump/LogDump.csproj` (`net10.0` / `OutputType=Exe`) と `Program.cs` を作る
+2. `Program.cs` でやること:
+   - 探索ルート: `%APPDATA%\Code\logs`、`%APPDATA%\Code - Insiders\logs`、`Path.GetTempPath()`
+   - `Directory.EnumerateFiles(root, "svlsp-extension*.log", SearchOption.AllDirectories)` で列挙
+   - **`new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)`**
+     で開く (これが無いとロックで失敗する)
+   - `LastWriteTimeUtc` の降順で新しいものから表示
+3. `dotnet run --project _tmp_logdump/LogDump.csproj -c Release`
+4. 調査後に **`git clean -fd _tmp_logdump`** で削除 (コミットに含めない)
+
+### 見るべきファイル (セッションごと)
+
+```
+%APPDATA%\Code\logs\<YYYYMMDDTHHMMSS>\
+├── main.log                                  # 拡張ホストの exit code / crash 記録
+├── window<N>\renderer.log                    # マニフェスト検証エラー (package.json 不正)
+├── window<N>\exthost\exthost.log             # 拡張の activate 状況
+└── window<N>\exthost\rtleditor2.systemverilog-lsp\
+    ├── svlsp-extension.log                   # 通常ログ (logLine)
+    └── svlsp-extension-crash.log             # クラッシュログ (crashLog)
+```
+
+### 実際に効いた読み方 (2026-11 の起動失敗調査)
+
+- **`main.log` の `exited with code: 134` / `crashed with code 134`** … 拡張ホストが SIGABRT で
+  落ちている。Node の `uncaughtException` ハンドラ自体が throw した可能性が高い
+- **`renderer.log` の `property 'id' is mandatory ...`** … `package.json` の contribution 不正。
+  ビューコンテナ ID は **英数字 + `_` + `-` のみ** (ドット不可)。不正だと
+  `View container '...' does not exist and all views registered to it will be added to 'Explorer'.`
+  が出て、そのペインだけ Explorer に落ちる
+- **`svlsp-extension-crash.log` の `Channel has been closed`** … ホスト破棄中に
+  `OutputChannel.appendLine` / `showErrorMessage` を呼んでいる。`logLine` 等を try/catch で守る
+- **`unhandledRejection: Canceled: Canceled`** … ホスト破棄時の正常な reject。ノイズなので無視してよい
+
+### 注意
+
+- 出力が大きいと `execute_command` の上限 (256KB) で切られる。**キーワードで絞る**
+  (`systemverilog-lsp` / `exited with code` / `Channel has been closed` / `property \`id\`` 等)、
+  または `Take(n)` / 末尾 N 行だけ表示する
+- `C# Dev Kit` の `ServiceHub\*.svclog` は巨大かつ無関係。**除外する**こと
+
 ## 2. サーバ (C#) 側のログ
 
 `RawLspClient` が子プロセスの **stderr を 1 行ずつ `[server] ...` として `logLine` に流す**。
@@ -72,6 +125,9 @@
 | 症状 | 一次情報 |
 |---|---|
 | 拡張が起動しない / Extension Development Host がすぐ閉じる | `svlsp-extension-crash.log` |
+| 拡張ホストが **exit code 134** で落ちる (SIGABRT) | `main.log` の `crashed with code 134` + `svlsp-extension-crash.log` の `uncaughtException`。`uncaughtException` ハンドラ自体が throw していないか確認 |
+| ペインが Explorer に落ちる / コンテナが出ない | `renderer.log` の `property 'id' is mandatory ...` (ビューコンテナ ID にドット等の不正文字) |
+| ウィンドウを閉じる/リロードするとクラッシュログが増える | `Channel has been closed` (ホスト破棄中の `appendLine` / `showErrorMessage` が未保護) |
 | RTL Hierarchy が空 | `svlsp-extension.log` の `[server] workspace: N files` と `rtl/hierarchy` の応答ログ |
 | 波線 (diagnostics) が出ない | `[server]` 行に parse エラーが出ているか。`publishDiagnostics` は didOpen/didChange 後に push される |
 | 補完 / hover が効かない | `initialize succeeded` が出ているか。出ていなければサーバ未起動 |

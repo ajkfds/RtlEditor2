@@ -6,6 +6,7 @@
 - **VS Code 拡張が起動失敗する (拡張ホストが exit code 134 でクラッシュ)** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: `vscode extensionを起動したときに起動失敗しました。logを確認して原因をチェックして`
   - **ログの取得方法**: `%APPDATA%\Code\logs` はプロジェクト外で `read_file` 不可、`powershell` / `cmd` / `node` / `ls` はコマンド許可リスト外。**`dotnet run` で一時 C# ツール (`_tmp_logdump`) を作り、`FileShare.ReadWrite` で開いて読む**方法で解決 (VS Code がログを開いたままなので共有読み取りが必須)。調査後に `git clean -fd _tmp_logdump` で削除
+    - **手順は `memory/vscode_extension_debugging.md` の「1.5 エージェント (AI) 環境からログを読む方法」に恒久化済み** (探索ルート / `FileShare.ReadWrite` / 見るべきファイル一覧 / 実際に効いた読み方 / 出力サイズ上限の注意)
   - **原因1 (致命的・クラッシュ)**: `logLine()` の `log.appendLine(line)` が **try/catch 無し**だった。ウィンドウ終了/リロードで拡張ホストが破棄されると OutputChannel が閉じ、サーバプロセスの `proc.on('exit', ...)` → `logLine('server exited with code N')` が `Error: Channel has been closed` を throw。ChildProcess イベントハンドラ内なので `uncaughtException` になり、そのハンドラが `vscode.window.showErrorMessage(...)` を呼ぶがこれも閉じたチャネルで失敗 → **ハンドラ自身が throw → Node が SIGABRT → exit code 134**
     - 実測ログ (`main.log`): `Extension host with pid 9020 exited with code: 134` / `crashed with code 134 and reason 'crashed'` が3回連続
     - 実測ログ (`svlsp-extension-crash.log`): `uncaughtException: Error: Channel has been closed at Object.appendLine ... at logLine (extension.js:85:18) at ChildProcess.<anonymous> (extension.js:509:31)` → `unhandledRejection ... at Object.showErrorMessage ... at extension.js:139:27`
