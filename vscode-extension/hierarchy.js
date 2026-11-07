@@ -377,7 +377,15 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
         if (revealing) return;
         revealing = true;
         try {
-            await openAt(node.uri, node.startLine, node.startCharacter);
+            // Log the exact target: the server sends the file the instantiation
+            // is WRITTEN IN (uri) plus the instantiated module's own source
+            // (fsPath). If the editor opens the wrong file, this line shows
+            // which uri the client actually used.
+            provider.log('selection: ' + node.kind + ' ' + node.label
+                + ' -> uri=' + node.uri
+                + ' line=' + node.startLine + ' char=' + node.startCharacter
+                + ' (fsPath=' + node.fsPath + ')');
+            await openAt(node.uri, node.startLine, node.startCharacter, provider.log);
             await provider.reparseAndRefresh(node.uri);
         } catch (err) {
             provider.log('selection reveal/reparse ERROR: ' + (err && err.message));
@@ -397,7 +405,7 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
         vscode.commands.registerCommand('systemverilogLsp.openHierarchyNode', async (item) => {
             const node = item || view.selection[0];
             if (!node || !node.uri) return;
-            await openAt(node.uri, node.startLine, node.startCharacter);
+            await openAt(node.uri, node.startLine, node.startCharacter, provider.log);
             await provider.reparseAndRefresh(node.uri);
         })
     );
@@ -406,7 +414,7 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
         vscode.commands.registerCommand('systemverilogLsp.revealInEditor', async (item) => {
             const node = item || view.selection[0];
             if (!node || !node.uri) return;
-            await openAt(node.uri, node.startLine, node.startCharacter);
+            await openAt(node.uri, node.startLine, node.startCharacter, provider.log);
             await provider.reparseAndRefresh(node.uri);
         })
     );
@@ -544,7 +552,7 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
  * Opens the given file and reveals the given 0-based line/character.
  * Falls back gracefully when the position is unknown.
  */
-async function openAt(uriString, line, character) {
+async function openAt(uriString, line, character, log) {
     const uri = vscode.Uri.parse(uriString);
     try {
         const doc = await vscode.workspace.openTextDocument(uri);
@@ -555,6 +563,7 @@ async function openAt(uriString, line, character) {
             editor.selection = new vscode.Selection(pos, pos);
             editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
         }
+        if (log) log('openAt: opened ' + doc.uri.toString() + ' at ' + line + ':' + character);
     } catch (err) {
         vscode.window.showErrorMessage('Could not open ' + uriString + ': ' + err.message);
     }

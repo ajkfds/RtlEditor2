@@ -3,6 +3,22 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy の module instance をクリックするとインスタンス先 (sourceFile) が開く** → 調査完了・診断ログ追加 (サーバ側は全経路で正常と実測、クライアント側の実測待ち)
+  - ユーザ報告: `module instance側をクリックしてもinstanceしたsourceFile側がloadされます`
+  - **サーバ側は正常であることを3経路で実測** (プローブはコミット除外):
+    - `DebugInstanceUriProbe` (in-process, 合成ワークスペース): `u_mid` → **top.sv** line=2 / `u_leaf` → **mid.sv** line=2
+    - `DebugBundledInstanceUriProbe` (**同梱バイナリ `vscode-extension/server` を stdio 起動**、VS Code と同じ `file:///c%3A/...` URI): `u_mid` → **top.sv** line=2 char=2 / `u_leaf` → **mid.sv** line=2 char=2
+    - `DebugRealSampleUriProbe` (**実サンプル** `verilog_sample` をルートに、`mySample/mod2.v` の `moduleSample SS` を展開): `SS` → **mod2.v** line=7 char=0 detail=moduleSample。**`didOpen` しない経路 (TryLoadFileFromDisk) でも同じ**
+  - サーバ実装の確認: `CreateDescriptor` の `Uri = documentUri ?? ResolveItemUri(item)` で、`documentUri` は `GetHierarchyChildren` が **展開中の item (= インスタンス文が書かれたファイル)** から `GetUriForRelativePath(current.RelativePath)` で求めたもの。`VerilogModuleInstance.RelativePath` は `file.RelativePath` (= インスタンス先) だが、`documentUri` が優先されるため正しい
+  - クライアント実装の確認: `_toItems` は `uri: node.uri` をそのままコピー、`getTreeItem` は `arguments: [element]` で `HierarchyItem` を渡し、`openAt(node.uri, ...)` で開く → 経路に誤りは見当たらない
+  - **診断ログを追加** (`vscode-extension/hierarchy.js`): 実際にどの URI を開いたかを OutputChannel で確認できるようにした
+    - `onDidChangeSelection`: `selection: <kind> <label> -> uri=... line=... char=... (fsPath=...)` を出力 (uri = インスタンス文があるファイル / fsPath = インスタンス先のソース。**両方を出すので取り違えが即座に分かる**)
+    - `openAt(uriString, line, character, log)`: 引数に `log` を追加し、`openAt: opened <doc.uri> at line:char` を出力 (実際に開いたドキュメントの URI)
+    - `openAt` の呼び出し3箇所 (`onDidChangeSelection` / `openHierarchyNode` / `revealInEditor`) すべてに `provider.log` を渡すよう更新
+  - 検証: JS 4 ファイルの括弧バランス検証 → すべて balanced / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → **0 errors**
+  - Next: VS Code で Reload Window → RTL Hierarchy の module instance をクリック → OutputChannel「SystemVerilog LSP」の `selection:` 行と `openAt: opened` 行を確認し、**`uri=` がインスタンス文のあるファイル (例 mod2.v) になっているか / `openAt: opened` が同じファイルか** を報告してもらう。`uri=` は正しいのに `openAt: opened` が別ファイルなら `openTextDocument` 側の問題、`uri=` 自体がインスタンス先ならサーバから届く値の問題 (同梱バイナリの差し替え漏れ等) を疑う
+  - メモ: 検証用プローブ (`DebugInstanceUriProbe.cs` / `DebugBundledInstanceUriProbe.cs` / `DebugRealSampleUriProbe.cs`) は従来どおりコミットから除外し作業ツリーに残置
+
 - **RTL Hierarchy で module instance のノードをクリックしてもエディタが切り替わらない** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: `rtl hierarchyでmodule instanceのノードをクリックしてもエディタ側が切り替わりません。`
   - **根本原因 (`onDidChangeSelection` がエディタを開いていなかった)**: `hierarchy.js` の `view.onDidChangeSelection` ハンドラは `provider.reparseAndRefresh(node.uri)` しか呼んでおらず、**`openAt()` を呼んでいなかった**。エディタを開く処理は `TreeItem.command` (`systemverilogLsp.revealInEditor`) にしか無かった
