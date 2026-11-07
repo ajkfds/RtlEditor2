@@ -109,6 +109,57 @@ public class StandardLspFeatureTests : IDisposable
 
         Assert.Equal(JsonValueKind.Array, result.ValueKind);
         Assert.True(result.GetArrayLength() >= 2, "expected the declaration and at least one use");
+
+        // Every highlight must cover exactly the identifier, not the run of
+        // text up to the next token. The plugin's WordReference.Length is the
+        // distance to the next token (an editor mark convention), so using it
+        // verbatim made the highlight span the rest of the line.
+        foreach (JsonElement h in result.EnumerateArray())
+        {
+            JsonElement range = h.GetProperty("range");
+            int startLine = range.GetProperty("start").GetProperty("line").GetInt32();
+            int startChar = range.GetProperty("start").GetProperty("character").GetInt32();
+            int endLine = range.GetProperty("end").GetProperty("line").GetInt32();
+            int endChar = range.GetProperty("end").GetProperty("character").GetInt32();
+            Assert.Equal(startLine, endLine);
+            Assert.Equal(3, endChar - startChar);   // "sig"
+        }
+    }
+
+    [Fact]
+    public void DocumentHighlight_RangeCoversOnlyTheIdentifier()
+    {
+        // A trailing comment after the declaration used to be swallowed by the
+        // highlight because the plugin's token length reaches the next token.
+        const string text =
+            "module top;\n" +
+            "  wire sig; // trailing comment here\n" +
+            "  assign sig = 1'b0;\n" +
+            "  logic [7:0] data_bus;\n" +
+            "  assign data_bus = 8'hFF;\n" +
+            "endmodule\n";
+        string uri = WriteFile("hl2.sv", text);
+        LspHandler handler = CreateInitializedHandler();
+        DidOpen(handler, uri, text);
+
+        JsonElement result = Request(handler, "textDocument/documentHighlight", new
+        {
+            textDocument = new { uri },
+            position = new { line = 3, character = 14 },   // data_bus declaration
+        });
+
+        Assert.Equal(JsonValueKind.Array, result.ValueKind);
+        Assert.True(result.GetArrayLength() >= 2);
+        foreach (JsonElement h in result.EnumerateArray())
+        {
+            JsonElement range = h.GetProperty("range");
+            int startLine = range.GetProperty("start").GetProperty("line").GetInt32();
+            int startChar = range.GetProperty("start").GetProperty("character").GetInt32();
+            int endLine = range.GetProperty("end").GetProperty("line").GetInt32();
+            int endChar = range.GetProperty("end").GetProperty("character").GetInt32();
+            Assert.Equal(startLine, endLine);
+            Assert.Equal(8, endChar - startChar);   // "data_bus"
+        }
     }
 
     [Fact]
