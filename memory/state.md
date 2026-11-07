@@ -3,6 +3,25 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy の instance を開いても parameter override が parse 結果に反映されない** → 修正完了 (ビルド成功 0 errors、テスト 1181/1181 合格、stdio 実測済み。publish は VS Code 終了後に要実行)
+  - ユーザ報告: `module instanceを開けるようになりましたが、instance時のparameter指定の値が正しくinstance側のparse結果に反映されていません。module側でinstance時にparameter指定してmodule instanceを開いた場合はparse結果にparameter overrideの結果が反映されるべきです`
+  - **根本原因 (LSP はファイルを既定パラメータで 1 回だけ parse していた)**: クリックで開くのはインスタンス先の**ソースファイル**で、サーバはそれを通常のファイルとして parse する。デスクトップ版は `SetTextFileAsync(ModuleInstance)` で**インスタンス**を開き、`VerilogModuleInstance.CreateDocumentParser` が `new VerilogParser(this, moduleName, parameterOverrides, ...)` で override 適用済みの parse 結果を表示する。LSP にはこの経路が無く、`moduleSample #(.P_WIDTH(5))` でも既定値 `P_WIDTH = 8` のまま解析されていた
+  - 修正1 (`CodeEditor2VerilogPlugin/CoreBridge/ParseEngine.cs`): `ParseInstanceAsync(text, file, moduleName, parameterOverrides, token)` を新設。`VerilogParser` の override コンストラクタで parse する。**プロジェクト名前空間へは登録しない** (ファイルの通常 parse が既定パラメータ版を登録済みで、1 インスタンスの override で上書きすると他インスタンスの解決が壊れるため。結果は開いたドキュメントの diagnostics / 色付けにのみ使う)
+  - 修正2 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`): `RebuildAsInstance(parentUri, instancePath)` を新設。親ファイル (インスタンス文が書かれた側) の plugin item tree を Updater で辿ってインスタンス item を特定し、`InstanceName` + `ParameterOverrides` を取り出して `ParseInstanceAsync` で再 parse。`_parsedDocument` / symbols / diagnostics / tokens を差し替える。`GetPluginFileForUri(uri)` helper を新設 (親ファイルの plugin item を URI から解決)
+  - 修正3 (`SystemVerilogLanguageServer/RtlHierarchy.cs`): `HierarchyNode` / `HierarchyNodeDescriptor` に `InstancePathSegments` (インスタンスパス) と `ParentUri` (インスタンス文が書かれた親ファイル) を追加
+  - 修正4 (`Server/InMemorySystemVerilogCore.cs` `CreateDescriptor`): `ParentUri = documentUri` を設定 (インスタンスパスの基準ファイル)
+  - 修正5 (`Server/LspHandler.cs` `BuildFileNodes`): `InstancePathSegments` / `ParentUri` をクライアントへ転送
+  - 修正6 (`Server/LspHandler.cs` `HandleReparse`): `instancePathSegments` + `parentUri` を受け取り、`RebuildAsInstance` を試す。解決できなければ従来どおり `Rebuild()` (通常ファイル parse)。応答に `instance: true/false` を追加
+  - 修正7 (`vscode-extension/hierarchy.js`): `HierarchyItem` に `instancePathSegments` / `parentUri` を追加し `_toItems` で引き継ぎ。`reparseAndRefresh(uri, instancePathSegments, parentUri)` に拡張し、インスタンスノードのクリック時に両方を送信 (3 呼び出し箇所すべて更新)
+  - 回帰テスト追加 (`WorkspaceHierarchyTests.ReparseAsInstance_AppliesParameterOverrides`): `child #(parameter WIDTH = 8)` を `child #(.WIDTH(4)) u_child(...)` で instance。通常 parse では `WIDTH = 8`、`rtl/reparse` に `instancePathSegments: ["u_child"]` + `parentUri: top.sv` を渡すと `WIDTH = 4` になることを検証。`CreateInitializedHandler(core)` オーバーロードと `ParameterValue` helper を新設
+  - 検証:
+    - `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test` **1181 合格 / 0 失敗** (sv-tests 1028 含む)
+    - **stdio 実測** (プローブは削除): 通常 parse `WIDTH = 8` → `rtl/reparse` (`instancePathSegments:["u_child"]`, `parentUri:top.sv`) → `{"parsed":true,"instance":true}` → `WIDTH = 4`
+  - **publish 未完了**: 稼働中の LSP サーバ (PID 25556) が `vscode-extension/server/*.dll` をロックして `dotnet publish` が MSB3027/MSB3021 で失敗。**VS Code を閉じてから** `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=false` を再実行する必要がある
+  - Next: VS Code を閉じて publish 更新 → Reload Window 後、parameter 指定付き instance をクリックすると (1) インスタンス先が開くこと (2) その parse 結果 (diagnostics / 色付け / hover の幅) に override 値が反映されること を確認
+  - メモ: 検証用プローブ (`DebugInstanceParamProbe.cs`) は削除済み。`SystemVerilogLanguageServer.Tests/Debug*.cs` の既存プローブは従来どおりコミットから除外
+
 - **RTL Hierarchy の instance をクリックするとインスタンスされた側ではなくインスタンスした側が開く** → 修正完了 (ビルド成功 0 errors、テスト 1180/1180 合格、publish 更新・stdio 実測済み)
   - ユーザ報告: `RTL HierarchyのVerilogFile下のInstanceをクリックしたときにInstanceされた側ではなくInstaceした側がopenされる問題が直ってません。PartialAssign下のAAA instance(対象はmoduleSample)をクリックしたときのログです。`
   - 実測ログ (ユーザ提供): `selection: instance AAA -> uri=file:///D:/.../PartialAssign.sv line=11 char=0 (fsPath=D:\...\moduleSample.v)` → `openAt: opened .../PartialAssign.sv at 11:0`。**サーバが `uri` に「インスタンス文が書かれた親ファイル」を返し、クライアントがそれを開いていた**

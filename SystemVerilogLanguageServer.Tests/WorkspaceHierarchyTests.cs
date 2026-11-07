@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using SystemVerilogCore.Diagnostics;
 using SystemVerilogLanguageServer.Server;
 using Xunit;
 
@@ -27,9 +28,16 @@ public class WorkspaceHierarchyTests : IDisposable
         try { Directory.Delete(_root, true); } catch { /* best effort */ }
     }
 
-    private LspHandler CreateInitializedHandler()
+    private LspHandler CreateInitializedHandler() => CreateInitializedHandler(new InMemorySystemVerilogCore());
+
+    /// <summary>
+    /// Same as <see cref="CreateInitializedHandler()"/> but keeps the caller's
+    /// core, so a test can inspect the parse results (diagnostics) the handler
+    /// produced.
+    /// </summary>
+    private LspHandler CreateInitializedHandler(InMemorySystemVerilogCore core)
     {
-        LspHandler handler = new(new InMemorySystemVerilogCore());
+        LspHandler handler = new(core);
         string initialize = JsonSerializer.Serialize(new
         {
             processId = 1,
@@ -853,6 +861,92 @@ public class WorkspaceHierarchyTests : IDisposable
         });
 
         Assert.Equal(new[] { "u_new" }, Labels(Query(handler, new { uri = topUri, nodePath = new[] { 0 } }), "instance"));
+    }
+
+    /// <summary>
+    /// Clicking an instance node must parse the document AS that instance, so
+    /// the parameter overrides written at the instantiation are applied.
+    ///
+    /// <para>
+    /// The editor opens the INSTANCE, not the file: selecting a module instance
+    /// calls <c>SetTextFileAsync(instance)</c> and the instance's parser is
+    /// created with the instantiation's parameter overrides. A plain file parse
+    /// uses the declared defaults, so a module instantiated with
+    /// <c>#(.WIDTH(4))</c> would still be shown with <c>WIDTH = 8</c> and every
+    /// width derived from it would be wrong.
+    /// </para>
+    ///
+    /// <para>
+    /// The test drives <c>rtl/reparse</c> with the <c>instancePathSegments</c>
+    /// the client echoes back, then checks the diagnostics: with the override
+    /// applied the port width matches the connected signal, without it the
+    /// default width produces a mismatch.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void ReparseAsInstance_AppliesParameterOverrides()
+    {
+        // WIDTH defaults to 8; the instance overrides it to 4.
+        File.WriteAllText(Path.Combine(_root, "child.sv"),
+            "module child #(parameter WIDTH = 8) (input [WIDTH-1:0] d);\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  wire [3:0] sig;\n  child #(.WIDTH(4)) u_child(.d(sig));\nendmodule\n");
+        string childUri = new Uri(Path.Combine(_root, "child.sv")).AbsoluteUri;
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new
+            {
+                uri = childUri,
+                languageId = "systemverilog",
+                version = 1,
+                text = File.ReadAllText(Path.Combine(_root, "child.sv")),
+            },
+        });
+
+        // plain file parse: the declared default
+        Assert.Equal("8", ParameterValue(core, childUri, "child", "WIDTH"));
+
+        // instance parse: the override written at the instantiation. The
+        // instance path is relative to the file the instantiation is written in
+        // (top.sv), which is a different file from the one being opened
+        // (child.sv), so parentUri is sent too.
+        using (JsonDocument reparse = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            uri = childUri,
+            instancePathSegments = new[] { "u_child" },
+            parentUri = topUri,
+        })))
+        {
+            handler.TryHandleRequest("rtl/reparse", reparse.RootElement, default, out object? result);
+            string json = JsonSerializer.Serialize(result);
+            using JsonDocument doc = JsonDocument.Parse(json);
+            Assert.True(doc.RootElement.GetProperty("instance").GetBoolean(),
+                "rtl/reparse must report that it parsed the document as an instance");
+        }
+
+        Assert.Equal("4", ParameterValue(core, childUri, "child", "WIDTH"));
+    }
+
+    /// <summary>
+    /// The expression text of a parameter in the file's current parse result
+    /// (e.g. "8" for the declared default, "4" after the instance override).
+    /// </summary>
+    private static string? ParameterValue(
+        InMemorySystemVerilogCore core, string uri, string blockName, string parameterName)
+    {
+        InMemoryProject project = core.GetOrCreateProject("default");
+        InMemoryFile file = (InMemoryFile)project.FindFile(uri)!;
+        pluginVerilog.Verilog.ParsedDocument? parsed = file.ParsedDocument;
+        if (parsed?.Root == null) return null;
+        if (!parsed.Root.BuildingBlocks.TryGetValue(blockName, out var block)) return null;
+        if (!block.NamedElements.TryGetValue(parameterName, out var element)) return null;
+        if (element is not pluginVerilog.Verilog.DataObjects.Constants.Constants constant) return null;
+        return constant.Expression?.CreateString();
     }
 
     /// <summary>

@@ -69,6 +69,14 @@ class HierarchyItem {
         this.expandToken = options.expandToken;
         // readable instance path, used by "Copy Instance Path"
         this.instancePath = options.instancePath;
+        // instance path as name segments from the file root; echoed back in
+        // rtl/reparse so the server parses the document AS this instance
+        // (parameter overrides applied)
+        this.instancePathSegments = options.instancePathSegments;
+        // URI of the file the instantiation is written in (the parent). The
+        // instance path is relative to it, and it is a different file from
+        // `uri` (the instantiated module's source).
+        this.parentUri = options.parentUri;
         // workspace-relative folder path (informational; expansion uses the token)
         this.folderPath = options.folderPath;
         // ---- presentation metadata, decided by the server ----
@@ -142,11 +150,24 @@ class HierarchyProvider {
      * client sends a didChange (an already-open, unedited file otherwise keeps
      * the parse result from when it was first opened).
      */
-    async reparseAndRefresh(uri) {
+    async reparseAndRefresh(uri, instancePathSegments, parentUri) {
         try {
             const client = await this.ensureClient();
             if (client && uri) {
-                await client.request('rtl/reparse', { uri });
+                // When the node is an instance, ask the server to parse the
+                // document AS that instance: the parameter overrides written at
+                // the instantiation are then applied, exactly like the editor
+                // (which opens the instance, not the file). The instance path is
+                // relative to the file the instantiation is written in
+                // (parentUri), which is a different file from `uri` (the
+                // instantiated module's source). Without the segments the
+                // server does a plain file parse.
+                const params = { uri };
+                if (Array.isArray(instancePathSegments) && instancePathSegments.length > 0) {
+                    params.instancePathSegments = instancePathSegments;
+                    if (parentUri) params.parentUri = parentUri;
+                }
+                await client.request('rtl/reparse', params);
             }
         } catch (e) {
             this.log('reparse ERROR: ' + (e && e.stack ? e.stack : e));
@@ -334,6 +355,8 @@ class HierarchyProvider {
             hasChildren: !!node.hasChildren,
             expandToken: node.expandToken,
             instancePath: node.instancePath,
+            instancePathSegments: node.instancePathSegments,
+            parentUri: node.parentUri,
             folderPath: node.folderPath,
             icon: node.icon,
             iconColor: node.iconColor,
@@ -392,7 +415,7 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
                 + ' line=' + node.startLine + ' char=' + node.startCharacter
                 + ' (fsPath=' + node.fsPath + ')');
             await openAt(node.uri, node.startLine, node.startCharacter, provider.log);
-            await provider.reparseAndRefresh(node.uri);
+            await provider.reparseAndRefresh(node.uri, node.instancePathSegments, node.parentUri);
         } catch (err) {
             provider.log('selection reveal/reparse ERROR: ' + (err && err.message));
         } finally {
@@ -412,7 +435,7 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
             const node = item || view.selection[0];
             if (!node || !node.uri) return;
             await openAt(node.uri, node.startLine, node.startCharacter, provider.log);
-            await provider.reparseAndRefresh(node.uri);
+            await provider.reparseAndRefresh(node.uri, node.instancePathSegments, node.parentUri);
         })
     );
 
@@ -421,7 +444,7 @@ function registerHierarchy(context, ensureClient, log, revealLog) {
             const node = item || view.selection[0];
             if (!node || !node.uri) return;
             await openAt(node.uri, node.startLine, node.startCharacter, provider.log);
-            await provider.reparseAndRefresh(node.uri);
+            await provider.reparseAndRefresh(node.uri, node.instancePathSegments, node.parentUri);
         })
     );
 
