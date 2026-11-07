@@ -26,7 +26,10 @@
   - コミット: SystemVerilogCore `f580251` / CodeEditor2VerilogPlugin `36f328e` / SystemVerilogLanguageServer `84b04d9`、メイン `378af10` (submodule pointer + autoConnectView.js + extension.js + package.json + README + AutoConnectTests.cs)
   - Next: VS Code で Reload Window 後、(1) インスタンス上で右クリック → "Auto Connect Ports" で Webview パネルが開くこと (2) 全ポートが一覧表示され候補が選択済みになること (3) Apply でインスタンスが書き換わること (4) Cancel で何も変わらないこと を確認
   - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/Debug*.cs`) は従来どおりコミットから除外し作業ツリーに残置。`CodeEditor2` の modified は本タスク外のユーザ変更のため除外
-  - 残課題 (将来): デスクトップ版 `AutoConnectWindow` も `AutoConnectAdapter` を使うよう痩せさせれば、計算ロジックの二重管理を解消できる (現状は両者が同じ規則を別実装で持っている)
+  - 残課題: **「未解決課題」セクションの AutoConnect 関連 3 件を参照**
+    - (1) 計算ロジックの二重管理 (デスクトップ版 `AutoConnectWindow` と `AutoConnectAdapter` が同じ照合規則を別実装で持つ) → デスクトップ版を `AutoConnectModel` 描画に痩せさせる
+    - (2) Webview が Avalonia 版の対話キー操作 (↑↓ / Space / → / Enter / Escape) を再現していない → 仕様 (必要なら JS で追加可)
+    - (3) Webview がポートの型・ビット幅を表示していない → 任意 (Avalonia 版も未表示のため機能差なし)
 
 - **VS Code でコード上をクリックしたときのハイライト範囲がおかしい** → 修正完了 (ビルド成功 0 errors、テスト 144 + sv-tests 1028 合格、publish 更新、コミット済み)
   - ユーザ報告: `vscodeでコード上をクリックしたときにハイライトされる範囲がおかしいです。本来、CodeEditor2VerilogPlugin\CodeEditor2VerilogPlugin\CodeEditor\CodeDocument.cs の GetWord でとれる値であるべきです`
@@ -1577,6 +1580,26 @@
   - コミット: CodeEditor2AiPlugin `4f9f513`
 
 ## 未解決課題
+
+- **AutoConnect の計算ロジックが二重管理になっている (デスクトップ版と LSP 版)** → 未着手
+  - 現状: `CodeEditor2VerilogPlugin/CoreBridge/AutoConnectAdapter.cs` (LSP 用・UI フリー) と `CodeEditor2VerilogPlugin/Views/AutoConnectWindow.axaml.cs` の `ConnectionItem.GetCantidates()` (デスクトップ用・Avalonia) が **同じ照合規則を別実装で持っている**
+    - 規則: ポート名と完全一致、または `_I` / `_O` / `_IO` を除いた名前と一致 (大文字小文字無視)
+    - 片方だけ直すとデスクトップ版と VS Code 版で候補がずれる (ドリフト源)
+  - 修正方針: `AutoConnectWindow` を `AutoConnectAdapter.Build()` の結果 (`AutoConnectModel`) を描画するだけに痩せさせる
+    - `AutoConnectWindow(AutoConnectModel model)` コンストラクタに変更し、`ConnectionItem` は `AutoConnectPort` を保持して表示のみ担当
+    - `Complete()` は `AutoConnectAdapter.Apply()` 相当の処理を呼ぶ (または選択結果を返して呼び出し側で適用)
+    - 注意: `AutoConnectWindow` は `ColorLabel` で色付き表示しているため、`AutoConnectPort` に色情報 (または `ColorType`) を持たせるか、表示側で名前から色を決める必要がある
+  - 検証方法: デスクトップ版で AutoConnect を開き、LSP 版 (`rtl/autoConnect`) と同じ候補が出ることを確認。`AutoConnectTests` の 5 件が引き続き合格すること
+  - 関連コミット: SystemVerilogCore `f580251` / CodeEditor2VerilogPlugin `36f328e` / SystemVerilogLanguageServer `84b04d9` / メイン `378af10`
+
+- **AutoConnect の Webview が Avalonia 版の対話キー操作を再現していない** → 仕様 (対応不要)
+  - Avalonia 版: ↑↓ で行移動、Space/← で Accept、→ で Reject、Enter で確定、Escape でキャンセル
+  - Webview 版: 各行の `<select>` で候補を選び、Apply / Cancel ボタンで確定
+  - 意図的な差異 (LSP にキー操作を持ち込まない方針)。ただし「キーボードだけで完結させたい」要望が出たら Webview 内に JS のキーハンドラを追加すれば再現可能
+
+- **AutoConnect の Webview がポートの型・ビット幅を表示していない** → 未着手 (任意)
+  - Avalonia 版も表示していないため機能差はないが、`AutoConnectPort` に `DataType` / `BitWidth` を足せば Webview 側で表示できる (接続ミスの発見に有用)
+  - 実装箇所: `SystemVerilogCore/AutoConnect/AutoConnectModel.cs` にフィールド追加 → `AutoConnectAdapter.Build()` で `port.DataObject?.DataType` から設定 → `autoConnectView.js` の `buildHtml` で列追加
 
 - sv-tests 最新状況 (確認) → 全 1033 件で失敗 2 / 合格 1031 / regression なし
   - 計測: `dotnet test SystemVerilogLanguageServer.Tests/SystemVerilogLanguageServer.Tests.csproj --no-build --filter "FullyQualifiedName~ParseSvTestFile"`
