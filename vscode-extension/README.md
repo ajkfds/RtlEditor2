@@ -134,18 +134,41 @@ Prerequisites for building: .NET SDK, Node.js, and `npm i -g @vscode/vsce`.
 
 ```bash
 cd vscode-extension
-npm run package
+npm run vsix
 ```
 
-`npm run package` first bundles the server (`scripts/bundle-server.js` runs
-`dotnet publish` into `vscode-extension/server/`) and then runs `vsce package`,
-producing `systemverilog-lsp-<version>.vsix`.
+`npm run vsix` (`scripts/make-vsix.js`) runs four steps and stops at the first
+problem with a readable message:
+
+1. **toolchain check** - node / dotnet / `vsce` (falls back to
+   `npx --yes @vscode/vsce` when `vsce` is not installed globally)
+2. **bundle the server** - `scripts/bundle-server.js` empties `server/` and runs
+   `dotnet publish` into it, then prunes symbols, `.playwright/` and the
+   non-host native runtimes
+3. **verify the bundle** - runs `--selftest` against the exact DLL that will be
+   shipped, so a missing / stale server fails here instead of silently shipping
+   an extension that does nothing
+4. **package** - `vsce package --no-dependencies`, producing
+   `systemverilog-lsp-<version>.vsix`
+
+Useful flags:
+
+```bash
+node scripts/make-vsix.js --skip-bundle   # repackage the existing server/ (#4 only)
+node scripts/make-vsix.js --out dist      # also copy the .vsix into dist/
+```
 
 To package without rebuilding the server (e.g. CI that already published it):
 
 ```bash
-npm run package:nobundle
+npm run vsix:fast     # == npm run package:nobundle
 ```
+
+`server/` is expected to stay around **100 MB**. It grew to 734 MB once
+(accumulated publishes: stale `.pdb` files, every platform's native runtimes,
+a bundled Playwright `node.exe`); a folder that large makes the extension
+development host die with exit code 134 right after
+`Loading development extension`. See `memory/vscode_extension_debugging.md`.
 
 ### Release to GitHub
 

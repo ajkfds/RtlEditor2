@@ -297,7 +297,9 @@
   },
   "scripts": {
     "bundle-server": "node scripts/bundle-server.js",
-    "package": "npm run bundle-server && vsce package",
-    "package:nobundle": "vsce package"
+    "vsix": "node scripts/make-vsix.js",
+    "vsix:fast": "node scripts/make-vsix.js --skip-bundle",
+    "package": "node scripts/make-vsix.js",
+    "package:nobundle": "node scripts/make-vsix.js --skip-bundle"
   }
 }
