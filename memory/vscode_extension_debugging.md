@@ -131,6 +131,51 @@ dotnet build SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -clp
 `bin/Debug` へのコピーだけが失敗する**ことがある。
 `tasklist` で `SystemVerilogLanguageServer` / `testhost` / `dotnet` の残骸を確認する。
 
+### ★ 起動失敗の原因になる: `server/` (同梱サーバの publish 出力) の肥大化
+
+**症状**: `Loading development extension` の直後 (約 1 秒後) に extension host が
+`exited with code: 134` / `crashed with code 134` で落ちる。**`exthost/` フォルダが作られない**ので
+`svlsp-extension-crash.log` も `exthost.log` も存在しない。`renderer.log` には
+
+```
+[info] Loading development extension at D:\...\vscode-extension
+[warning] [rtleditor2.systemverilog-lsp]: View container 'systemverilogLsp-messagesContainer' does not exist ...
+```
+の直後で何も出なくなる。マニフェスト不正 (`property 'id'` / `property 'icon'`) は**出ない**。
+
+**原因**: `vscode-extension/server/` が巨大だと、拡張開発ホストが拡張フォルダを監視しきれずに
+SIGABRT で落ちる。実測では **314 ファイル / 733.9 MB** になっていた:
+
+| 内訳 | サイズ |
+|---|---|
+| `.playwright/node/win32_x64/node.exe` | 89.6 MB |
+| `runtimes/**/libSkiaSharp.pdb` (win-x86/x64/arm64) | 253 MB |
+| `runtimes/**/libHarfBuzzSharp.pdb` | 66 MB |
+| 全プラットフォームの `runtimes/<rid>` native (linux / osx / musl ...) | 数十 MB |
+
+**なぜ増えるか**: `dotnet publish -o <dir>` は出力先を**空にしない**（追加・上書きのみ）。
+さらに `-p:DebugType=None -p:DebugSymbols=false` を付けても、
+**参照パッケージが持つシンボルは publish 先にコピーされる**
+(`-p:CopyOutputSymbolsToPublishDirectory=false` が必要)。
+
+**対策**:
+1. publish 前に `server/` を**空にする**（`bundle-server.js` の `rmrf(publishOut)`）
+2. `-p:CopyOutputSymbolsToPublishDirectory=false` を付ける
+3. 後処理で `*.pdb` / `.playwright/` / 非ホストの `runtimes/<rid>` を削除
+4. 目安: **100〜150 MB / 150 ファイル以下**。これを超えたら疑う
+
+`vscode-extension/scripts/bundle-server.js` は 1〜3 を実装済み。手で publish する場合も同じ後処理をする:
+
+```
+dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release \
+  -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=False \
+  -p:CopyOutputSymbolsToPublishDirectory=false
+```
+そのあと `server/**/*.pdb` / `server/.playwright/` / 非ホスト `runtimes/` を削除。
+
+**切り分け**: 症状が「exthost 無し + code 134 + マニフェストエラー無し」なら、まず
+`vscode-extension/server/` のファイル数とサイズを測る。
+
 ### 起動失敗の原因になる: `property `icon` is mandatory and must be of type `string``
 
 ```
@@ -202,6 +247,7 @@ codicon 文字列（`$(warning)` 等）を書いたのが原因。
 |---|---|
 | 拡張が起動しない / Extension Development Host がすぐ閉じる | `svlsp-extension-crash.log` |
 | 拡張ホストが **exit code 134** で落ちる (SIGABRT) | まず `<session>/window<N>/exthost/` の有無。**無ければ launch 構成**（`preLaunchTask` のビルド失敗など）が原因で、拡張コードは走っていない。crash log も作られない。有る場合は `svlsp-extension-crash.log` の `uncaughtException` を見る |
+| `Loading development extension` の直後に落ちる (exthost 無し / マニフェストエラー無し) | **`vscode-extension/server/` のサイズ**。100 MB 超なら肥大化が原因（上記「server/ の肥大化」）。ファイル数とサイズを測る |
 | ペインが Explorer に落ちる / コンテナが出ない | `renderer.log` の `property 'id' is mandatory ...` (ビューコンテナ ID にドット等の不正文字) |
 | ウィンドウを閉じる/リロードするとクラッシュログが増える | `Channel has been closed` (ホスト破棄中の `appendLine` / `showErrorMessage` が未保護) |
 | RTL Hierarchy が空 | `svlsp-extension.log` の `[server] workspace: N files` と `rtl/hierarchy` の応答ログ |
