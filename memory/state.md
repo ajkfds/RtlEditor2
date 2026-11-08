@@ -3,6 +3,51 @@
 
 ## 進行中タスク (最新)
 
+- **Messages ペインの severity が 1 段ずれる (LSP 1..4 と `vscode.DiagnosticSeverity` 0..3 の混同)** → 修正完了 (ビルド成功 0 errors、テスト 1141 + sv-tests 1028 合格)
+  - ユーザ報告: `unused -> オレンジ三角 / size mismatch →青四角 / bit width mismatch → 赤丸 になってます`
+  - **根本原因 (クライアント側の severity 解釈違い)**: サーバが送る LSP severity は正しかった (同梱バイナリを stdio 起動して実測):
+    | メッセージ | サーバの LSP severity |
+    |---|---|
+    | `Size mismatch 5 <- 8` | **4 Hint** |
+    | `bit width mismatch 5 <- 3` | **2 Warning** |
+    | `undriven` / `unused` | **3 Information** |
+    - しかし `extension.js` の `publishDiagnostics` ハンドラが LSP 1..4 を **`vscode.DiagnosticSeverity` に変換**して
+      (`Error=0 / Warning=1 / Information=2 / Hint=3`) 診断オブジェクトを作り、それを
+      `messageViewProviderRef.update(uri, diags)` で **`messageView.js` に渡していた**。
+      一方 `messageView.js` は `SEVERITY_ORDER` / `ICON` / `CLASS` / `counts` をすべて **LSP の 1..4 前提**で書いていたため、
+      **全エントリが 1 段ずれて**表示されていた:
+      | メッセージ | 実際の severity | messageView の解釈 | 見えた色 |
+      |---|---|---|---|
+      | `unused` (Information) | 2 | 2 → warning | **オレンジ三角** |
+      | `Size mismatch` (Hint) | 3 | 3 → info | **青四角** |
+      | `bit width mismatch` (Warning) | 1 | 1 → error | **赤丸** |
+      - ユーザ報告の 3 つの症状がすべてこの 1 段ずれで説明できる
+  - **修正1 (`vscode-extension/messageView.js`)**: 受け取る severity を `vscode.DiagnosticSeverity` として扱うよう統一
+    - `SEVERITY_ERROR` / `SEVERITY_WARNING` / `SEVERITY_INFO` / `SEVERITY_HINT` を
+      `vscode.DiagnosticSeverity.*` から定義 (LSP 数値のハードコードを廃止)
+    - `SEVERITY_ORDER` を enum 値 (0..3) でキーイング
+    - webview 内の `ICON` / `CLASS` を **0..3** に変更 (0=● error / 1=▲ warning / 2=■ info / 3=○ hint)
+    - `counts` を `SEVERITY_ERROR` 等で判定、`icon` のフォールバックを `ICON[0]` (error) に修正
+    - severity 未設定時の既定は `SEVERITY_ERROR` (0)
+  - **修正2 (`MessageView/MessageNode.cs`, デスクトップ版)**: アイコン色を Messages ペイン / Problems と統一
+    - Error `(100,255,150,150)` → `#f14c4c` / Warning `(100,255,255,150)` → `#cca700` /
+      Notice `(100,150,255,150)` 緑 → `#3794ff` 青 / Hint `(100,150,150,255)` 水色 → `#6c6c6c` グレー
+  - **検証 (機械チェック、`node --check` が使えないため C# で静的検証)**: `messageView.js` について
+    - `SEVERITY_*` が `vscode.DiagnosticSeverity.*` から定義されていること
+    - `ICON` / `CLASS` が 0..3 でキーイングされ、LSP の 1..4 が残っていないこと
+    - `ICON` の図形が 0=● / 1=▲ / 2=■ / 3=○ であること
+    - `icon` のフォールバックが `ICON[0]`、`counts` が `SEVERITY_ERROR` 基準であること
+    - 括弧バランス `{}=0 ()=0 []=0`
+    すべて OK
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors /
+    `dotnet test --filter FullyQualifiedName!~Debug` **1141 合格 / 0 失敗**
+  - コミット: CodeEditor2VerilogPlugin / メイン (messageView.js + submodule pointer + state.md)
+  - Next: VS Code で Reload Window 後、`mod2.v` で
+    `unused` = **青■** / `bit width mismatch` = **オレンジ▲** / parse error = **赤●** / `Size mismatch` = **グレー○**
+    が Messages ペイン・Problems パネル・エディタの波線で一致することを確認
+  - メモ: 検証用プローブ (`DebugSeverityProbe`) と一時ツール (`_tmp_sev`) は削除済み
+
+
 - **Messages ペインと Editor マークの色が食い違う (size mismatch が Warning になっていた)** → 修正完了 (ビルド成功 0 errors、テスト 1141 + sv-tests 1028 合格、publish 更新)
   - ユーザ報告: `messageの表示とProblems/Editor上のマーク表示の色が違うので揃えたいです。unusedは青 / birwidth mismatchはオレンジ / errorは赤 / size mismatchはグレーであるべきです。`
   - **実測 (プローブ、`verilog_sample/mySample` の実ファイル)**: `textDocument/publishDiagnostics` の severity

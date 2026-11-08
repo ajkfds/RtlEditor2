@@ -18,8 +18,32 @@
 
 const vscode = require('vscode');
 
+// Severity: this module receives `vscode.Diagnostic` objects (see
+// `messageViewProviderRef.update(uri, diags)` in extension.js), so
+// `diagnostic.severity` is a `vscode.DiagnosticSeverity`, NOT the raw LSP
+// number. The two enums are offset by one:
+//
+//   vscode.DiagnosticSeverity.Error       = 0   (LSP 1)
+//   vscode.DiagnosticSeverity.Warning     = 1   (LSP 2)
+//   vscode.DiagnosticSeverity.Information = 2   (LSP 3)
+//   vscode.DiagnosticSeverity.Hint        = 3   (LSP 4)
+//
+// Reading them as LSP numbers shifted every entry by one, so `unused`
+// (Information) rendered with the warning triangle, `bit width mismatch`
+// (Warning) with the error circle and `Size mismatch` (Hint) with the info
+// square - i.e. the Messages pane disagreed with the editor marks.
+const SEVERITY_ERROR = vscode.DiagnosticSeverity.Error;
+const SEVERITY_WARNING = vscode.DiagnosticSeverity.Warning;
+const SEVERITY_INFO = vscode.DiagnosticSeverity.Information;
+const SEVERITY_HINT = vscode.DiagnosticSeverity.Hint;
+
 // Severity order used for sorting: errors first, like the editor's list.
-const SEVERITY_ORDER = { 1: 0, 2: 1, 3: 2, 4: 3 };
+const SEVERITY_ORDER = {
+    [SEVERITY_ERROR]: 0,
+    [SEVERITY_WARNING]: 1,
+    [SEVERITY_INFO]: 2,
+    [SEVERITY_HINT]: 3,
+};
 
 /**
  * Stable key for a document URI.
@@ -195,7 +219,9 @@ class MessageViewProvider {
                     character: d.range.start.character,
                     endLine: d.range.end.line,
                     endCharacter: d.range.end.character,
-                    severity: d.severity === undefined ? 1 : d.severity,
+                    // vscode.DiagnosticSeverity (Error = 0). An entry without a
+                    // severity is treated as an error, as before.
+                    severity: d.severity === undefined ? SEVERITY_ERROR : d.severity,
                     message: d.message || '',
                     code: d.code === undefined || d.code === null ? '' : String(d.code),
                 });
@@ -231,11 +257,12 @@ class MessageViewProvider {
     _postState() {
         if (!this.view) return;
         const entries = this._collectEntries();
+        // severity values are vscode.DiagnosticSeverity (0..3)
         const counts = { error: 0, warning: 0, info: 0, hint: 0 };
         for (const e of entries) {
-            if (e.severity === 1) counts.error++;
-            else if (e.severity === 2) counts.warning++;
-            else if (e.severity === 3) counts.info++;
+            if (e.severity === SEVERITY_ERROR) counts.error++;
+            else if (e.severity === SEVERITY_WARNING) counts.warning++;
+            else if (e.severity === SEVERITY_INFO) counts.info++;
             else counts.hint++;
         }
         this.view.webview.postMessage({
@@ -377,8 +404,12 @@ class MessageViewProvider {
     const scopeEl = document.getElementById('scope');
     const countsEl = document.getElementById('counts');
 
-    const ICON = { 1: '\\u25CF', 2: '\\u25B2', 3: '\\u25A0', 4: '\\u25CB' };
-    const CLASS = { 1: 'error', 2: 'warning', 3: 'info', 4: 'hint' };
+    // Keys are vscode.DiagnosticSeverity values (Error 0 / Warning 1 /
+    // Information 2 / Hint 3), matching what messageView.js sends. The shapes
+    // follow the Problems panel: filled circle = error, triangle = warning,
+    // square = information, hollow circle = hint.
+    const ICON = { 0: '\\u25CF', 1: '\\u25B2', 2: '\\u25A0', 3: '\\u25CB' };
+    const CLASS = { 0: 'error', 1: 'warning', 2: 'info', 3: 'hint' };
 
     scopeEl.addEventListener('change', () => {
       vscode.postMessage({ type: 'setScope', scope: scopeEl.value });
@@ -414,7 +445,7 @@ class MessageViewProvider {
 
         const icon = document.createElement('span');
         icon.className = 'icon ' + (CLASS[e.severity] || 'error');
-        icon.textContent = ICON[e.severity] || ICON[1];
+        icon.textContent = ICON[e.severity] || ICON[0];
         row.appendChild(icon);
 
         const body = document.createElement('span');
