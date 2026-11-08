@@ -3,6 +3,30 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy でインスタンスノードをクリックすると色がおかしくなる (開いたファイルではなく親ファイルを parse していた)** → 修正完了 (ビルド成功 0 errors、テスト 1136 + sv-tests 1028 合格)
+  - ユーザ報告: `mySample/PartialAssign.sv下のaabbのノードをクリックすると色がおかしくなります。おそらくparameter指定のinstanceのparse結果が見つからない場合に下層parseに行って、そこから後は色がついてない感じです`
+  - **再現 (プローブは削除済み)**: 実ワークスペースで `PartialAssign.sv` → `aaabb` → `mod2.v` をクリックする流れを LSP 経由で再現。`textDocument/semanticTokens/full` が **クリック前 31 トークン → クリック後 11 トークン** に激減し、`module` / `mod2` / `input` / `CLK_I` / `RST_X_I` / `moduleSample` / `P_WIDTH` / `SS` / `AA` / `always` / `begin` / `end` / `endmodule` がすべて未着色になった。残ったのは `wire` / 数値 / `bb` / `aaaa` と 2 つのコメントだけ
+  - **根本原因 (`RebuildAsInstance` が親ファイルの `VerilogFile` を parse 対象に渡していた)**: `InMemorySystemVerilogCore.RebuildAsInstance` は
+    `pluginFile = GetPluginFileForUri(parentUri) ?? GetPluginVerilogFile()` を **インスタンスパスの探索と parse の両方**に使っていた。`parentUri` はインスタンス文が書かれた親ファイル (PartialAssign.sv) なので、`ParseInstanceAsync(CodeDocumentText, pluginFile, ...)` に親の `VerilogFile` が渡り、`VerilogParser` の override コンストラクタが **親ファイルの `TextFile` / `SystemVerilog` フラグ / `CodeDocument`** で `ParsedDocument` を組み立てていた。そのため開いているファイル (mod2.v) の色テーブルが親 (.sv) の文脈で構築され、`Raw TextColors` が 52 → 17 セグメントに減り、LSP トークンも 31 → 11 になった
+  - **実測 (`_parsedDocument` の内部状態)**: クリック前 `Instance=False / TextColors lines=16 / segments=52 / GetTokens=31` → クリック後 `Instance=True Target=mod2 / TextColors lines=7 / segments=17 / GetTokens=11`。`CodeDocument` のテキスト長は 282 で一致しており、テキストは正しいが **色テーブルだけが親の文脈で作られていた**
+  - **修正 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs` `RebuildAsInstance`)**: 親と自分を分離した
+    - `parentPluginFile = GetPluginFileForUri(parentUri)` … インスタンスパスの探索に使う (パスは親の item tree 基準)
+    - `pluginFile = GetPluginVerilogFile() ?? parentPluginFile` … **parse 対象は開いているこのファイル**
+    - 探索ループの開始点を `CodeEditor2.Data.Item current = parentPluginFile;` に (以前は `pluginFile` から始めていたため、修正前は「親の file で探索 + 親の file を parse」で結果的に辻褄が合っていた)
+    - どちらかが解決できない場合は `false` を返し、呼び出し側 (`HandleReparse`) が従来どおり `file.Rebuild()` (通常ファイル parse) にフォールバック
+  - **回帰テスト追加 (`SystemVerilogLanguageServer.Tests/WorkspaceHierarchyTests.ReparseAsInstance_KeepsSyntaxHighlighting`)**: 実サンプルと同じ形 (親 `top.sv` が `child AAA();` / `child bb();` の 2 インスタンス、`child.v` は Verilog で内部に `leaf #(.P_WIDTH( 5 )) u_leaf (...)` を持つ) を用意し、**2 番目のインスタンス `bb`** をクリック
+    - `rtl/reparse` が `instance: true` を返すこと
+    - **クリック前後で semantic tokens の数が一致すること** (31 → 31)
+    - `module` / `endmodule` が引き続き着色されていること
+    - **修正を stash で戻すと `Expected: 31 / Actual: 11` で失敗**することを実証
+  - 検証: `dotnet build SystemVerilogLanguageServer.Tests.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~Debug` **1136 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - コミット: SystemVerilogLanguageServer `50501f7`、メイン `da64385` (submodule pointer + tests)
+  - **publish 未完了**: 稼働中の LSP サーバが `vscode-extension/server/*.dll` をロックしているため MSB3027/MSB3021 で失敗する。**VS Code を閉じてから** 再実行:
+    `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=False`
+  - Next: VS Code を閉じて publish 更新 → Reload Window 後、`PartialAssign.sv` 配下の instance (`aaabb` / `AAA`) をクリックしても色が崩れないこと、parameter override が反映されたままであることを確認
+  - メモ: 検証用プローブ (`DebugClickInstanceProbe` / `DebugClickStateProbe` / `DebugRebuildInstanceDiffProbe` / `DebugInstanceParseColorProbe`) は削除済み
+
+
 - **parameter 付き module instance 以下のコードに色が付かない (semantic tokens が重複していた)** → 修正完了 (ビルド成功 0 errors、テスト 1135 + sv-tests 1028 合格)
   - ユーザ報告: `parameterつきmodule instanceのparseが正しくできてないようです。module instance以下の箇所が色がついてません。`
   - **調査 (プローブは削除済み)**: 実ワークスペース `CodeEditor2VerilogPlugin/verilog_sample` (1083 ファイル) を LSP 経由で parse し、semantic tokens と未着色語を全ファイル走査。`mySample/mod2.v` (`.P_WIDTH ( 5 )` + `.AA ( aaaa )` 形式) の**パーサ出力・診断・色セグメントはすべて正常** (未着色語 0)、インスタンス形式 15 パターン (named/ordered パラメータ × named/ordered ポート、複数行、2 インスタンス、インスタンス配列、式パラメータ `2+2` / `$clog2(16)` / localparam 参照、instance 先が未定義) でも**構文解析はすべて成功**しインスタンス後続行も着色された。`ParseInstanceAsync` (parameter override 付き = instance を開いたとき) も正常。→ **parse の問題ではない**
