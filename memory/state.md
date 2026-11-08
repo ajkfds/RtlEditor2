@@ -3,6 +3,20 @@
 
 ## 進行中タスク (最新)
 
+- **発生していた問題 (深さ2以上の instance で override が効かない / 編集すると override が消える) の後続修正** → 修正完了 (ビルド成功 0 errors、テスト 164 + sv-tests 1028 合格、publish 更新、コミット済み)
+  - 経緯: 既に `ad10a54`「Base hierarchy node instance paths on the expanded file」で深さ2以上の instance クリックは直っていたが、その後の作業で **作業ツリーに未コミット・ビルド不能な状態** が残っていた (`RebuildAsInstance` → `ParseAndApplyInstance` へのリファクタが中途半端で CS0103 / CS0136 / CS1061 の 4 エラー)
+  - **修復1 (ビルド破損の解消)**: `Server/InMemorySystemVerilogCore.cs` で孤立した doc コメントを除去し、消えていた `RebuildAsInstance(parentUri, instancePath)` を復活 (チェーンを辿って `ParseAndApplyInstance` に委譲する薄いラッパ)。`ParseAndApplyInstance` 側の重複したチェーン探索 / `moduleName` / `overrides` の再宣言を削除
+  - **修復2 (既存回帰の巻き戻し防止)**: 未コミット差分が `ParseInstanceAsync` に **親ファイル (`basePluginFile`)** を渡すよう変えており、commit `50501f7`「Parse the opened file, not the parent」で直した不具合を再導入していた (`ReparseAsInstance_KeepsSyntaxHighlighting` が 31 → 11 トークンで失敗)。**このファイル自身 (`pluginFile`)** を渡すよう戻した
+  - **新機能 (編集後も override を維持)**: `InMemoryFile.SelectedInstance` / `InstanceSelection` (ParentUri / ModuleName / ParameterOverrides) を新設し、instance を開いたクリック時に記録。`RebuildAsSelectedInstance()` が同じ override で再 parse する (override の `Expression` をそのまま保持するため `ParsedDocument.KeyGenerator` が安定し、override 付きの結果が再現される)。`LspHandler.HandleDidChange` / `HandleDidSave` は `RebuildAsSelectedInstance()` → 失敗時のみ `Rebuild()` にフォールバック
+  - **修復3 (didChange で選択が消える)**: `InMemoryProject.AddOrUpdateFile` が毎回 **新しい `InMemoryFile` を生成**していたため `SelectedInstance` が失われていた → 既知の id なら既存エントリを再利用し `SetText(text)` + `RegisterPluginItem(existing)` を呼ぶよう変更。`SetText` に「古い parse 結果を破棄して `_built = false` にする」処理を追加 (新規インスタンス生成が暗黙に提供していた無効化を明示化。`Hierarchy_RefreshesNestedInstancesAfterDependencyEdit` / `DidOpenAndScan_ShareOneFileEntry` の回帰を解消)
+  - **不要コード削除**: 呼び出し元ゼロだった `ClearSelectedInstance()` を削除
+  - 回帰テスト追加 (`WorkspaceHierarchyTests.DidChangeAfterInstanceClick_KeepsParameterOverrides`): `child #(.WIDTH(4))` をクリックして `WIDTH=4` にした後 `didChange` で編集 → **引き続き `WIDTH=4`** (既定 8 に戻らない) を assert
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName~WorkspaceHierarchyTests` **40 合格 / 0 失敗** / `--filter FullyQualifiedName!~ParseSvTestFile` **164 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - publish 更新済み (`vscode-extension/server`) + `--selftest` 正常 (capabilities / definition / documentSymbol 応答確認)
+  - コミット: SystemVerilogLanguageServer `e0efe32`、メイン `0d68fcc` (submodule pointer + WorkspaceHierarchyTests.cs)
+  - Next: VS Code で Reload Window 後、RTL Hierarchy の **深さ2以上の instance** (`PartialAssign.sv` → `aaabb` → `SS`) をクリックすると `P_WIDTH` が 5 として解決されること、**そのまま編集しても** override が維持されること (既定 8 に戻らないこと) を確認
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/Debug*.cs`) と `CodeEditor2` のユーザ変更 (`dd3d165` 等) は従来どおりコミットから除外 (作業ツリーに残置)
+
 - **RTL Hierarchy のノードにエラー / 警告 / dirty バッジを表示 (RtlEditor の NavigatePanel 相当)** → 実装完了 (ビルド成功 0 errors、テスト 1142 + sv-tests 1028 合格、publish 更新)
   - ユーザ要求: `RTL Hierachyのアイコンが単色かつmarkが入っていないのですが、これをRtlEditorで表示したときのように、エラーやwarning, dirtyの表示をすることは可能？まずは検討して` → `Cで実装して`
   - **検討の結論 (案C: バッジを SVG に焼き込む)**: VS Code の `TreeItem.iconPath` は
