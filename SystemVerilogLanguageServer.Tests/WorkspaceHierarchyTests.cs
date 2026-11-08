@@ -1126,6 +1126,112 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// The severity of each diagnostic must match the colours the editor uses
+    /// for the same message, so the Messages pane and the editor marks agree:
+    /// <list type="bullet">
+    ///   <item><c>unused</c> → Information (blue)</item>
+    ///   <item><c>bit width mismatch</c> → Warning (orange)</item>
+    ///   <item>parse errors → Error (red)</item>
+    ///   <item><c>Size mismatch</c> (net initializer width) → Hint (grey)</item>
+    /// </list>
+    /// </summary>
+    /// <remarks>
+    /// "Size mismatch" was reported through <c>AddWarning</c>, so it showed the
+    /// same orange as a real "bit width mismatch" even though it is only an
+    /// informational remark about a declaration initializer. It now uses
+    /// <c>AddHint</c> (Hint → grey).
+    /// </remarks>
+    [Fact]
+    public void Diagnostics_SeverityMatchesTheEditorColours()
+    {
+        File.WriteAllText(Path.Combine(_root, "mod2.v"),
+            "module mod2;\n" +                               // 1
+            "  wire [4:0] bb = 8'h00;\n" +                   // 2  Size mismatch (Hint)
+            "  wire [2:0] aaaa;\n" +                         // 3  unused (Information)
+            "  wire [3:0] driven;\n" +                       // 4  used below
+            "  assign driven = 4'h0;\n" +                    // 5
+            "endmodule\n");
+
+        string mod2Uri = new Uri(Path.Combine(_root, "mod2.v")).AbsoluteUri;
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        var pushed = new System.Collections.Generic.List<string>();
+        handler.NotificationSender = message => pushed.Add(JsonSerializer.Serialize(message));
+
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = mod2Uri, languageId = "systemverilog", version = 1, text = File.ReadAllText(Path.Combine(_root, "mod2.v")) },
+        });
+
+        // severity by message text (LSP: 1 Error / 2 Warning / 3 Information / 4 Hint)
+        var severities = new System.Collections.Generic.Dictionary<string, int>();
+        foreach (string json in pushed)
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("params", out JsonElement prm)) continue;
+            if (!prm.TryGetProperty("diagnostics", out JsonElement items)) continue;
+            foreach (JsonElement it in items.EnumerateArray())
+            {
+                string msg = it.GetProperty("message").GetString() ?? "";
+                severities[msg] = it.GetProperty("severity").GetInt32();
+            }
+        }
+
+        Assert.True(severities.ContainsKey("Size mismatch 5 <- 8"),
+            "expected a Size mismatch message (got: " + string.Join(" | ", severities.Keys) + ")");
+        Assert.Equal(4, severities["Size mismatch 5 <- 8"]);   // Hint → grey
+        Assert.Equal(3, severities["unused"]);                // Information → blue
+    }
+
+    /// <summary>
+    /// A parameter override written at the instantiation must drive the port
+    /// checks, so a port whose width is derived from the overridden parameter
+    /// reports a mismatch, and that mismatch must be a Warning (orange).
+    /// </summary>
+    [Fact]
+    public void BitWidthMismatch_IsWarning()
+    {
+        File.WriteAllText(Path.Combine(_root, "leaf2.sv"),
+            "module leaf2 #(parameter WIDTH = 8) (output [WIDTH-1:0] d);\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top2.sv"),
+            "module top2;\n" +
+            "  wire [2:0] w;\n" +
+            "  leaf2 #(.WIDTH(5)) u_leaf (.d(w));\n" +
+            "endmodule\n");
+
+        string topUri = new Uri(Path.Combine(_root, "top2.sv")).AbsoluteUri;
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        var pushed = new System.Collections.Generic.List<string>();
+        handler.NotificationSender = message => pushed.Add(JsonSerializer.Serialize(message));
+
+        foreach (var name in new[] { "leaf2.sv", "top2.sv" })
+        {
+            string uri = new Uri(Path.Combine(_root, name)).AbsoluteUri;
+            SendNotification(handler, "textDocument/didOpen", new
+            {
+                textDocument = new { uri, languageId = "systemverilog", version = 1, text = File.ReadAllText(Path.Combine(_root, name)) },
+            });
+        }
+
+        bool found = false;
+        foreach (string json in pushed)
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("params", out JsonElement prm)) continue;
+            if (!prm.TryGetProperty("diagnostics", out JsonElement items)) continue;
+            foreach (JsonElement it in items.EnumerateArray())
+            {
+                string msg = it.GetProperty("message").GetString() ?? "";
+                if (!msg.StartsWith("bit width mismatch 5", StringComparison.Ordinal)) continue;
+                Assert.Equal(2, it.GetProperty("severity").GetInt32());   // Warning → orange
+                found = true;
+            }
+        }
+        Assert.True(found, "expected a 'bit width mismatch 5' diagnostic");
+    }
+
+    /// <summary>
     /// Clicking an instance node must make the EDITOR's instance view resolve
     /// its parse result, i.e.
     /// <c>InstanceTextFile.ParsedDocument</c> (which looks up
