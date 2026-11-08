@@ -1046,6 +1046,148 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// Clicking an instance node must not lose the syntax highlighting of the
+    /// opened document.
+    /// </summary>
+    /// <remarks>
+    /// The instance reparse resolved the instance path in the parent's item
+    /// tree but also fed the PARENT's <c>VerilogFile</c> to the parser. The
+    /// parser then built its document (text file / SystemVerilog flag / colour
+    /// table) from the parent file, so only a fraction of the opened document
+    /// ended up coloured (observed on
+    /// <c>verilog_sample/mySample/PartialAssign.sv</c> -> <c>aaabb</c> ->
+    /// <c>mod2.v</c>: 31 tokens before the click, 11 after). The walk must use
+    /// the parent and the parse must use THIS file.
+    /// </remarks>
+    [Fact]
+    public void ReparseAsInstance_KeepsSyntaxHighlighting()
+    {
+        // The shapes below are the ones of verilog_sample/mySample, where the
+        // bug was reported: the parent (PartialAssign.sv) instantiates mod2,
+        // which itself contains a parameterised instance of moduleSample.
+        // child.v is Verilog (.v) while the parent is SystemVerilog (.sv), so
+        // using the parent's file object also switched the language flag.
+        File.WriteAllText(Path.Combine(_root, "child.v"),
+            "module child(\n" +
+            "input   in_a,   // @sync clock\n" +
+            "input   in_b    // @sync reset\n" +
+            ");\n" +
+            "\n" +
+            "wire [4:0] w0 = 5'h00;\n" +
+            "\n" +
+            "wire [2:0] w1;\n" +
+            "\n" +
+            "leaf #(\n" +
+            ".P_WIDTH\t( 5 )\n" +
+            ") u_leaf (\n" +
+            ".AA\t( w1 ),\n" +
+            ".CLK_I\t( w0 ),\n" +
+            ".RST_X_I\t(  )\n" +
+            ");\n" +
+            "\n" +
+            "always begin\n" +
+            "end\n" +
+            "endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "leaf.v"),
+            "module leaf #(parameter P_WIDTH = 8) (\n" +
+            "  output [P_WIDTH-1:0] AA,\n" +
+            "  input                CLK_I,\n" +
+            "  input                RST_X_I\n" +
+            ");\n" +
+            "  wire [7:0] bbbb = AA;\n" +
+            "  initial begin\n" +
+            "  end\n" +
+            "endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "`timescale 1ns / 1ps\n" +
+            "\n" +
+            "module top;\n" +
+            "\n" +
+            "wire [3:0]\taaa;\n" +
+            "assign\taaa[0] = 1'b1;\n" +
+            "assign\taaa[3] = 1'b1;\n" +
+            "\n" +
+            "child AAA();\n" +
+            "\n" +
+            "child bb();\n" +
+            "\n" +
+            "endmodule\n");
+        string childPath = Path.Combine(_root, "child.v");
+        string topPath = Path.Combine(_root, "top.sv");
+        string childUri = new Uri(childPath).AbsoluteUri;
+        string topUri = new Uri(topPath).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = topUri, languageId = "systemverilog", version = 1, text = File.ReadAllText(topPath) },
+        });
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = childUri, languageId = "verilog", version = 1, text = File.ReadAllText(childPath) },
+        });
+
+        int tokensBefore = SemanticTokenCount(handler, childUri);
+
+        // clicking the SECOND instance ("bb"), like clicking aaabb in
+        // PartialAssign.sv (the instance that is not the first one)
+        using (JsonDocument reparse = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            uri = childUri,
+            instancePathSegments = new[] { "bb" },
+            parentUri = topUri,
+        })))
+        {
+            handler.TryHandleRequest("rtl/reparse", reparse.RootElement, default, out object? result);
+            using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(result));
+            Assert.True(doc.RootElement.GetProperty("instance").GetBoolean(),
+                "rtl/reparse must parse the document as an instance");
+        }
+
+        int tokensAfter = SemanticTokenCount(handler, childUri);
+        Assert.True(tokensBefore > 0, "expected semantic tokens before the click");
+        Assert.Equal(tokensBefore, tokensAfter);
+
+        // and the module / endmodule keywords must still be coloured
+        JsonElement tokens = SemanticTokens(handler, childUri);
+        JsonElement data = tokens.GetProperty("data");
+        var lines = File.ReadAllText(childPath).Split('\n');
+        bool sawModule = false, sawEndModule = false;
+        int line = 0, character = 0;
+        for (int i = 0; i + 4 < data.GetArrayLength(); i += 5)
+        {
+            int deltaLine = data[i].GetInt32();
+            int deltaCharacter = data[i + 1].GetInt32();
+            int length = data[i + 2].GetInt32();
+            line += deltaLine;
+            character = (deltaLine == 0) ? character + deltaCharacter : deltaCharacter;
+            if (line >= lines.Length) continue;
+            string source = lines[line].TrimEnd('\r');
+            if (character < 0 || character + length > source.Length) continue;
+            string token = source.Substring(character, length);
+            if (token == "module") sawModule = true;
+            if (token == "endmodule") sawEndModule = true;
+        }
+        Assert.True(sawModule, "the module keyword lost its colour after the instance click");
+        Assert.True(sawEndModule, "the endmodule keyword lost its colour after the instance click");
+    }
+
+    private static JsonElement SemanticTokens(LspHandler handler, string uri)
+    {
+        using JsonDocument request = JsonDocument.Parse(JsonSerializer.Serialize(new { textDocument = new { uri } }));
+        handler.TryHandleRequest("textDocument/semanticTokens/full", request.RootElement, default, out object? result);
+        return JsonDocument.Parse(JsonSerializer.Serialize(result)).RootElement.Clone();
+    }
+
+    private static int SemanticTokenCount(LspHandler handler, string uri)
+    {
+        JsonElement tokens = SemanticTokens(handler, uri);
+        return tokens.TryGetProperty("data", out JsonElement data) ? data.GetArrayLength() / 5 : 0;
+    }
+
+    /// <summary>
     /// An ORDERED port connection (<c>inst(sig)</c>) must run the same port
     /// checks a named connection (<c>inst(.port(sig))</c>) does, so a width
     /// mismatch is reported.
