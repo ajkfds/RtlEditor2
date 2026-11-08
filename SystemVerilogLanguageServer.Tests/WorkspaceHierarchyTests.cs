@@ -1126,6 +1126,143 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// Clicking an instance node must make the EDITOR's instance view resolve
+    /// its parse result, i.e.
+    /// <c>InstanceTextFile.ParsedDocument</c> (which looks up
+    /// <c>GetInstancedParsedDocument(KeyGenerator(source, name, overrides))</c>)
+    /// must return the parameter-overridden parse, not null.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The editor opens the INSTANCE, so its document comes from
+    /// <c>InstanceTextFile.ParsedDocument</c> → <c>VerilogFile.GetInstancedParsedDocument(key)</c>.
+    /// That table is filled by
+    /// <c>VerilogFile.AcceptParsedDocumentAsync</c> in the editor. The LSP host
+    /// only parsed the clicked instance through <c>ParseEngine</c>, which never
+    /// registered anything, so every other instance (and the clicked one after
+    /// reopening) read back null and the editor fell back to the plain file
+    /// parse — showing the declared parameter values instead of the overrides.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void InstanceClick_RegistersInstanceParsedDocuments()
+    {
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"),
+            "module leaf #(parameter WIDTH = 8) (output [WIDTH-1:0] d);\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "child.sv"),
+            "module child;\n" +
+            "  wire [4:0] w;\n" +
+            "  leaf #(.WIDTH(5)) u_leaf (.d(w));\n" +
+            "endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n" +
+            "  child u_child();\n" +
+            "  child u_child2();\n" +
+            "endmodule\n");
+
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+        string childUri = new Uri(Path.Combine(_root, "child.sv")).AbsoluteUri;
+        string leafUri = new Uri(Path.Combine(_root, "leaf.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = new(core);
+        string rootUri = new Uri(_root).AbsoluteUri;
+        using (JsonDocument init = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            processId = 1,
+            rootUri,
+            workspaceFolders = new[] { new { uri = rootUri, name = "ws" } },
+            capabilities = new { },
+        })))
+            handler.TryHandleRequest("initialize", init.RootElement, default, out _);
+
+        foreach (var name in new[] { "leaf.sv", "child.sv", "top.sv" })
+        {
+            string uri = new Uri(Path.Combine(_root, name)).AbsoluteUri;
+            SendNotification(handler, "textDocument/didOpen", new
+            {
+                textDocument = new { uri, languageId = "systemverilog", version = 1, text = File.ReadAllText(Path.Combine(_root, name)) },
+            });
+        }
+
+        // click "u_child" under top.sv -> opens child.sv as an instance
+        using (JsonDocument reparse = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            uri = childUri,
+            instancePathSegments = new[] { "u_child" },
+            parentUri = topUri,
+        })))
+        {
+            handler.TryHandleRequest("rtl/reparse", reparse.RootElement, default, out object? result);
+            using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(result));
+            Assert.True(doc.RootElement.GetProperty("instance").GetBoolean());
+        }
+
+        // the initialize above keyed the project by its root URI
+        InMemoryProject project = core.GetOrCreateProjectPublic("default") as InMemoryProject
+            ?? throw new InvalidOperationException();
+        CodeEditor2.Data.Project pluginProject = project.PluginProject;
+
+        // the editor's Updater populates each file's Items (the LSP runs it too)
+        foreach (string name in new[] { "leaf.sv", "child.sv", "top.sv" })
+        {
+            if (pluginProject.GetItem(name) is pluginVerilog.Data.IVerilogRelatedFile vf)
+                pluginVerilog.Data.VerilogCommon.Updater
+                    .UpdateAsync(vf, new System.Threading.SemaphoreSlim(1, 1))
+                    .GetAwaiter().GetResult();
+        }
+
+        // the clicked instance itself
+        AssertInstanceParsed(pluginProject, "top.sv", "u_child", "child");
+        // a sibling instance that was never clicked: it must be resolvable too,
+        // otherwise clicking IT would show the un-overridden declaration again
+        AssertInstanceParsed(pluginProject, "top.sv", "u_child2", "child");
+        // the nested parameter-overridden instance under child.sv
+        AssertInstanceParsed(pluginProject, "child.sv", "u_leaf", "leaf", expectInstanceParse: true);
+    }
+
+    private static void AssertInstanceParsed(
+        CodeEditor2.Data.Project pluginProject, string relativePath, string instanceName,
+        string expectedInstanceName, bool expectInstanceParse = false)
+    {
+        CodeEditor2.Data.Item? file = pluginProject.GetItem(relativePath);
+        if (file == null)
+        {
+            var names = new System.Collections.Generic.List<string>();
+            var snap = (System.Collections.IEnumerable)pluginProject.Items
+                .GetType().GetMethod("GetSnapShot", Type.EmptyTypes)!.Invoke(pluginProject.Items, null)!;
+            foreach (object o in snap)
+                if (o is CodeEditor2.Data.Item it) names.Add(it.Name);
+            Assert.Fail($"GetItem('{relativePath}') returned null. Root items: {string.Join(", ", names)}");
+        }
+        object itemsObj = file!.GetType().GetProperty("Items")!.GetValue(file)!;
+        var snapshot = (System.Collections.IEnumerable)itemsObj
+            .GetType().GetMethod("GetSnapShot", Type.EmptyTypes)!
+            .Invoke(itemsObj, null)!;
+        CodeEditor2.Data.Item? instance = null;
+        var seen = new System.Collections.Generic.List<string>();
+        foreach (object child in snapshot)
+        {
+            if (child is CodeEditor2.Data.Item it)
+            {
+                seen.Add(it.Name);
+                if (it.Name == instanceName) { instance = it; break; }
+            }
+        }
+        Assert.True(instance != null,
+            $"{relativePath} has no instance '{instanceName}' (items: {string.Join(", ", seen)})");
+
+        var instanceFile = Assert.IsAssignableFrom<pluginVerilog.Data.InstanceTextFile>(instance);
+        Assert.Equal(expectedInstanceName, instanceFile.InstanceName);
+
+        pluginVerilog.Verilog.ParsedDocument? parsed = instanceFile.ParsedDocument as pluginVerilog.Verilog.ParsedDocument;
+        Assert.NotNull(parsed);
+        Assert.True(parsed!.Instance,
+            $"'{instanceName}' must resolve to an INSTANCE parse (parameter overrides applied), not the plain file parse");
+        Assert.Equal(expectedInstanceName, parsed.TargetBuildingBlockName);
+    }
+
+    /// <summary>
     /// A parameter override written at the instantiation must drive the port
     /// checks, so a port whose width is derived from the overridden parameter
     /// reports a mismatch.
