@@ -131,6 +131,34 @@ dotnet build SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -clp
 `bin/Debug` へのコピーだけが失敗する**ことがある。
 `tasklist` で `SystemVerilogLanguageServer` / `testhost` / `dotnet` の残骸を確認する。
 
+### 起動失敗の原因になる: `property `icon` is mandatory and must be of type `string``
+
+```
+[error] [rtleditor2.systemverilog-lsp]: property `icon` is mandatory and must be of type `string`
+[error] [LocalProcessExtensionHost]: Extension host did not start in 10 seconds (debugBrk: true)
+→ Extension host with pid N exited with code: 134
+```
+
+**`viewsContainers.<location>[].icon` は必ず「パス文字列」**。
+`views.*.icon` は `{ "light": ..., "dark": ... }` も受け付けるが、
+**`viewsContainers` はオブジェクトを受け付けない**（`string` のみ）。
+ここにオブジェクトを書くとマニフェスト検証で弾かれ、`exthost` フォルダが
+作られないまま exit code 134 で落ちる（＝拡張コードは 1 行も走らない）。
+
+デバッグ起動 (`extensionHost`, `debugBrk: true`) では
+`Extension host did not start in 10 seconds` も併せて出るため、
+「10 秒待って起動失敗」に見えるが本質はマニフェスト不正。
+
+**必ず機械検証すること**（`node --check` は使えないので C# で）:
+`package.json` を `JsonDocument.Parse(..., CommentHandling = Disallow, AllowTrailingCommas = false)`
+でパースし、
+- `viewsContainers.*[].icon` が `JsonValueKind.String` であること
+- そのパスのファイルが実在すること
+- `viewsContainers.*[].id` が `^[A-Za-z0-9_-]+$`（ドット不可）
+- `contributes.views` のキーが宣言済みコンテナ id（または `explorer` 等）であること
+- `activationEvents` の `onView:<id>` が実在する view id であること
+を確認する。
+
 ### 併せて出る警告: `View container '...' does not exist`
 
 ```

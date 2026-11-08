@@ -33,10 +33,7 @@
         {
           "id": "systemverilogLsp-messagesContainer",
           "title": "SystemVerilog Messages",
-          "icon": {
-            "light": "icons/systemverilog-document.svg",
-            "dark": "icons/systemverilog-document-dark.svg"
-          }
+          "icon": "icons/systemverilog-document.svg"
         }
       ]
     },
