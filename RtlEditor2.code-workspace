@@ -49,7 +49,13 @@
 				"name": "Launch: SystemVerilog Language Server (C#)",
 				"type": "coreclr",
 				"request": "launch",
-				"preLaunchTask": "build-server",
+				// No preLaunchTask here on purpose. A failing build (DLL locked by
+				// a running server / lingering testhost, which prints
+				// MSB3027/MSB3021) aborts the compound launch, and the extension
+				// host utility process then dies with SIGABRT (exit code 134)
+				// *before any extension code runs* - no exthost log folder is even
+				// created, so nothing is diagnosable. Build the server separately
+				// (Run Build Task > build-server) before starting the session.
 				"program": "${workspaceFolder:RtlEditor2}/SystemVerilogLanguageServer/bin/Debug/net10.0/SystemVerilogLanguageServer.dll",
 				"args": [
 					"--port",

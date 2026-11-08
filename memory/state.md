@@ -3,6 +3,28 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張の起動失敗 (extension host が exit code 134 / `exthost` フォルダ無し) の原因解析と修正** → 修正完了 (ビルド成功 0 errors)
+  - ユーザ報告: `vscode extensionの起動に失敗しました。ログを解析して` → 続けて `修正して`
+  - **一次情報** (`%APPDATA%\Code\logs\20261108T063619`)。`main.log` の拡張ホスト終了記録:
+    | 時刻 | pid | exit | window | exthost |
+    |---|---|---|---|---|
+    | 08:23:30 / 08:26:11 | 26700 / 26044 | **0** | window3 / 4 | あり |
+    | 08:44:04 | 30832 | **134** | window5 | **なし** |
+    | 09:35:50 | 8232 | **0** | window6 | あり |
+    | 09:36:02 / 09:36:16 / 10:27:29 | 1424 / 21980 / 18112 | **134** | window7 / 8 / 9 | **なし** |
+  - **決定的な切り分け: クラッシュした 4 ウィンドウは `exthost/` フォルダが 1 つも無い**。`exthost/output_logging_*/1-SystemVerilog LSP.log` (`logLine` 出力) も `svlsp-extension-crash.log` も `network.log` も存在しない = **`activate()` に到達しておらず、拡張 JS は 1 行も実行されていない**。正常だった window4 / window6 は同じログ（`extension activated` → providers 登録 → `starting server:` → `[server] workspace roots:`）が残っていた
+  - **タイムライン (window9 実測)**: `10:27:28.806 Started local extension host with pid 18112` → `10:27:28.980 Loading development extension` → `10:27:29.084 View container warning` → `10:27:29.994 exited with code: 134`。ホスト起動から **1.19 秒**、拡張ロードから **0.9 秒**で SIGABRT。`renderer.log` はその後も正常継続 → **レンダラではなく extensionHost utility プロセスだけが落ちている**
+  - **排除できた原因**: (1) `package.json` のマニフェスト棄却 … `Loading development extension` の後にマニフェスト由来の警告が出ておりパースは成功 (2) `auxiliarybar` が不正な `viewsContainers` キー … VS Code 本体 (`workbench.desktop.main.js`) が location を `0=sidebar / 1=panel / 2=auxiliarybar` と定義しており正当 (3) `extension.js` の例外 … `exthost` フォルダ自体が無く JS 未実行 (4) C# サーバのビルド失敗 … `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` → **0 errors**
+  - **根本原因 (本命): `preLaunchTask` のビルド失敗が compound 起動を巻き添えにする**: `Launch: SystemVerilog Language Server (C#)` の `preLaunchTask: build-server` が失敗すると（稼働中サーバ / 残留 `testhost` による DLL ロック = MSB3027/MSB3021。実測でこのマシンに `dotnet` が 20 個以上 + `testhost` 1 個が残留）、**compound 起動全体が中断され extensionHost utility プロセスが SIGABRT（134）で落ちる**。`stopAll: false` は「起動後に C# セッションが終了した場合」しか守れず、**`preLaunchTask` 失敗＝起動そのものの失敗は防げない**（`memory/state.md` の既出記録「compound の stopAll」と同一シグネチャ: exit 134 + exthost フォルダ無し）
+  - **修正1 (`vscode-extension/.vscode/launch.json`)**: `Launch: SystemVerilog Language Server (C#)` から `preLaunchTask: build-server` を削除（経緯コメント付き。ビルドは `Ctrl+Shift+B` → `build-server` を先に実行する運用に変更）
+  - **修正2 (`RtlEditor2.code-workspace`)**: 同構成からも `preLaunchTask` を削除（同じ経緯コメント）
+  - **修正3 (`vscode-extension/package.json`)**: `viewsContainers.auxiliarybar[0].icon` の `"$(warning)"`（codicon 文字列）→ `{ "light": "icons/systemverilog-document.svg", "dark": "icons/systemverilog-document-dark.svg" }` に変更。**ビューコンテナの `icon` はファイルパス（または light/dark ペア）要求**で、codicon は `views` / `commands` 用という違いが原因。これで `View container 'systemverilogLsp-messagesContainer' does not exist ... added to 'Explorer'` の警告が消え、Messages ペインが Auxiliary Bar に正しく載る（同梱済みの `icons/*.svg` を流用）
+  - **ドキュメント整備 (`memory/vscode_extension_debugging.md`)**: 「★ 最初に見るべき指標: `exthost` フォルダの有無」表（あり/なし × `1-SystemVerilog LSP.log` の有無で 3 分岐）と、「既知の原因: `preLaunchTask` のビルド失敗が compound 起動を巻き添えにする」節、`View container ... does not exist` 警告の解説を追加。切り分け手順の先頭に「0. `exthost/` の有無を確認」を挿入
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` → **0 errors** / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → **0 errors** (22 warnings は既存)
+  - メモ: 検証用の一時ログダンプツール (`_tmp_logdump`) は `git clean -fd` で削除済み。`SystemVerilogLanguageServer.Tests/Debug*.cs` (作業ツリー) は従来どおりコミットから除外
+  - Next: VS Code で (1) `Run Extension` 単体 F5 で `exthost` フォルダと `1-SystemVerilog LSP.log` が作られること (2) `Extension + Language Server` compound でも exit code 134 で落ちないこと (3) 右側 Auxiliary Bar に "SystemVerilog Messages" コンテナが作られ Explorer に落ちないこと (4) `View container ...` 警告が消えること を確認。**C# を変更した場合は先に `Ctrl+Shift+B` で `build-server` を実行**すること
+
+
 - **module instance 接続時の bitwidth check が効かない (ordered port connection)** → 修正完了 (ビルド成功 0 errors、テスト 1183/1183 合格、publish 更新・selftest 正常)
   - ユーザ報告: `module instance接続時のbitwidth checkが効いてないです`
   - **根本原因 (ordered port connection が port check を一切呼んでいなかった)**: `ModuleInstantiation.parseOrderedPortConnections` は `Expression.ParseCreateAcceptImplicitNet` で式を解析するだけで、(1) `PortConnection` への登録が `word.Prototype` のときのみ、(2) `checkPortConnection` を**一度も呼んでいなかった**。bitwidth check (`checkNetPortConnection` / `checkVariablePortConnection`) は named port connection 経路 (`parseNamedPortConnection` → `connectPort` → `checkPortConnection`) からしか到達できず、`inst(sig)` 形式では幅不一致が無警告だった (`.port(sig)` 形式のみ検出)

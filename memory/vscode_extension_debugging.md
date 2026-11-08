@@ -96,8 +96,56 @@ VS Code がログファイルを開いたままなので、共有読み取りを
 サーバが**起動していない**場合はこの行が一切出ない → `resolveServerCommand` の解決失敗か
 `spawn` 失敗（`server spawn error:` / `server exited with code N` が出る）。
 
+### ★ 最初に見るべき指標: `exthost` フォルダの有無
+
+ウィンドウのログフォルダ（`<session>/window<N>/`）に **`exthost/` が存在するか** で
+「拡張コードが走ったか」を一瞬で判定できる。
+
+| `exthost/` | `1-SystemVerilog LSP.log` | 意味 |
+|---|---|---|
+| あり | あり | `activate()` まで到達している → 原因は拡張コード側（crash log を見る） |
+| あり | なし | activate 前後で落ちた / 無効化された → `exthost.log` を見る |
+| **なし** | **なし** | **拡張 JS が 1 行も走っていない**。原因はほぼ **launch 構成**（拡張のバグではない） |
+
+`exthost/` が無いのに `renderer.log` だけがあるケースは、
+`main.log` の `Extension host with pid N exited with code: 134` /
+`crashed with code 134 and reason 'crashed'`（SIGABRT）とセットで出る。
+**このとき `svlsp-extension-crash.log` は絶対に作られない**ので、
+crash log を探し続けても無駄（存在しないのが正常）。
+
+### 既知の原因: `preLaunchTask` のビルド失敗が compound 起動を巻き添えにする
+
+`Launch: SystemVerilog Language Server (C#)` に `preLaunchTask: build-server` があると、
+そのビルドが失敗したとき（稼働中サーバ / 残留 `testhost` による DLL ロック = MSB3027/MSB3021）
+**compound 起動全体が中断され、extensionHost utility プロセスが SIGABRT（134）で落ちる**。
+`stopAll: false` にしていても、`preLaunchTask` 失敗は「起動そのものの失敗」なので防げない。
+
+→ 対策として `preLaunchTask` を外した（`launch.json` / `RtlEditor2.code-workspace` 両方）。
+サーバをビルドしたいときは **Run Build Task (`Ctrl+Shift+B`) → `build-server`** を先に実行する。
+
+切り分けコマンド:
+```
+dotnet build SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -clp:ErrorsOnly
+```
+これが 0 errors でも、**別プロセスが DLL をロックしていると
+`bin/Debug` へのコピーだけが失敗する**ことがある。
+`tasklist` で `SystemVerilogLanguageServer` / `testhost` / `dotnet` の残骸を確認する。
+
+### 併せて出る警告: `View container '...' does not exist`
+
+```
+[warning] [rtleditor2.systemverilog-lsp]: View container 'systemverilogLsp-messagesContainer'
+does not exist and all views registered to it will be added to 'Explorer'.
+```
+これは**起動失敗の原因ではなく**、`viewsContainers.<location>[].icon` に
+codicon 文字列（`$(warning)` 等）を書いたのが原因。
+`icon` は **ファイルパス（または `{ "light": ..., "dark": ... }`）** を要求する
+（`views` / `commands` の `icon` は codicon でよい、という違いに注意）。
+不正だとコンテナ登録に失敗し、そのペインだけ Explorer に落ちる。
+
 ## 3. 起動失敗の切り分け手順
 
+0. **`<session>/window<N>/exthost/` があるか確認する**（無ければ launch 構成の問題。上記参照）。
 1. `svlsp-extension-crash.log` を見る。
    - `activate: <stack>` … `activateCore` 内の登録処理で throw。スタックの最上位が原因箇所
    - `require(./hierarchy): <stack>` … `hierarchy.js` の読み込み失敗（構文エラー / export 不備）
@@ -125,7 +173,7 @@ VS Code がログファイルを開いたままなので、共有読み取りを
 | 症状 | 一次情報 |
 |---|---|
 | 拡張が起動しない / Extension Development Host がすぐ閉じる | `svlsp-extension-crash.log` |
-| 拡張ホストが **exit code 134** で落ちる (SIGABRT) | `main.log` の `crashed with code 134` + `svlsp-extension-crash.log` の `uncaughtException`。`uncaughtException` ハンドラ自体が throw していないか確認 |
+| 拡張ホストが **exit code 134** で落ちる (SIGABRT) | まず `<session>/window<N>/exthost/` の有無。**無ければ launch 構成**（`preLaunchTask` のビルド失敗など）が原因で、拡張コードは走っていない。crash log も作られない。有る場合は `svlsp-extension-crash.log` の `uncaughtException` を見る |
 | ペインが Explorer に落ちる / コンテナが出ない | `renderer.log` の `property 'id' is mandatory ...` (ビューコンテナ ID にドット等の不正文字) |
 | ウィンドウを閉じる/リロードするとクラッシュログが増える | `Channel has been closed` (ホスト破棄中の `appendLine` / `showErrorMessage` が未保護) |
 | RTL Hierarchy が空 | `svlsp-extension.log` の `[server] workspace: N files` と `rtl/hierarchy` の応答ログ |
