@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using SystemVerilogCore.Diagnostics;
 using SystemVerilogLanguageServer.Server;
@@ -1043,6 +1044,85 @@ public class WorkspaceHierarchyTests : IDisposable
         }
 
         Assert.Equal("4", ParameterValue(core, childUri, "child", "WIDTH"));
+    }
+
+    /// <summary>
+    /// Clicking a node that is NESTED two levels deep must still parse the
+    /// document AS that instance (parameter overrides applied).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The node's <c>instancePathSegments</c> are a chain from the root of the
+    /// file the expansion request was made on (the file whose tree was walked),
+    /// so they only resolve against THAT file. Emitting the immediate parent as
+    /// the base (and sending it back as <c>parentUri</c>) made the pair
+    /// inconsistent for depth &gt;= 2: the chain still carried the ancestors
+    /// ("u_mid/u_leaf") while the base was mid.sv, which does not declare
+    /// "u_mid". The lookup failed and the click silently degraded to a plain
+    /// file parse, so the overridden parameter reverted to its declared default
+    /// (reported as "the lower-level module instance does not honour the
+    /// parameter override").
+    /// </para>
+    /// <para>
+    /// This drives the SERVER-emitted tokens, exactly like the client: it never
+    /// builds a token itself.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ReparseAsNestedInstance_AppliesParameterOverrides()
+    {
+        // top -> u_mid -> u_leaf, where u_leaf overrides P_WIDTH to 5.
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"),
+            "module leaf #(parameter P_WIDTH = 8) (output [P_WIDTH-1:0] AA);\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "mid.sv"),
+            "module mid;\n  wire [4:0] w;\n  leaf #(.P_WIDTH(5)) u_leaf(.AA(w));\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  mid u_mid();\nendmodule\n");
+        string leafUri = new Uri(Path.Combine(_root, "leaf.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+
+        // expand top.sv -> u_mid -> u_leaf with the tokens the SERVER issued
+        JsonElement fileNode = FindNode(QueryTop(handler), "top.sv");
+        JsonElement level0 = QueryRaw(handler, new
+        {
+            expandToken = fileNode.GetProperty("expandToken").GetString() ?? "",
+        });
+        JsonElement mid = FindNode(level0, "u_mid");
+        JsonElement level1 = QueryRaw(handler, new
+        {
+            expandToken = mid.GetProperty("expandToken").GetString() ?? "",
+        });
+        JsonElement leaf = FindNode(level1, "u_leaf");
+
+        // the chain is rooted at top.sv (the file that was expanded), so the
+        // base the client echoes back has to be top.sv as well
+        string[] segments = leaf.GetProperty("instancePathSegments")
+            .EnumerateArray().Select(e => e.GetString() ?? "").ToArray();
+        Assert.Equal(new[] { "u_mid", "u_leaf" }, segments);
+        string? parentUri = leaf.GetProperty("parentUri").GetString();
+        Assert.NotNull(parentUri);
+        Assert.EndsWith("top.sv", parentUri);
+
+        // plain file parse: the declared default
+        Assert.Equal("8", ParameterValue(core, leafUri, "leaf", "P_WIDTH"));
+
+        using (JsonDocument reparse = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            uri = leafUri,
+            instancePathSegments = segments,
+            parentUri,
+        })))
+        {
+            handler.TryHandleRequest("rtl/reparse", reparse.RootElement, default, out object? result);
+            using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(result));
+            Assert.True(doc.RootElement.GetProperty("instance").GetBoolean(),
+                "rtl/reparse must parse the document as the nested instance");
+        }
+
+        // the override written at the instantiation (not the default 8)
+        Assert.Equal("5", ParameterValue(core, leafUri, "leaf", "P_WIDTH"));
     }
 
     /// <summary>
