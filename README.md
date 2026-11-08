@@ -77,7 +77,10 @@ RtlEditor2/                           # Main repository
 ├── CodeEditor2MarkdownPlugin/        # Markdown support (optional)
 ├── CodeEditor2VivadoPlugin/          # Xilinx Vivado integration (optional)
 ├── AjkAvaloniaLibs/                  # Avalonia UI utility library
-└── AvaloniaEdit/                     # Text editor control
+├── AvaloniaEdit/                     # Text editor control
+├── SystemVerilogLanguageServer/      # LSP server (bundled into the VS Code extension)
+├── SystemVerilogLanguageServer.Tests/# LSP server parser / hierarchy tests
+└── vscode-extension/                 # VS Code extension (see "VS Code extension" below)
 
 # Build & Run
 - Both Linux and Windows: dotnet build && dotnet run
@@ -89,6 +92,68 @@ RtlEditor2/                           # Main repository
 # Build entire project
 dotnet build "RtlEditor2.Desktop.csproj"
 ```
+
+---
+
+## VS Code extension (`.vsix`)
+
+The repository also ships a **VS Code extension** under `vscode-extension/` that
+exposes the SystemVerilog language server (definition, references, hover,
+completion, diagnostics, RTL Hierarchy view). It bundles the published server, so
+the generated `.vsix` is self-contained: end users need neither .NET nor this
+repository.
+
+### Generate the `.vsix`
+
+Prerequisites: **.NET 10 SDK**, **Node.js 18+**, and `@vscode/vsce`
+(`npm install -g @vscode/vsce`). `vsce` is optional — the script falls back to
+`npx --yes @vscode/vsce` when it is not installed globally.
+
+```bash
+cd vscode-extension
+npm run vsix
+```
+
+`npm run vsix` (`scripts/make-vsix.js`) runs four steps and stops at the first
+problem with a readable message:
+
+| # | Step | What it does |
+|---|------|--------------|
+| 1 | **toolchain check** | node / dotnet / `vsce`, and that `package.json` has a `repository.url` |
+| 2 | **bundle the server** | `scripts/bundle-server.js` empties `server/`, runs `dotnet publish` into it, then prunes symbols, `.playwright/` and the non-host native runtimes |
+| 3 | **verify the bundle** | runs `--selftest` against the exact DLL that will be shipped, so a missing / stale server fails here instead of silently shipping an extension that does nothing |
+| 4 | **package** | removes stale `.vsix` files, runs `vsce package --no-dependencies`, and prints the resulting path, size and install command |
+
+Produced file: `vscode-extension/systemverilog-lsp-<version>.vsix`
+
+```bash
+# install it
+code --install-extension vscode-extension/systemverilog-lsp-0.1.0.vsix
+```
+
+Useful flags:
+
+```bash
+node scripts/make-vsix.js --skip-bundle   # repackage the existing server/ (step 4 only)
+node scripts/make-vsix.js --out dist      # also copy the .vsix into dist/
+```
+
+`npm run vsix:fast` (== `npm run package:nobundle`) is the `--skip-bundle` form,
+for CI that already published the server.
+
+> [!NOTE]
+> `vscode-extension/server/` should stay around **100 MB**. It once grew to
+> 734 MB because `dotnet publish -o` never removes old files (stale `.pdb`
+> files, every platform's native runtimes, a bundled Playwright `node.exe`).
+> A folder that large makes the extension development host die with exit code
+> 134 right after `Loading development extension`. The build script prunes it;
+> see `vscode-extension/README.md` for details.
+
+### Release
+
+`.github/workflows/vscode-extension-release.yml` builds the `.vsix` on
+`windows-latest`, uploads it as an artifact, and attaches it to a GitHub Release
+when you push a `v*` tag.
 
 ---
 
