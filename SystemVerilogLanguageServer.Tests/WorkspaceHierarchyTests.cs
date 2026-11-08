@@ -1046,6 +1046,99 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// A parameter override written at the instantiation must drive the port
+    /// checks, so a port whose width is derived from the overridden parameter
+    /// reports a mismatch.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>GetInstancedBuildingBlock</c> only LOOKS UP an already parsed
+    /// instance (keyed by module + overrides); it never parses. The instant
+    /// parse that creates that document used to run only for
+    /// <c>ParseModeEnum.EditParse</c>, so in the LSP's <c>BackgroundParse</c>
+    /// the parameter-overridden module was never available: the port list was
+    /// unknown (checks skipped) and the parameters resolved through the
+    /// un-overridden declaration, so a 5-bit port stayed 8-bit and the real
+    /// mismatch was hidden.
+    /// </para>
+    /// <para>
+    /// The ordered form (<c>#(4)</c>) had a second bug: the override was only
+    /// recorded during the prototype pass, so the real pass lost it.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ParameterOverride_DrivesPortWidthCheck()
+    {
+        // AA is [P_WIDTH-1:0]; overridden to 5 while the connected signal is 3 bit
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"),
+            "module leaf #(parameter P_WIDTH = 8) (\n" +
+            "  output [P_WIDTH-1:0] AA,\n" +
+            "  input                CLK_I\n" +
+            ");\n" +
+            "endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n" +
+            "  wire [2:0] w1;\n" +
+            "  wire       clk;\n" +
+            "  leaf #(\n" +
+            "    .P_WIDTH ( 5 )\n" +
+            "  ) u_leaf (\n" +
+            "    .AA    ( w1 ),\n" +
+            "    .CLK_I ( clk )\n" +
+            "  );\n" +
+            "endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "ordered.sv"),
+            "module ordered;\n" +
+            "  wire [2:0] w1;\n" +
+            "  wire       clk;\n" +
+            "  leaf #(5) u_leaf (w1, clk);\n" +
+            "endmodule\n");
+
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+        string orderedUri = new Uri(Path.Combine(_root, "ordered.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+
+        var pushed = new System.Collections.Generic.List<string>();
+        handler.NotificationSender = message =>
+            pushed.Add(JsonSerializer.Serialize(message));
+
+        foreach (var name in new[] { "leaf.sv", "top.sv", "ordered.sv" })
+        {
+            string uri = new Uri(Path.Combine(_root, name)).AbsoluteUri;
+            SendNotification(handler, "textDocument/didOpen", new
+            {
+                textDocument = new { uri, languageId = "systemverilog", version = 1, text = File.ReadAllText(Path.Combine(_root, name)) },
+            });
+        }
+        // reparse the consumers now that leaf.sv is registered
+        foreach (var uri in new[] { topUri, orderedUri })
+        {
+            using JsonDocument reparse = JsonDocument.Parse(JsonSerializer.Serialize(new { uri }));
+            handler.TryHandleRequest("rtl/reparse", reparse.RootElement, default, out _);
+        }
+
+        // named form: the overridden width (5) must be compared, not the default (8)
+        Assert.Contains(pushed, json => MentionsFileWithMismatch(json, "top.sv"));
+        // ordered form: same, the override must survive the real parse pass
+        Assert.Contains(pushed, json => MentionsFileWithMismatch(json, "ordered.sv"));
+    }
+
+    /// <summary>
+    /// True when the publishDiagnostics payload is for <paramref name="fileName"/>
+    /// and reports the 5 -> 3 bit width mismatch. The message is JSON-encoded, so
+    /// "&lt;" arrives as \u003C.
+    /// </summary>
+    private static bool MentionsFileWithMismatch(string json, string fileName)
+    {
+        if (!json.Contains(fileName, StringComparison.Ordinal)) return false;
+        return json.Contains("bit width mismatch 5", StringComparison.Ordinal)
+            && json.Contains("3", StringComparison.Ordinal)
+            && json.Contains("verilog/bit-width-mismatch-5-3", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Clicking an instance node must not lose the syntax highlighting of the
     /// opened document.
     /// </summary>
