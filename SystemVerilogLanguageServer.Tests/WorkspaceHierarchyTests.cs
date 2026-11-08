@@ -742,6 +742,119 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// The semantic-token stream must be a valid LSP stream: strictly
+    /// increasing, no duplicate start offsets and no overlaps.
+    /// </summary>
+    /// <remarks>
+    /// The real parser colours the same span more than once. A module instance
+    /// port connection such as <c>.AA ( aaaa )</c> gets both the generic
+    /// reference colour and the data-object colour for <c>AA</c> / <c>aaaa</c>
+    /// at the exact same offset. VS Code then logs
+    /// <c>Overlapping semantic tokens detected at lineNumber N, column M</c> and
+    /// drops the token, so the span silently loses its colour ("the code below
+    /// the module instance is not coloured"). Because the duplicates only occur
+    /// for declared objects (which the editor also draws with the concrete type),
+    /// folding them keeps the most specific type.
+    /// </remarks>
+    [Fact]
+    public void SemanticTokens_NoDuplicateOrOverlappingTokens()
+    {
+        // a parameterised instance with named port connections: every port
+        // reference is emitted twice by the parser (reference + data object)
+        string text =
+            "module top;\n" +
+            "  wire [2:0] aaaa;\n" +
+            "  wire [4:0] bb;\n" +
+            "  child #(\n" +
+            "    .P_WIDTH ( 5 )\n" +
+            "  ) SS (\n" +
+            "    .AA      ( aaaa ),\n" +
+            "    .CLK_I   ( bb ),\n" +
+            "    .RST_X_I (  )\n" +
+            "  );\n" +
+            "endmodule\n";
+        string childText =
+            "module child #(parameter P_WIDTH = 8) (\n" +
+            "  output [P_WIDTH-1:0] AA,\n" +
+            "  input                CLK_I,\n" +
+            "  input                RST_X_I\n" +
+            ");\n" +
+            "endmodule\n";
+
+        string path = Path.Combine(_root, "top.sv");
+        File.WriteAllText(path, text);
+        File.WriteAllText(Path.Combine(_root, "child.sv"), childText);
+        string forward = path.Replace('\\', '/');
+        string vscodeUri = "file:///" + char.ToLowerInvariant(forward[0]) + "%3A" + forward.Substring(2);
+        string childForward = Path.Combine(_root, "child.sv").Replace('\\', '/');
+        string childUri = "file:///" + char.ToLowerInvariant(childForward[0]) + "%3A" + childForward.Substring(2);
+
+        LspHandler handler = CreateInitializedHandler();
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = childUri, languageId = "systemverilog", version = 1, text = childText },
+        });
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = vscodeUri, languageId = "systemverilog", version = 1, text },
+        });
+
+        using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(new { textDocument = new { uri = vscodeUri } }));
+        handler.TryHandleRequest("textDocument/semanticTokens/full", doc.RootElement, default, out object? result);
+        JsonElement tokens = JsonDocument.Parse(JsonSerializer.Serialize(result)).RootElement.Clone();
+        JsonElement data = tokens.GetProperty("data");
+
+        var lines = text.Split('\n');
+        int count = data.GetArrayLength();
+        Assert.True(count >= 5, "expected semantic tokens");
+
+        int line = 0, character = 0;
+        int previousEndLine = -1, previousEndCharacter = -1;
+        for (int i = 0; i + 4 < count; i += 5)
+        {
+            int deltaLine = data[i].GetInt32();
+            int deltaCharacter = data[i + 1].GetInt32();
+            int length = data[i + 2].GetInt32();
+            line += deltaLine;
+            character = (deltaLine == 0) ? character + deltaCharacter : deltaCharacter;
+
+            Assert.True(deltaLine >= 0, $"negative deltaLine at token #{i / 5}");
+            // the very first token may legitimately start at 0:0
+            if (i > 0)
+                Assert.False(deltaLine == 0 && deltaCharacter == 0,
+                    $"duplicate start offset at {line}:{character} (token #{i / 5})");
+            Assert.True(length > 0, $"zero-length token at {line}:{character}");
+
+            if (line == previousEndLine)
+                Assert.True(character >= previousEndCharacter,
+                    $"overlapping token at {line}:{character} (previous end {previousEndCharacter})");
+
+            previousEndLine = line;
+            previousEndCharacter = character + length;
+        }
+
+        // and the instance must not break the colouring of what follows it
+        bool sawEndModule = false;
+        line = 0; character = 0;
+        for (int i = 0; i + 4 < count; i += 5)
+        {
+            int deltaLine = data[i].GetInt32();
+            int deltaCharacter = data[i + 1].GetInt32();
+            int length = data[i + 2].GetInt32();
+            line += deltaLine;
+            character = (deltaLine == 0) ? character + deltaCharacter : deltaCharacter;
+            if (line < lines.Length)
+            {
+                string source = lines[line].TrimEnd('\r');
+                if (character >= 0 && character + length <= source.Length &&
+                    source.Substring(character, length) == "endmodule")
+                    sawEndModule = true;
+            }
+        }
+        Assert.True(sawEndModule, "the endmodule after the parameterised instance lost its colour");
+    }
+
+    /// <summary>
     /// A node must only advertise an expand arrow (hasChildren) when expanding
     /// it actually shows children. An instance of an undefined module has no
     /// instantiable children (the editor's Updater skips the unresolved
