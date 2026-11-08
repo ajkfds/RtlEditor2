@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **scr1/src/top/scr1_top_axi.sv の 2〜6 行目に色が付かない (ファイル先頭のコメントヘッダが1行目しか着色されない)** → 修正完了 (ビルド成功 0 errors、テスト 116 + sv-tests 1028 合格、publish 更新、コミット済み)
+  - ユーザ報告: `scr1/src/top/scr1_top_axi.sv の2-6行目までが色がつきません`
+  - **実測 (プローブ、削除済み)**: `pluginVerilog.CodeDocument.TextColors` を直接検査した結果
+    - 1行目: `[0+67]` が **2854 回** 重複登録 (同一スパンの多重登録)
+    - 2行目: `[0+0]` (長さ **0**) が 2854 回 → 実質無色
+    - 3行目 / 4行目 / `` `include `` 行: **エントリ無し** (完全に無色)
+    - 5行目以降の `` `ifdef `` / `` `endif `` は正常
+  - **根本原因1 (`ParseEngine.ParseOnceAsync` がテキストを二重コピーしていた)**: `new VerilogParser(file, ...)` は `file.CodeDocument` から作業ドキュメントを作るが、その直後に `parser.Document.CopyTextOnlyFrom(new CodeDocument(file, text))` を**無条件で**実行していた。`CopyTextOnlyFrom` は `textDocument.Text = ...` を代入するため `TextDocument.TextChanged` が再発火し、`ColorHandler.OnTextEdit` の編集差分処理が **複数行トークン (行コメント) が跨る行の色エントリを削除**する。結果、先頭の `///` ヘッダブロックが1行目だけ残った。パース結果自体 (building block / 診断) は無傷なので **色だけが壊れる**
+  - **修正1 (`CoreBridge/ParseEngine.cs` `ParseOnceAsync`)**: コピーを**テキストが実際に異なるときだけ**実行するよう変更 (`if (!string.Equals(parser.Document.CreateString(), text, StringComparison.Ordinal))`)。LSP 経路 (`text == file.CodeDocument` のテキスト) ではコピーが走らず色が保たれ、UI なしホストや in-memory バッファ差し替えでは従来どおりコピーされる
+  - **根本原因2 (`WordPointer.MoveNext` の色付け条件 / WordPointer.Clone の副作用)**: 副次的な不具合を2つ修正
+    - `MoveNext` の `fetchNext(..., colorComment: commentNextFetched ? false : !InhibitColor)` は「`fetchNextComment()` の先読みで既に着色済み」という前提だったが、先読みは EOF / 非コメントで早期 return するため前提が崩れ、先読み済みフラグだけ立って**実際には一度も着色されないトークン**が発生していた → 常に `!InhibitColor` で着色するよう変更 (同一オフセットへの色書き込みは冪等なので二重呼び出しは無害)
+    - `WordPointer.Clone()` がコンストラクタ経由で `fetchNext` を実行し、**オフセット 0 のトークンを毎回再着色**していた (ルックアヘッドで何千回も複製されるため重複の主因) → `suppressInitialFetch` 付き内部コンストラクタを新設し `Clone` からは色を書かないようにした (`WordScanner.Clone` の `suppressInitialDirective` と同型)
+    - `fetchNextAtOperator` の行コメントが**改行を含めて**色登録していたため `SetColorAt` の複数行分岐が「次行に長さ0エントリ」を作っていた → 改行の手前までを色範囲に変更
+  - 回帰テスト追加 (`WorkspaceHierarchyTests.SemanticTokens_ColourEveryHeaderLine`): `///` 4行 + 空行 + `` `include `` + `module` のファイルで **空行以外の全行に semantic token が1つ以上ある**ことを assert。**二重コピーを一時的に戻すと `line 2 has no colour: '/// @file <top.sv>' (tokens per line: 1,0,0,0,0,0,0,2,1,0)` で失敗**することを実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug` **116 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗** / 実ファイル `scr1_top_axi.sv` で 1〜12 行すべてにトークンが付くことを実測
+  - publish 更新済み (`vscode-extension/server`) + `--selftest` 正常
+  - コミット: CodeEditor2VerilogPlugin `8d051f0`、メイン `1373a4f` (submodule pointer + WorkspaceHierarchyTests.cs)
+  - Next: VS Code で Reload Window 後、`scr1/src/top/scr1_top_axi.sv` の 1〜6 行目 (コメントヘッダ + `` `include ``) に色が付くこと、他のファイルの色が従来どおりであることを確認
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/DebugScr1TopAxiProbe.cs`) は削除済み。`CodeEditor2` のユーザ変更は従来どおりコミットから除外
+
 - **発生していた問題 (深さ2以上の instance で override が効かない / 編集すると override が消える) の後続修正** → 修正完了 (ビルド成功 0 errors、テスト 164 + sv-tests 1028 合格、publish 更新、コミット済み)
   - 経緯: 既に `ad10a54`「Base hierarchy node instance paths on the expanded file」で深さ2以上の instance クリックは直っていたが、その後の作業で **作業ツリーに未コミット・ビルド不能な状態** が残っていた (`RebuildAsInstance` → `ParseAndApplyInstance` へのリファクタが中途半端で CS0103 / CS0136 / CS1061 の 4 エラー)
   - **修復1 (ビルド破損の解消)**: `Server/InMemorySystemVerilogCore.cs` で孤立した doc コメントを除去し、消えていた `RebuildAsInstance(parentUri, instancePath)` を復活 (チェーンを辿って `ParseAndApplyInstance` に委譲する薄いラッパ)。`ParseAndApplyInstance` 側の重複したチェーン探索 / `moduleName` / `overrides` の再宣言を削除
