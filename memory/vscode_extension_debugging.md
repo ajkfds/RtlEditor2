@@ -176,6 +176,36 @@ dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c
 **切り分け**: 症状が「exthost 無し + code 134 + マニフェストエラー無し」なら、まず
 `vscode-extension/server/` のファイル数とサイズを測る。
 
+**再発防止 (2026-11 追加)**: 手で `dotnet publish -o vscode-extension/server` を実行すると
+`bundle-server.js` のクリーン処理を通らないため、この肥大化が再発した (実測で 314 ファイル /
+733.9 MB に戻っていた)。対策として `SystemVerilogLanguageServer.csproj` に
+`<CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>` を
+設定したので、**素の `dotnet publish` でもシンボルはコピーされない**。ただし
+`dotnet publish -o` は出力先を空にしないため、**古い `.playwright` / 非ホスト `runtimes/` は
+残る**。手で publish したあとは必ず次を実行するか、`npm run vsix` (= bundle-server.js) を使う:
+
+```
+# 残骸の確認と削除 (server/ を丸ごと消してから publish し直すのが確実)
+rm -rf vscode-extension/server && dotnet publish ... -o vscode-extension/server
+```
+
+### 参考: `View container '...' does not exist` は起動失敗ではない (実害はペインだけ)
+
+`Loading development extension` の直後に毎回出るが、**拡張は正常に起動する**
+(`extension activated` まで到達し、`window<N>/exthost/` も作られる)。
+実害は「Messages ペインが Explorer に落ちる」ことだけ。
+
+マニフェストは次の 3 点が揃っていれば正しい (機械検証済み):
+
+- `contributes.viewsContainers.auxiliarybar[].id` が `[A-Za-z0-9_-]+` (ドット不可)
+- 同 `icon` が **実在するパス文字列** (`$()` codicon 不可)
+- `contributes.views` のキーがそのコンテナ id と完全一致し、`views.*[].id` が
+  `extension.js` / `messageView.js` の `registerWebviewViewProvider('<id>')` と一致
+
+この 3 点が通っていても警告が出る場合は、VS Code 側の Auxiliary Bar コンテナ解決の
+都合 (拡張開発ホストでは `auxiliarybar` コンテナが遅延生成される) であり、
+**起動失敗の原因にはならない**。調査の優先度は低い。
+
 ### 起動失敗の原因になる: `property `icon` is mandatory and must be of type `string``
 
 ```
