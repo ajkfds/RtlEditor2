@@ -1047,6 +1047,67 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// Editing a document that was opened AS an instance must keep the
+    /// instantiation's parameter overrides (the editor keeps editing the
+    /// instance, not the file).
+    /// </summary>
+    /// <remarks>
+    /// A didChange re-parses the edited document. Parsing it as a PLAIN file
+    /// uses the declared parameter defaults, so the overridden value silently
+    /// reverted after the first keystroke: diagnostics, widths and colours all
+    /// jumped back to the declaration. The re-parse has to reuse the recorded
+    /// instance selection instead.
+    /// </remarks>
+    [Fact]
+    public void DidChangeAfterInstanceClick_KeepsParameterOverrides()
+    {
+        File.WriteAllText(Path.Combine(_root, "child.sv"),
+            "module child #(parameter WIDTH = 8) (input [WIDTH-1:0] d);\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  wire [3:0] sig;\n  child #(.WIDTH(4)) u_child(.d(sig));\nendmodule\n");
+        string childUri = new Uri(Path.Combine(_root, "child.sv")).AbsoluteUri;
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new
+            {
+                uri = childUri,
+                languageId = "systemverilog",
+                version = 1,
+                text = File.ReadAllText(Path.Combine(_root, "child.sv")),
+            },
+        });
+        Assert.Equal("8", ParameterValue(core, childUri, "child", "WIDTH"));
+
+        // open the document AS the instance (the click)
+        using (JsonDocument reparse = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            uri = childUri,
+            instancePathSegments = new[] { "u_child" },
+            parentUri = topUri,
+        })))
+        {
+            handler.TryHandleRequest("rtl/reparse", reparse.RootElement, default, out _);
+        }
+        Assert.Equal("4", ParameterValue(core, childUri, "child", "WIDTH"));
+
+        // now EDIT the opened instance: the override must survive the re-parse
+        string editedText = File.ReadAllText(Path.Combine(_root, "child.sv"))
+            + "// edited\n";
+        SendNotification(handler, "textDocument/didChange", new
+        {
+            textDocument = new { uri = childUri, version = 2 },
+            contentChanges = new[] { new { text = editedText } },
+        });
+
+        Assert.Equal("4", ParameterValue(core, childUri, "child", "WIDTH"));
+    }
+
+    /// <summary>
     /// Clicking a node that is NESTED two levels deep must still parse the
     /// document AS that instance (parameter overrides applied).
     /// </summary>
