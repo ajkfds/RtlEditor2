@@ -10,8 +10,16 @@ node_modules/.package-lock.json
 
 # The bundled server (server/**) IS shipped: it makes the extension
 # self-contained. Exclude only dev-only bits to reduce size.
+#
+# The real defence against a bloated folder is scripts/bundle-server.js (it
+# empties server/ before publishing, then prunes symbols, .playwright and the
+# non-host native runtimes). These patterns are the second line of defence: a
+# development host whose extension folder grows into the hundreds of MB is
+# killed with SIGABRT (exit code 134) right after "Loading development
+# extension", before any extension code runs. Keep the folder small.
 server/**/*.pdb
 server/.playwright/**
+server/**/.playwright/**
 server/**/*.xml
 
 # icons/** IS shipped: the RTL Hierarchy tree uses the plugin's own SVG
