@@ -3,6 +3,63 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy の instance クリックで Parameter Override が editor に反映されない (`InstanceTextFile.ParsedDocument` が null)** → 修正完了 (ビルド成功 0 errors、テスト 1139 + sv-tests 1028 合格、publish 更新・同梱バイナリで end-to-end 実測済み)
+  - ユーザ報告: `RTL Hierarchy上で VerilogModuleInstance.cs に相当するNodeをクリックしたときにEditorに表示される結果がParameter Overrideの結果が反映されていないことは変わっていないようです。InstanceTextFile.cs のParsedDocument Propertyを確認してください。Parameterも含むIDからParsedDocumentを取得しているはずです`
+  - **ユーザの指摘は正確だった**: `InstanceTextFile.ParsedDocument` は
+    `SourceVerilogFile.GetInstancedParsedDocument(_getKey())` で引く。`_getKey()` は
+    `ParsedDocument.KeyGenerator(source, _instanceName, _parameterOverrides)` で、
+    **module 名 + parameter override を含むキー**。したがって「instance キーで登録された parse 結果」が必要
+  - **根本原因1 (`ParseEngine` が登録していなかった)**: `CoreBridge/ParseEngine.ParseInstanceAsync` は
+    `parser.VerilogParsedDocument` を **返すだけ** で、`VerilogFile.RegisterInstanceParsedDocument(...)` を
+    呼んでいなかった。エディタでは `VerilogFile.AcceptParsedDocumentAsync` がこの登録を行うため
+    `GetInstancedParsedDocument(key)` が解決するが、LSP (UI レス) はこの経路を通らないので
+    **instance キーのテーブルが常に空** → `InstanceTextFile.ParsedDocument` が null →
+    エディタは「ファイル全体の parse 結果 (既定パラメータ)」で表示していた
+  - **根本原因2 (クリックした instance しか登録されない)**: 修正1 で登録しても、
+    `RebuildAsInstance` が parse するのは **クリックされた 1 instance のみ**。兄弟 instance
+    (`AAA`) や、その instance 先ファイル内のparameter付き instance (`moduleSample #(.P_WIDTH(5)) SS`) は
+    登録されず、クリックすると同じ問題が再発した。`EnsureInstanceTreeParsed` を新設し、
+    **展開元 (base) ファイルの item tree 配下の全 instance** を `EnsureInstanceParsed` (エディタと同じ遅延 parse) で
+    parse & 登録するようにした (深さ上限 32)
+  - **修正 (`CodeEditor2VerilogPlugin`)**
+    - `CoreBridge/ParseEngine.cs`: `ParseInstanceAsync` の parse 後に
+      `file.RegisterInstanceParsedDocument(instanceKey, parsed, null)` を呼ぶ。
+      `instanceKey = ParsedDocument.KeyGenerator(file, moduleName, parameterOverrides)`
+      (= `InstanceTextFile._getKey()` と同一規則)
+    - `Data/VerilogFile.cs`: `RegisterInstanceParsedDocument` の第3引数 (`moduleInstance`) を
+      `InstanceTextFile?` に変更 (UI レスホストは instance オブジェクトを作らず登録するため)
+  - **修正 (`SystemVerilogLanguageServer`)**
+    - `Server/InMemorySystemVerilogCore.cs` `RebuildAsInstance`: 対象 instance の parse 後、
+      `EnsureInstanceTreeParsed(basePluginFile)` で **展開元ファイル配下の全 instance** を
+      `EnsureInstanceParsed` に通して登録する (`InstanceTextFile.ParsedDocument` が全ノードで解決する)
+    - `EnsureInstanceTreeParsed(Item, depth)` 新設 (深さ上限 32、`EnsureInstanceParsed` で再帰)
+  - **実測 (プローブは削除済み)**: `verilog_sample` で `PartialAssign.sv` → `aaabb` をクリックした後の
+    `InstanceTextFile.ParsedDocument`
+    - 修正前: `instance 'AAA' ParsedDocument=NULL` / `instance 'aaabb' ParsedDocument=NULL`
+    - 修正後: `instance 'AAA' ParsedDocument=ok Instance=True Target='moduleSample'` /
+      `instance 'aaabb' ParsedDocument=ok Instance=True Target='mod2'`
+  - **同梱バイナリでの end-to-end 実測** (`vscode-extension/server/SystemVerilogLanguageServer.exe` を stdio 起動 →
+    didOpen → `rtl/reparse` (aaabb) → semanticTokens / diagnostics):
+    - `rtl/reparse -> {"parsed":true,"instance":true}`
+    - `semanticTokens = 31` (色の欠落なし)
+    - `line 7: Size mismatch 5 <- 8` / `line 15: bit width mismatch 5 <- 3` /
+      `line 16: bit width mismatch 1 <- 5` → **P_WIDTH=5 (override) で比較されている**
+  - **回帰テスト追加 (`SystemVerilogLanguageServer.Tests/WorkspaceHierarchyTests.InstanceClick_RegistersInstanceParsedDocuments`)**:
+    `top.sv` が `child u_child()` / `child u_child2()`、`child.sv` が `leaf #(.WIDTH(5)) u_leaf(...)` を持つ構成で
+    `u_child` をクリック → `u_child` / **未クリックの兄弟 `u_child2`** / **ネストした `u_leaf`** の
+    `InstanceTextFile.ParsedDocument` がすべて非 null かつ `Instance=True` + `TargetBuildingBlockName` 一致を assert。
+    **両方の修正を stash で戻すと失敗**することを実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj` 0 errors / `dotnet build RtlEditor2.Desktop.csproj` 0 errors /
+    `dotnet test --filter FullyQualifiedName!~Debug` **1139 合格 / 0 失敗** /
+    `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - コミット: CodeEditor2VerilogPlugin `333a8e4` / SystemVerilogLanguageServer `4def471` / メイン `2e6f1da`
+  - publish 更新済み (`vscode-extension/server`、exe 更新時刻 2026-11-08 15:51Z) + `--selftest` 正常
+  - Next: VS Code を Reload Window 後、RTL Hierarchy で `aaabb` / `AAA` / `SS` をクリックしたとき、
+    `moduleSample` 側の `P_WIDTH` が **5** として解決され (hover で確認)、
+    `.AA` / `.CLK_I` に幅ミスマッチの波線が出ることを確認
+  - メモ: 検証用プローブ (`DebugInstanceKeyProbe` / `DebugParamCheckProbe` / `DebugClickStateProbe` 等) は削除済み
+
+
 - **RTL Hierarchy で下層の module instance をクリックすると parameter override が反映されない結果が表示される** → 修正完了 (ビルド成功 0 errors、テスト 159 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: `moduleAからのmoduleBをparameterつきinstanceしたとき、RTL hierarchy上でmoduleAをクリックしたときの見え方は正常になりました。しかし、moduleAの下層ノードのmoduleBをクリックしたときに表示されるmoduleBの結果はparameter overrideが反映されていない結果のようです。VerilogModuleInstanceをクリックしたときに参照するParsedDocumentはInstanceのParsedDocumentが参照されなければいけません`
   - **根本原因 (instance path の基準ファイルと parentUri が食い違っていた)**: `GetHierarchyChildren` は子ノードの `InstancePathSegments` を **展開を開始したファイル (= this) のルートからの絶対チェーン** (`parentSegments` を蓄積) で組み立てていたが、`ExpandUri` / `ParentUri` には **1つ上の親ドキュメント** (`current.RelativePath` から解決した `documentUri`) を入れていた。深さ 2 以上のノード (例 `PartialAssign.sv` → `aaabb`(mod2.v) → `SS`(moduleSample.v)) では `parentUri=mod2.v` に対してチェーンが `["aaabb","SS"]` になり、`RebuildAsInstance` が mod2.v の item tree で `aaabb` を探して失敗 → `instance:false` で通常ファイル parse にフォールバック → **parameter override が効かない** (深さ1の `AAA` はチェーンが1要素で親=起点ファイルと同じため偶然一致して正常に見えていた)
