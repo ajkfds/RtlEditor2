@@ -3,6 +3,23 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy で下層の module instance をクリックすると parameter override が反映されない結果が表示される** → 修正完了 (ビルド成功 0 errors、テスト 159 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: `moduleAからのmoduleBをparameterつきinstanceしたとき、RTL hierarchy上でmoduleAをクリックしたときの見え方は正常になりました。しかし、moduleAの下層ノードのmoduleBをクリックしたときに表示されるmoduleBの結果はparameter overrideが反映されていない結果のようです。VerilogModuleInstanceをクリックしたときに参照するParsedDocumentはInstanceのParsedDocumentが参照されなければいけません`
+  - **根本原因 (instance path の基準ファイルと parentUri が食い違っていた)**: `GetHierarchyChildren` は子ノードの `InstancePathSegments` を **展開を開始したファイル (= this) のルートからの絶対チェーン** (`parentSegments` を蓄積) で組み立てていたが、`ExpandUri` / `ParentUri` には **1つ上の親ドキュメント** (`current.RelativePath` から解決した `documentUri`) を入れていた。深さ 2 以上のノード (例 `PartialAssign.sv` → `aaabb`(mod2.v) → `SS`(moduleSample.v)) では `parentUri=mod2.v` に対してチェーンが `["aaabb","SS"]` になり、`RebuildAsInstance` が mod2.v の item tree で `aaabb` を探して失敗 → `instance:false` で通常ファイル parse にフォールバック → **parameter override が効かない** (深さ1の `AAA` はチェーンが1要素で親=起点ファイルと同じため偶然一致して正常に見えていた)
+  - 修正1 (`Server/InMemorySystemVerilogCore.cs` `GetHierarchyChildren`): `documentUri` の算出を削除し `CreateDescriptor(child)` を呼ぶよう変更。チェーンの基準が「展開要求されたファイル」であることをコメントで明記
+  - 修正2 (同 `CreateDescriptor`): `documentUri` 引数を削除し `ExpandUri = Id` / `ParentUri = Id` に変更。expand token と instance path の基準を「チェーンの根 = このファイル」に統一 (クリックで開く `Uri` は従来どおりインスタンス先のソース)
+  - 修正3 (`RtlHierarchy.cs`): `HierarchyNodeDescriptor.ExpandUri` / `ParentUri` / `HierarchyNode.ParentUri` の doc コメントを「インスタンス文が書かれた親」から「`InstancePathSegments` の基準ファイル (展開要求されたファイル)」に修正。親を基準にすると深さ2以上で解決できない旨を明記
+  - 修正4 (`Server/LspHandler.cs` `BuildFileNodes`): expandToken のコメントを新しい意味に更新
+  - 修正5 (`Server/InMemorySystemVerilogCore.cs` `RebuildAsInstance`): 変数名 `parentPluginFile` → `basePluginFile`、コメントを「チェーンの根 (展開要求されたファイル) を辿り、parse するのはこのファイル」に書き直し
+  - 回帰テスト追加 (`SystemVerilogLanguageServer.Tests/WorkspaceHierarchyTests.ReparseAsNestedInstance_AppliesParameterOverrides`): `top.sv → u_mid(mid.sv) → u_leaf(leaf.sv, #(.P_WIDTH(5)))` の3階層を **サーバ発行の expandToken をそのまま返送** して展開し、(1) `instancePathSegments` が `["u_mid","u_leaf"]` (2) `parentUri` が `top.sv` (3) `rtl/reparse` が `instance:true` (4) `P_WIDTH` が既定 8 → override 5 になることを assert。**修正を一時的に戻すと `parentUri` が `mid.sv` になり `Expected end: "top.sv"` で失敗** することを実証
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName~WorkspaceHierarchyTests` **35 合格 / 0 失敗** / `--filter FullyQualifiedName!~ParseSvTestFile` **159 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - コミット: SystemVerilogLanguageServer `ad10a54`、メイン `bfc9de2` (submodule pointer + WorkspaceHierarchyTests.cs)
+  - **publish 未完了**: 稼働中の LSP サーバが `vscode-extension/server/*.dll` をロックしているため `dotnet publish` が MSB3027/MSB3021 で失敗する。**VS Code を完全に終了してから**:
+    `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=False`
+    その後 Reload Window して、RTL Hierarchy の **深さ2以上の instance** (`PartialAssign.sv` → `aaabb` → `SS`) をクリックすると `P_WIDTH` が 5 として解決され、port の bit 幅ミスマッチが波線で出ることを確認
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/Debug*.cs`) は従来どおりコミットから除外 (作業ツリーに残置)
+
+
 - **parameter 付き module instance の override が parse 時に反映されない (ポート幅チェックが効かない)** → 修正完了 (ビルド成功 0 errors、テスト 1137 + sv-tests 1028 合格)
   - ユーザ報告: `mySample/PartialAssign.sv下のaabbのノードをクリックすると色がおかしくなります。… 編集すると全体に色がつきますが、P_WIDTHの参照が正しくできておらず、portのbit幅ミスマッチが検出されません。parse時には moduleSample の verilogFile の parsedDocument ではなく、parameter指定してparseしたほうの parsedDocument を参照する必要があり、それが見つからない場合はその時点でparameterつきinstanceの即時parseをしているはずです`
   - **根本原因1 (即時 parse が `EditParse` 限定だった)**: `Verilog/Items/ModuleInstantiation.cs` の `ParseAsync` は `effectiveModule = sourceProjectProperty.GetInstancedBuildingBlock(moduleInstantiation)` で parameter override 版の parse 結果を引くが、`ProjectProperty.GetInstancedBuildingBlock` は **`file.GetInstancedParsedDocument(InstanceKey)` を引くだけで parse しない**。override 版が無いときに即時 parse する処理は `if (word.RootParsedDocument.ParseMode == ParseModeEnum.EditParse)` の中にしか無かった。LSP は `BackgroundParse` で parse するため **常に `effectiveModule == null`** になり、(a) インスタンス先モジュールのポート一覧が不明 → `checkPortConnection` (bit width / data type mismatch) が丸ごとスキップ、(b) パラメータは override されない宣言側の値で解決、という状態だった
