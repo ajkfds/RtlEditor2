@@ -3,6 +3,52 @@
 
 ## 進行中タスク (最新)
 
+- **Messages ペインと Editor マークの色が食い違う (size mismatch が Warning になっていた)** → 修正完了 (ビルド成功 0 errors、テスト 1141 + sv-tests 1028 合格、publish 更新)
+  - ユーザ報告: `messageの表示とProblems/Editor上のマーク表示の色が違うので揃えたいです。unusedは青 / birwidth mismatchはオレンジ / errorは赤 / size mismatchはグレーであるべきです。`
+  - **実測 (プローブ、`verilog_sample/mySample` の実ファイル)**: `textDocument/publishDiagnostics` の severity
+    | メッセージ | 修正前 | 要求 | 判定 |
+    |---|---|---|---|
+    | `unused` | **3=Information** (青) | 青 | OK |
+    | `undriven` | **3=Information** (青) | (Notice) | OK |
+    | `bit width mismatch 5 <- 3` | **2=Warning** (オレンジ) | オレンジ | OK |
+    | `illegal module item` / `unfound module` | **1=Error** (赤) | 赤 | OK |
+    | **`Size mismatch 5 <- 8`** | **2=Warning** (オレンジ) | **グレー** | **NG** |
+  - **根本原因**: `Verilog/DataObjects/Nets/Net.cs` の net 宣言初期化子 (`wire [4:0] bb = 8'h00;`) のサイズ不一致が
+    `AddWarning` で報告されていた (Notice/Hint ではなく Warning なので、本物の bit width mismatch と同じオレンジになっていた)。
+    `unused` / `undriven` は `AddNotice` → Information、`bit width mismatch` は `AddWarning` → Warning、
+    parse error は `AddError` → Error で、いずれも要求どおりだった (`SystemVerilogLanguageServer.CollectDiagnostics` の
+    `MessageType → SystemVerilogSeverity` マップ: Error→Error / Warning→Warning / Notice→Information / Hint→Hint)
+  - **修正1 (`Net.cs`)**: net 初期化子のサイズ不一致 2 箇所 (`BitWidth == null` の `Size mismatch 1 <- N` と、
+    `BitWidth != net.BitWidth` の `Size mismatch N <- M`) を `AddWarning` → **`AddHint`** に変更
+    (Hint → LSP Hint → グレー)。宣言の初期化子についての情報程度の指摘であり、代入の幅不一致 (Warning) とは区別する
+  - **修正2 (`CodeDrawStyle.cs` の mark 色を Messages ペインに合わせる)**: デスクトップエディタの波線色が
+    VS Code のテーマ色と大きく違っていたため、VS Code の既定色に揃えた
+    | severity | 修正前 | 修正後 (VS Code 既定) |
+    |---|---|---|
+    | 0 error | `(200, 255,120,120)` 薄赤 | `(230, 241,76,76)` = `#f14c4c` |
+    | 1 warning | `(200, 255,250,150)` 黄 | `(230, 204,167,0)` = `#cca700` |
+    | 2 notice | `(200, 20,255,20)` 緑 | `(230, 55,148,255)` = `#3794ff` (青) |
+    | 3 hint | `(200, 106,176,224)` 水色 | `(230, 108,108,108)` = `#6c6c6c` (グレー) |
+    - `messageView.js` 側は元から `--vscode-errorForeground` / `--vscode-editorWarning-foreground` /
+      `--vscode-editorInfo-foreground` / `--vscode-editorHint-foreground` を使っていたため変更不要
+  - **回帰テスト追加 (`WorkspaceHierarchyTests`, 2 件)**:
+    - `Diagnostics_SeverityMatchesTheEditorColours`: `wire [4:0] bb = 8'h00;` (Size mismatch) と未使用 wire を含む
+      ファイルで、`Size mismatch 5 <- 8` が **severity 4 (Hint)** / `unused` が **severity 3 (Information)** であることを assert。
+      **修正を stash で戻すと `Expected: 4 / Actual: 2` で失敗**することを実証
+    - `BitWidthMismatch_IsWarning`: parameter override で幅が 5 になった port に 3bit 信号を接続し、
+      `bit width mismatch 5` が **severity 2 (Warning)** であることを assert
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj` 0 errors / `dotnet build RtlEditor2.Desktop.csproj` 0 errors /
+    `dotnet test --filter FullyQualifiedName!~Debug` **1141 合格 / 0 失敗** /
+    `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - コミット: CodeEditor2VerilogPlugin `326cd24`、メイン `d9df057` (submodule pointer + tests)
+  - publish 更新済み (`vscode-extension/server`)
+  - Next: VS Code で Reload Window 後、`mod2.v` を開いて
+    (1) `unused` が青 (2) `bit width mismatch` がオレンジ (3) parse error が赤
+    (4) `Size mismatch` がグレー で Messages ペイン / Problems / 波線が一致することを確認。
+    デスクトップエディタ側も同じ 4 色で波線が出ることを確認
+  - メモ: 検証用プローブ (`DebugSeverityProbe`) は削除済み
+
+
 - **RTL Hierarchy の instance クリックで Parameter Override が editor に反映されない (`InstanceTextFile.ParsedDocument` が null)** → 修正完了 (ビルド成功 0 errors、テスト 1139 + sv-tests 1028 合格、publish 更新・同梱バイナリで end-to-end 実測済み)
   - ユーザ報告: `RTL Hierarchy上で VerilogModuleInstance.cs に相当するNodeをクリックしたときにEditorに表示される結果がParameter Overrideの結果が反映されていないことは変わっていないようです。InstanceTextFile.cs のParsedDocument Propertyを確認してください。Parameterも含むIDからParsedDocumentを取得しているはずです`
   - **ユーザの指摘は正確だった**: `InstanceTextFile.ParsedDocument` は
