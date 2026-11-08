@@ -757,6 +757,75 @@ public class WorkspaceHierarchyTests : IDisposable
     /// for declared objects (which the editor also draws with the concrete type),
     /// folding them keeps the most specific type.
     /// </remarks>
+    /// <summary>
+    /// Every line of a file header must be coloured: a run of <c>///</c>
+    /// comments and the compiler directives after it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The plugin's <c>ParseEngine.ParseOnceAsync</c> copied the text into the
+    /// parser's document a second time before parsing. That copy re-raised
+    /// <c>TextDocument.TextChanged</c>, and the resulting edit bookkeeping threw
+    /// away the colour entries of the lines a comment token spans. A file that
+    /// starts with a multi-line header therefore kept only its FIRST line
+    /// coloured; the rest of the header and the <c>`include</c> lines below it
+    /// came back with no tokens at all (reported on
+    /// <c>verilog_sample/scr1/src/top/scr1_top_axi.sv</c>, lines 2-6).
+    /// </para>
+    /// <para>
+    /// The parse itself was correct throughout (same building blocks, same
+    /// diagnostics), so only a colour check catches this.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void SemanticTokens_ColourEveryHeaderLine()
+    {
+        string text =
+            "/// Copyright notice\n" +
+            "/// @file       <top.sv>\n" +
+            "/// @brief      header\n" +
+            "///\n" +
+            "\n" +
+            "`include \"defs.svh\"\n" +
+            "\n" +
+            "module top;\n" +
+            "endmodule\n";
+        File.WriteAllText(Path.Combine(_root, "defs.svh"), "// header\n");
+        string path = Path.Combine(_root, "top.sv");
+        File.WriteAllText(path, text);
+        string uri = new Uri(path).AbsoluteUri;
+
+        LspHandler handler = CreateInitializedHandler();
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri, languageId = "systemverilog", version = 1, text },
+        });
+
+        using JsonDocument request = JsonDocument.Parse(JsonSerializer.Serialize(new { textDocument = new { uri } }));
+        handler.TryHandleRequest("textDocument/semanticTokens/full", request.RootElement, default, out object? result);
+        JsonElement data = JsonDocument.Parse(JsonSerializer.Serialize(result))
+            .RootElement.GetProperty("data");
+
+        // count the tokens that start on each 0-based line
+        string[] lines = text.Split('\n');
+        int[] perLine = new int[lines.Length];
+        int line = 0;
+        for (int i = 0; i + 4 < data.GetArrayLength(); i += 5)
+        {
+            line += data[i].GetInt32();
+            if (line < perLine.Length) perLine[line]++;
+        }
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string source = lines[i].TrimEnd('\r');
+            if (source.Length == 0) continue;
+            Assert.True(perLine[i] > 0,
+                $"line {i + 1} has no colour: '{source}' " +
+                $"(tokens per line: {string.Join(",", perLine)})");
+        }
+    }
+
     [Fact]
     public void SemanticTokens_NoDuplicateOrOverlappingTokens()
     {
