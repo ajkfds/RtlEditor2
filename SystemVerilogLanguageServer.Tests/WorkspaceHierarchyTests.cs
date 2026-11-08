@@ -1126,6 +1126,93 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// Hierarchy nodes must carry the NavigatePanel-style badge: the editor
+    /// draws an exclamation triangle (bottom-left) for errors / warnings and a
+    /// shine (top-right) for unsaved edits, at most one, in the priority order
+    /// error &gt; warning &gt; dirty.
+    /// </summary>
+    /// <remarks>
+    /// VS Code's <c>TreeItem.iconPath</c> can only hold one icon and one theme
+    /// colour, so the overlay cannot be drawn by the client. The server reports
+    /// a <c>badge</c> name and the extension resolves
+    /// <c>icons/{icon}-{badge}.svg</c>, which has the overlay composited in
+    /// (<c>scripts/generate-badge-icons.js</c>). Before this the tree only tinted
+    /// the whole icon, so there was no badge and no dirty indicator at all.
+    /// </remarks>
+    [Fact]
+    public void HierarchyNodes_CarryBadge()
+    {
+        File.WriteAllText(Path.Combine(_root, "broken.sv"),
+            "module broken;\n  assign x = ;\nendmodule\n");        // error
+        // A continuous assignment width mismatch is a WARNING; the net
+        // initializer form is only a hint (see Net.cs).
+        File.WriteAllText(Path.Combine(_root, "warned.sv"),
+            "module warned;\n  wire [4:0] bb;\n  assign bb = 8'h00;\n  initial $display(bb);\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "clean.sv"),
+            "module clean;\n  wire a;\n  assign a = 1'b0;\nendmodule\n");
+
+        string brokenUri = new Uri(Path.Combine(_root, "broken.sv")).AbsoluteUri;
+        string warnedUri = new Uri(Path.Combine(_root, "warned.sv")).AbsoluteUri;
+        string cleanUri = new Uri(Path.Combine(_root, "clean.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        foreach (var name in new[] { "broken.sv", "warned.sv", "clean.sv" })
+        {
+            string uri = new Uri(Path.Combine(_root, name)).AbsoluteUri;
+            SendNotification(handler, "textDocument/didOpen", new
+            {
+                textDocument = new { uri, languageId = "systemverilog", version = 1, text = File.ReadAllText(Path.Combine(_root, name)) },
+            });
+        }
+
+        Assert.Equal("error", BadgeOf(handler, brokenUri));
+        Assert.Equal("warning", BadgeOf(handler, warnedUri));
+        Assert.Null(BadgeOf(handler, cleanUri));
+
+        // an unsaved edit adds the dirty badge
+        string cleanText = File.ReadAllText(Path.Combine(_root, "clean.sv"));
+        SendNotification(handler, "textDocument/didChange", new
+        {
+            textDocument = new { uri = cleanUri, version = 2 },
+            contentChanges = new[] { new { text = cleanText + "\n// edited\n" } },
+        });
+        Assert.Equal("dirty", BadgeOf(handler, cleanUri));
+
+        // saving clears it
+        SendNotification(handler, "textDocument/didSave", new
+        {
+            textDocument = new { uri = cleanUri },
+            text = cleanText + "\n// edited\n",
+        });
+        Assert.Null(BadgeOf(handler, cleanUri));
+
+        // dirty never wins over a diagnostic
+        SendNotification(handler, "textDocument/didChange", new
+        {
+            textDocument = new { uri = warnedUri, version = 2 },
+            contentChanges = new[] { new { text = File.ReadAllText(Path.Combine(_root, "warned.sv")) + "\n// edited\n" } },
+        });
+        Assert.Equal("warning", BadgeOf(handler, warnedUri));
+    }
+
+    /// <summary>badge of the top-level node whose <c>uri</c> is <paramref name="uri"/>.</summary>
+    private static string? BadgeOf(LspHandler handler, string uri)
+    {
+        using JsonDocument request = JsonDocument.Parse(JsonSerializer.Serialize(new { }));
+        handler.TryHandleRequest("rtl/hierarchy", request.RootElement, default, out object? result);
+        using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(result));
+        foreach (JsonElement node in doc.RootElement.GetProperty("nodes").EnumerateArray())
+        {
+            if (!node.TryGetProperty("uri", out JsonElement u)) continue;
+            if (!string.Equals(u.GetString(), uri, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!node.TryGetProperty("badge", out JsonElement b)) return null;
+            return b.ValueKind == JsonValueKind.Null ? null : b.GetString();
+        }
+        throw new Xunit.Sdk.XunitException("node not found for " + uri);
+    }
+
+    /// <summary>
     /// The severity of each diagnostic must match the colours the editor uses
     /// for the same message, so the Messages pane and the editor marks agree:
     /// <list type="bullet">

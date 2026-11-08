@@ -39,6 +39,12 @@ const ICON_NAMES = new Set([
     'verilog-header-document',
 ]);
 
+// Badges the server can attach to a node (see HierarchyNode.Badge). The client
+// ships `icons/<icon>-<badge>(-dark).svg` for each of these, with the overlay
+// composited in (exclamation triangle bottom-left for error / warning, shine
+// top-right for unsaved edits).
+const BADGES = new Set(['error', 'warning', 'dirty']);
+
 // codicon fallbacks for names the client does not ship an SVG for
 const ICON_FALLBACKS = {
     folder: 'folder',
@@ -83,8 +89,14 @@ class HierarchyItem {
         // The client only maps these onto the VS Code TreeItem; it never
         // derives them from `kind` / `hasChildren` itself.
         this.icon = options.icon;
+        // Badge composited onto the icon: "error" / "warning" (exclamation
+        // triangle, bottom-left) or "dirty" (shine, top-right, unsaved edits).
+        // The client resolves icons/<icon>-<badge>.svg, mirroring the editor's
+        // NavigatePanel badges. VS Code's iconPath holds one icon and one theme
+        // colour, so the overlay is baked into the asset rather than drawn.
+        this.badge = options.badge;
         // optional VS Code theme colour id ("errorForeground" /
-        // "editorWarning.foreground") used to flag files with errors/warnings
+        // "editorWarning.foreground"), used only when no badge asset exists
         this.iconColor = options.iconColor;
         this.contextValue = options.contextValue;
         this.collapsible = options.collapsible;
@@ -215,13 +227,13 @@ class HierarchyProvider {
         if (element.tooltip) item.tooltip = element.tooltip;
         if (element.detail) item.description = element.detail;
 
-        // The server decides the icon name and (optionally) a theme colour id
-        // used to flag files with errors / warnings.
+        // The server decides the icon name, the badge (error / warning / dirty)
+        // and (as a fallback) a theme colour id.
         const iconColor = element.iconColor
             ? new vscode.ThemeColor(element.iconColor)
             : undefined;
 
-        const iconPath = this._resolveIconPath(element.icon, iconColor);
+        const iconPath = this._resolveIconPath(element.icon, element.badge, iconColor);
         if (iconPath) item.iconPath = iconPath;
 
         // Default click action: open the node's own file. For an instance the
@@ -245,18 +257,24 @@ class HierarchyProvider {
     }
 
     /**
-     * Maps the server's icon name onto a VS Code icon.
+     * Maps the server's icon name + badge onto a VS Code icon.
      *
      * The plugin's own SVGs are shipped in icons/ (light + dark variants) so
-     * the tree matches the desktop editor. When the name has no shipped SVG
-     * (a folder, or a kind added on the server later) a codicon is used, which
-     * also carries the error / warning theme colour.
+     * the tree matches the desktop editor. A node the server flagged as error /
+     * warning / dirty resolves `icons/<icon>-<badge>.svg`, which has the
+     * NavigatePanel overlay (exclamation triangle bottom-left / shine top-right)
+     * composited in - VS Code's iconPath cannot draw an overlay, so the badge is
+     * part of the asset. `icons/<icon>.svg` is used when no badge applies.
+     *
+     * When the name has no shipped SVG (a folder, or a kind added on the server
+     * later) a codicon is used, which still carries the theme colour fallback.
      */
-    _resolveIconPath(iconName, iconColor) {
+    _resolveIconPath(iconName, badge, iconColor) {
         if (iconName && ICON_NAMES.has(iconName) && this.extensionUri) {
+            const decorated = badge && BADGES.has(badge) ? iconName + '-' + badge : iconName;
             return {
-                light: vscode.Uri.joinPath(this.extensionUri, 'icons', iconName + '.svg'),
-                dark: vscode.Uri.joinPath(this.extensionUri, 'icons', iconName + '-dark.svg'),
+                light: vscode.Uri.joinPath(this.extensionUri, 'icons', decorated + '.svg'),
+                dark: vscode.Uri.joinPath(this.extensionUri, 'icons', decorated + '-dark.svg'),
             };
         }
         const codicon = ICON_FALLBACKS[iconName] || iconName || 'file';
@@ -359,6 +377,7 @@ class HierarchyProvider {
             parentUri: node.parentUri,
             folderPath: node.folderPath,
             icon: node.icon,
+            badge: node.badge,
             iconColor: node.iconColor,
             contextValue: node.contextValue,
             collapsible: node.collapsible,

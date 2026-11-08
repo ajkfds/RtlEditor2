@@ -85,9 +85,16 @@ Explorer container.
   Instance Path (e.g. `u_mid.u_leaf`).
 - Icons come from the editor's own SVG assets (shipped in `icons/`, light and
   dark variants): SystemVerilog / Verilog / header documents, module and
-  interface instances, imported packages. A file with parse errors or warnings
-  is tinted with the theme's error / warning colour, like the editor's
-  NavigatePanel badge.
+  interface instances, imported packages.
+- **Node badges** mirror the editor's NavigatePanel: an exclamation triangle at
+  the bottom-left for parse **errors** (red) or **warnings** (orange), and a
+  shine at the top-right for **unsaved edits** (dirty). At most one badge is
+  shown, in the priority order error > warning > dirty.
+  VS Code's `TreeItem.iconPath` can only hold one icon and one theme colour, so
+  the badge cannot be drawn by the extension; it is composited into the asset
+  (`icons/<icon>-<badge>.svg`, e.g. `icons/module-error.svg`).
+  Regenerate them with `node scripts/generate-badge-icons.js` after editing a
+  base icon.
 
 ## Messages pane
 
