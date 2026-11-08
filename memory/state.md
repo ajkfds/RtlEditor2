@@ -3,6 +3,24 @@
 
 ## 進行中タスク (最新)
 
+- **parameter 付き module instance の override が parse 時に反映されない (ポート幅チェックが効かない)** → 修正完了 (ビルド成功 0 errors、テスト 1137 + sv-tests 1028 合格)
+  - ユーザ報告: `mySample/PartialAssign.sv下のaabbのノードをクリックすると色がおかしくなります。… 編集すると全体に色がつきますが、P_WIDTHの参照が正しくできておらず、portのbit幅ミスマッチが検出されません。parse時には moduleSample の verilogFile の parsedDocument ではなく、parameter指定してparseしたほうの parsedDocument を参照する必要があり、それが見つからない場合はその時点でparameterつきinstanceの即時parseをしているはずです`
+  - **根本原因1 (即時 parse が `EditParse` 限定だった)**: `Verilog/Items/ModuleInstantiation.cs` の `ParseAsync` は `effectiveModule = sourceProjectProperty.GetInstancedBuildingBlock(moduleInstantiation)` で parameter override 版の parse 結果を引くが、`ProjectProperty.GetInstancedBuildingBlock` は **`file.GetInstancedParsedDocument(InstanceKey)` を引くだけで parse しない**。override 版が無いときに即時 parse する処理は `if (word.RootParsedDocument.ParseMode == ParseModeEnum.EditParse)` の中にしか無かった。LSP は `BackgroundParse` で parse するため **常に `effectiveModule == null`** になり、(a) インスタンス先モジュールのポート一覧が不明 → `checkPortConnection` (bit width / data type mismatch) が丸ごとスキップ、(b) パラメータは override されない宣言側の値で解決、という状態だった
+  - **根本原因2 (ordered 形式 `#(4)` の override が real pass で消える)**: `Verilog/ParameterValueAssignment.cs` の ordered parameter assignment 分支が `if (word.Prototype && expression != null)` で **prototype pass でしか `parameterOverrides` に登録していなかった**。real pass では override が空になり、`child #(4)` が既定値 (WIDTH=8) のまま解決されていた (named 形式 `.P_WIDTH(4)` は無条件に登録していたため非対称)
+  - **修正1 (`Verilog/Items/ModuleInstantiation.cs`)**: 即時 parse の条件を `ParseModeEnum.EditParse` から **`effectiveModule == null && baseFile != null && !word.Prototype && !word.IsPartialParse && word.Active && word.CompletionContext == null`** に変更。prototype / partial (autocomplete) / 非生成 generate 分岐 / code completion では従来どおり実行しない (未 elaborate の分岐でインスタンスを登録・全 parse してしまうのを防ぐ)
+  - **修正2 (`Verilog/ParameterValueAssignment.cs`)**: ordered parameter assignment の登録から `word.Prototype &&` を削除し、named 形式と同じく常に `parameterOverrides` に登録するよう変更
+  - **実測 (修正前 → 修正後)**: `verilog_sample/mySample/mod2.v` (`moduleSample #(.P_WIDTH( 5 )) SS (...)`、接続先は `wire [2:0] aaaa` / `wire [4:0] bb`) の診断
+    - 修正前: `bit width mismatch` なし (ポート幅が既定 8 のままなので比較が成立しない)
+    - 修正後: `line 15: bit width mismatch 5 <- 3` / `line 16: bit width mismatch 1 <- 5` を検出。`P_WIDTH=5` が反映され `AA` が 5bit として扱われている
+  - **回帰テスト追加 (`SystemVerilogLanguageServer.Tests/WorkspaceHierarchyTests.ParameterOverride_DrivesPortWidthCheck`)**: `leaf #(parameter P_WIDTH = 8) (output [P_WIDTH-1:0] AA, ...)` を named (`#(.P_WIDTH(5))`) と ordered (`#(5)`) の両形式で 3bit 信号に接続し、`publishDiagnostics` に `verilog/bit-width-mismatch-5-3` が両ファイルで出ることを assert。**修正を stash で戻すと失敗**することを実証 (JSON は `<-` が `\u003C` にエスケープされるため code (`verilog/bit-width-mismatch-5-3`) で判定)
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.Tests.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~Debug` **1137 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - コミット: CodeEditor2VerilogPlugin `353e9d2`、メイン `d57cb69` (submodule pointer + tests)
+  - **publish 未完了 (最重要)**: 稼働中の LSP サーバ (PID 27736) が `vscode-extension/server/*.dll` をロックして `dotnet publish` が MSB3027/MSB3021 で失敗し続けている。**この状態では VS Code 側の挙動は一切変わらない** (同梱の古いサーバが動き続ける)。**VS Code を完全に終了してから**:
+    `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=False`
+    その後 Reload Window して、`mod2.v` を開いた時点で (1) 全体に色が付く (2) `P_WIDTH` が 5 として解決される (3) port の bit 幅ミスマッチが波線で出る ことを確認
+  - メモ: 検証用プローブ (`DebugParamCheckProbe` / `DebugClickStateProbe` / `DebugClickInstanceProbe` / `DebugRebuildInstanceDiffProbe` / `DebugInstanceParseColorProbe`) は削除済み
+
+
 - **RTL Hierarchy でインスタンスノードをクリックすると色がおかしくなる (開いたファイルではなく親ファイルを parse していた)** → 修正完了 (ビルド成功 0 errors、テスト 1136 + sv-tests 1028 合格)
   - ユーザ報告: `mySample/PartialAssign.sv下のaabbのノードをクリックすると色がおかしくなります。おそらくparameter指定のinstanceのparse結果が見つからない場合に下層parseに行って、そこから後は色がついてない感じです`
   - **再現 (プローブは削除済み)**: 実ワークスペースで `PartialAssign.sv` → `aaabb` → `mod2.v` をクリックする流れを LSP 経由で再現。`textDocument/semanticTokens/full` が **クリック前 31 トークン → クリック後 11 トークン** に激減し、`module` / `mod2` / `input` / `CLK_I` / `RST_X_I` / `moduleSample` / `P_WIDTH` / `SS` / `AA` / `always` / `begin` / `end` / `endmodule` がすべて未着色になった。残ったのは `wire` / 数値 / `bb` / `aaaa` と 2 つのコメントだけ
