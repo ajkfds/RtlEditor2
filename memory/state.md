@@ -3,6 +3,81 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy のノードにエラー / 警告 / dirty バッジを表示 (RtlEditor の NavigatePanel 相当)** → 実装完了 (ビルド成功 0 errors、テスト 1142 + sv-tests 1028 合格、publish 更新)
+  - ユーザ要求: `RTL Hierachyのアイコンが単色かつmarkが入っていないのですが、これをRtlEditorで表示したときのように、エラーやwarning, dirtyの表示をすることは可能？まずは検討して` → `Cで実装して`
+  - **検討の結論 (案C: バッジを SVG に焼き込む)**: VS Code の `TreeItem.iconPath` は
+    **1 アイコン + 1 テーマ色**しか持てず、オーバーレイを描けない。したがって
+    「ベースアイコン + バッジ」を **合成した SVG アセット**として用意する方式を採用した
+    (動的合成はサーバにファイル書き込みとパス通知が必要になり、
+    `memory/vscode_extension_architecture.md` の「ファイル I/O は TS」原則にも反する)
+  - **デスクトップ版の挙動 (`NavigatePanel/VerilogFileNode.GetIcon`) を再現**:
+    - エラー → `exclamation_triangle.svg` を **左下**に赤でオーバーレイ
+    - 警告 → 同 **左下**に黄でオーバーレイ
+    - dirty → `shine.svg` を **右上**にオーバーレイ
+    - 同時に 1 つだけ、優先度は **error > warning > dirty** (if/else-if 連鎖)
+  - **実装1 (`SystemVerilogLanguageServer/RtlHierarchy.cs`)**: `HierarchyNode` と
+    `HierarchyNodeDescriptor` に `badge` (`JsonPropertyName("badge")`) を追加。
+    `iconColor` は「バッジ用アセットが無いクライアント向けのフォールバック」として残す
+  - **実装2 (`Server/InMemorySystemVerilogCore.cs`)**:
+    - `ResolveItemBadge(item)` 新設: `ErrorCount > 0` → `"error"` / `WarningCount > 0` → `"warning"` /
+      `CodeDocument.IsDirty` → `"dirty"` / それ以外 null。例外は握りつぶしてツリーを壊さない
+    - `InMemoryFile.IsDirty` / `SetDirty(bool)` 新設 (LSP ホストは編集中テキストをメモリに持つため、
+      didChange で true / didSave で false を記録する)
+    - `CreateDescriptor` で `Badge = ResolveItemBadge(item)` を設定
+  - **実装3 (`Server/LspHandler.cs`)**:
+    - `HandleDidChange` で `file.SetDirty(true)`、`HandleDidSave` で `mem.SetDirty(false)`
+    - `BuildFileNodes` (ファイルノード) で `HighestDiagnosticSeverity()` から
+      error → badge=`error` / warning → `warning` / それ以外で `IsDirty` なら `dirty` を設定
+    - `BuildFileNodes` (インスタンスノード) でも `Badge = child.Badge` を転送
+  - **実装4 (`vscode-extension/hierarchy.js`)**: `HierarchyItem.badge` 追加、
+    `_toItems` で転送、`getTreeItem` が `_resolveIconPath(element.icon, element.badge, iconColor)` を呼び、
+    `BADGES = new Set(['error','warning','dirty'])` に含まれる場合は
+    `icons/{icon}-{badge}.svg` / `-dark.svg` を選ぶ (無ければ従来どおり `icons/{icon}.svg`)
+  - **実装5 (アイコンアセット 42 個)**: `icons/` に `<base>-{error,warning,dirty}(-dark).svg` を生成
+    (7 ベース × 3 バッジ × light/dark)。ベースの `<path>` を保持したまま、
+    `<g transform="translate(x,y) scale(0.4375)">` でバッジ path を重ねる
+    - error: 左下 `translate(0,288)` + `#f14c4c` (赤)
+    - warning: 左下 `translate(0,288)` + `#cca700` (オレンジ)
+    - dirty: 右上 `translate(288,0)` + `#ffd24a` (黄)
+    - ダーク版はベースの塗り (`#c5c5c5`) を保持し、バッジ色は共通
+  - **実装6 (`vscode-extension/scripts/generate-badge-icons.js` 新規)**: 上記 42 個を再生成する
+    スクリプト (node が使えない環境のため、生成物は C# で等価実装して出力しコミット。
+    スクリプトと生成物が同一出力になることを機械検証済み)
+  - **実装7 (`vscode-extension/README.md`)**: RTL Hierarchy 節にバッジの説明
+    (error/warning は左下の三角、dirty は右上の輝き、優先度 error > warning > dirty、
+     `iconPath` の制約でアセットに焼き込んでいる旨、再生成コマンド) を追記
+  - **実測 (プローブ、実ワークスペース `mySample`)**:
+    | 状態 | ファイル | badge |
+    |---|---|---|
+    | 初期 | `PartialAssign.sv` (エラー) | **error** |
+    | 初期 | `mod2.v` (警告) | **warning** |
+    | 初期 | `moduleSample.v` (クリーン) | null |
+    | `moduleSample.v` を編集 | 同 | **dirty** |
+    | 同を保存 | 同 | null (解除) |
+    | `mod2.v` を編集 | 同 | **warning** (dirty より優先) |
+  - **検証 (機械チェック)**: `icons/` の 42 個すべてが
+    `viewBox="0 0 512 512"` / `width="16" height="16"` / `<g transform=...>` / バッジ色 を持ち、
+    `module-error.svg` はベース 2 path + バッジ 1 path = 3 path、
+    dark 版はベース `#c5c5c5` を保持。`hierarchy.js` は括弧バランス 0、
+    `generate-badge-icons.js` のパスデータが生成 SVG と一致することを確認 (すべて OK)
+  - **回帰テスト追加 (`WorkspaceHierarchyTests.HierarchyNodes_CarryBadge`)**:
+    エラーファイル → `badge="error"`、警告ファイル (`assign` の幅不一致) → `"warning"`、
+    クリーンなファイル → null。didChange で `"dirty"`、didSave で null に戻り、
+    警告ありのファイルは編集しても `"warning"` のまま (優先度) を assert
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj` 0 errors /
+    `dotnet build RtlEditor2.Desktop.csproj` 0 errors /
+    `dotnet test --filter FullyQualifiedName!~Debug` **1142 合格 / 0 失敗** /
+    `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - コミット: SystemVerilogLanguageServer `dedd035`、メイン `a33044c` (submodule pointer + icons 42 個 + scripts + hierarchy.js + README + tests)
+  - publish 更新済み (`vscode-extension/server`)
+  - Next: VS Code で Reload Window 後、RTL Hierarchy で
+    (1) エラーのあるファイル / instance に **赤い三角 (左下)**
+    (2) 警告のみのファイルに **オレンジの三角 (左下)**
+    (3) 編集中 (未保存) のファイルに **黄色い輝き (右上)**
+    が出ること、保存で dirty が消えること、ライト/ダーク両テーマで見えることを確認
+  - メモ: 検証用プローブ (`DebugBadgeProbe` / `DebugWarnCheckProbe`) と一時ツール (`_tmp_icons` / `_tmp_svgcheck`) は削除済み
+
+
 - **Messages ペインの severity が 1 段ずれる (LSP 1..4 と `vscode.DiagnosticSeverity` 0..3 の混同)** → 修正完了 (ビルド成功 0 errors、テスト 1141 + sv-tests 1028 合格)
   - ユーザ報告: `unused -> オレンジ三角 / size mismatch →青四角 / bit width mismatch → 赤丸 になってます`
   - **根本原因 (クライアント側の severity 解釈違い)**: サーバが送る LSP severity は正しかった (同梱バイナリを stdio 起動して実測):
