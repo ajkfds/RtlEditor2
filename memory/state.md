@@ -3,6 +3,29 @@
 
 ## 進行中タスク (最新)
 
+- **parameter 付き module instance 以下のコードに色が付かない (semantic tokens が重複していた)** → 修正完了 (ビルド成功 0 errors、テスト 1135 + sv-tests 1028 合格)
+  - ユーザ報告: `parameterつきmodule instanceのparseが正しくできてないようです。module instance以下の箇所が色がついてません。`
+  - **調査 (プローブは削除済み)**: 実ワークスペース `CodeEditor2VerilogPlugin/verilog_sample` (1083 ファイル) を LSP 経由で parse し、semantic tokens と未着色語を全ファイル走査。`mySample/mod2.v` (`.P_WIDTH ( 5 )` + `.AA ( aaaa )` 形式) の**パーサ出力・診断・色セグメントはすべて正常** (未着色語 0)、インスタンス形式 15 パターン (named/ordered パラメータ × named/ordered ポート、複数行、2 インスタンス、インスタンス配列、式パラメータ `2+2` / `$clog2(16)` / localparam 参照、instance 先が未定義) でも**構文解析はすべて成功**しインスタンス後続行も着色された。`ParseInstanceAsync` (parameter override 付き = instance を開いたとき) も正常。→ **parse の問題ではない**
+  - **根本原因 (`TextColors` に同一スパンの色が二重登録されている)**: 実パーサは同じスパンを複数回色付けする。`mod2.v` の実測 (`ColorSegmentAdapter.GetSegments`):
+    - `AA` (ポート名) → `Identifier` と `Net` が同一オフセット
+    - `aaaa` / `bb` (接続信号) → `Net` と `Identifier` が同一オフセット
+    - 宣言も宣言経路と identifier 経路の両方で色付け (例: `moduleSample` が 2 回、`P_WIDTH` が `Identifier` + `Parameter`)
+    - さらに行コメントの `HighLightedComment` が `Comment` と同一範囲で重複、3 行目などに `len=0` の空セグメントが多数
+  - **なぜ色が消えるか**: LSP の semantic tokens は「開始位置が昇順」「前のトークンと重ならない」が必須。重複トークンをそのまま送ると VS Code は
+    `[warning] Overlapping semantic tokens detected at lineNumber N, column M` を出して**そのトークンを捨てる** (実ログ `window6/renderer.log` に同警告あり)。結果として該当スパンが無色になる = 「instance 以下が色が付かない」という見え方になる
+  - **修正 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`)**: `GetTokens()` の両経路 (実パーサ色セグメント / lightweight fallback) の戻り値に `NormalizeTokens(...)` を適用
+    - `NormalizeTokens`: 開始オフセット昇順にソート (同一開始は「より具体的な型」優先 → 長いスパン優先) → 空スパン除去 → **前トークンの終端と重なるものを除去**
+    - `TokenTypePriority`: `Register(0) → Net(1) → Parameter(2) → Variable(3) → Type(4) → Function(5) → Macro(6) → Keyword(7) → Number(8) → String(9) → Comment(10) → Identifier(11)`。同一開始では具体的な型 (register / net / parameter) を残し、汎用の `Identifier` を落とす (エディタも宣言は具体的な型で描画するため見た目が一致する)
+  - **実測 (修正後)**: `mod2.v` は 44 → **31 トークン** (重複・重なり 0)、`moduleSample.v` 26、`PartialAssign.sv` 27。有効なスパンはすべて保持 (例: `P_WIDTH` は `parameter` 色、`AA` は `identifier`、`aaaa`/`bb` は `property`(=Net) 色)
+  - **回帰テスト追加 (`SystemVerilogLanguageServer.Tests/WorkspaceHierarchyTests.SemanticTokens_NoDuplicateOrOverlappingTokens`)**: parameter 付き instance (`.P_WIDTH ( 5 )` + `.AA ( aaaa )` 形式) の semantic tokens が (1) `deltaLine >= 0` (2) 重複開始なし (3) 長さ > 0 (4) 同一行で重なりなし (5) インスタンス後の `endmodule` が着色されている、を assert。**修正を stash で戻すと `duplicate start offset at 3:2` で失敗**することを実証
+  - 検証: `dotnet build SystemVerilogLanguageServer.Tests.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~Debug` **1135 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - コミット: SystemVerilogLanguageServer `0256022`、メイン `b0a392d` (submodule pointer + tests)
+  - **publish 未完了**: 稼働中の LSP サーバ (PID 17544) が `vscode-extension/server/*.dll` をロックして `dotnet publish` が MSB3027/MSB3021 で失敗。**VS Code を閉じてから** 再実行が必要:
+    `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=False`
+  - Next: VS Code を閉じて publish 更新 → Reload Window 後、parameter 付き module instance の下 (ポート接続・後続宣言・endmodule) まで色が付くこと、`Overlapping semantic tokens detected` の警告が消えることを確認
+  - メモ: 検証用プローブ (`DebugColorSegmentProbe` / `DebugDuplicateTokenProbe` / `DebugInstanceColorProbe` / `DebugParamInstanceTokenProbe` / `DebugRealTokensProbe` / `DebugRebuildPluginItemTreeProbe` / `DebugTokenIntegrityProbe`) は削除済み。既存の `SystemVerilogLanguageServer.Tests/Debug*.cs` は従来どおりコミットから除外
+
+
 - **VS Code 拡張の起動失敗 (extension host が exit code 134 / `exthost` フォルダ無し) の原因解析と修正** → 修正完了 (ビルド成功 0 errors)
   - ユーザ報告: `vscode extensionの起動に失敗しました。ログを解析して` → 続けて `修正して`
   - **一次情報** (`%APPDATA%\Code\logs\20261108T063619`)。`main.log` の拡張ホスト終了記録:
