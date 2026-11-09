@@ -84,10 +84,13 @@ Explorer container.
   File, Delete, Open in Explorer, Copy Path, Property, Reveal in Editor, Copy
   Instance Path (e.g. `u_mid.u_leaf`).
 - Icons come from the editor's own SVG assets (shipped in `icons/`, light and
-  dark variants): folders (`folder`, mirroring the editor's `FolderNode`), the
-  workspace root when several folders are open (`project`, the editor's
-  `ProjectNode` "home" icon), SystemVerilog / Verilog / header documents, module
-  and interface instances, imported packages.
+  dark variants): folders (`folder`, mirroring the editor's `FolderNode`, tinted
+  with `Global.Color_Folder` = `#556992`), the workspace root when several
+  folders are open (`project`, the editor's `ProjectNode` "home" icon, tinted
+  with `Global.Color_Project` = `#925555`), SystemVerilog / Verilog / header
+  documents, module and interface instances, imported packages.
+  Folder / project icons deliberately carry a colour (the editor tints them),
+  while the document / instance icons stay neutral grey.
 - **Node badges** mirror the editor's NavigatePanel: an exclamation triangle at
   the bottom-left for parse **errors** (red) or **warnings** (orange), and a
   shine at the top-right for **unsaved edits** (dirty). At most one badge is
