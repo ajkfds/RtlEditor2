@@ -21,8 +21,21 @@ const path = require('path');
 //
 // The tree uses the plugin's own SVG assets (copied into icons/) so the view
 // matches the desktop editor's NavigatePanel. Each icon ships in a light and a
-// dark variant: the plugin SVGs are filled with a fixed dark grey (#4b4b4b),
-// which is invisible on a dark theme, so the dark variant uses a light grey.
+// dark variant because one fill cannot read on both themes: the light variant
+// uses a saturated colour, the dark variant the same hue lifted towards white.
+//
+// The editor tints its NavigatePanel icons per kind, so the tree colours them
+// too instead of leaving every node a neutral grey:
+//
+//   folder                     #556992  (editor Global.Color_Folder)
+//   project                    #925555  (editor Global.Color_Project)
+//   module                     #4EC9B0  (teal, like a module declaration)
+//   interface                  #569CD6  (blue, like the interface keyword)
+//   package                    #C8A2E0  (violet)
+//   header                     #D7BA7D  (gold, include header)
+//   systemverilog-document     #3FA08F  (deep teal)
+//   verilog-document           #4A8FC0  (deep blue)
+//   verilog-header-document    #D7BA7D  (gold)
 //
 // The server sends a stable icon *name* ("folder" / "project" / "module" /
 // "interface" / "package" / "header" / "systemverilog-document" /

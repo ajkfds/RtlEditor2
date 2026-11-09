@@ -36,9 +36,16 @@ const BADGES = {
 
 // Base icon names the hierarchy server can return (see ResolveItemIcon and
 // BuildFileNodes in SystemVerilogLanguageServer).
+//
 // Folder / project (workspace directory and workspace root) are deliberately
 // absent: the editor's FolderNode / ProjectNode never draw the error / warning
 // / dirty overlays, so those icons have no badge variants.
+//
+// The base icons are COLOURED (one hue per kind, e.g. module = teal
+// #4EC9B0, interface = blue #569CD6, package = violet #C8A2E0, header =
+// gold #D7BA7D, documents a deeper shade of the same hue). This script only
+// re-composites the overlay onto whatever fill the base file already has, so
+// the colours stay a single source of truth in `icons/<icon>.svg`.
 const BASE_ICONS = [
     'module',
     'interface',

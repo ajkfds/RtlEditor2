@@ -84,13 +84,22 @@ Explorer container.
   File, Delete, Open in Explorer, Copy Path, Property, Reveal in Editor, Copy
   Instance Path (e.g. `u_mid.u_leaf`).
 - Icons come from the editor's own SVG assets (shipped in `icons/`, light and
-  dark variants): folders (`folder`, mirroring the editor's `FolderNode`, tinted
-  with `Global.Color_Folder` = `#556992`), the workspace root when several
-  folders are open (`project`, the editor's `ProjectNode` "home" icon, tinted
-  with `Global.Color_Project` = `#925555`), SystemVerilog / Verilog / header
-  documents, module and interface instances, imported packages.
-  Folder / project icons deliberately carry a colour (the editor tints them),
-  while the document / instance icons stay neutral grey.
+  dark variants) and are **coloured per kind** the way the editor's NavigatePanel
+  tints them:
+  | icon | colour (light) | meaning |
+  |---|---|---|
+  | `folder` | `#556992` (blue) | a directory (`Global.Color_Folder`) |
+  | `project` | `#925555` (red) | the workspace root when several folders are open (`Global.Color_Project`) |
+  | `module` | `#4EC9B0` (teal) | a module instance |
+  | `interface` | `#569CD6` (blue) | an interface instance |
+  | `package` | `#C8A2E0` (violet) | an imported package |
+  | `header` | `#D7BA7D` (gold) | an include header |
+  | `systemverilog-document` | `#3FA08F` (deep teal) | a `.sv` file |
+  | `verilog-document` | `#4A8FC0` (deep blue) | a `.v` file |
+  | `verilog-header-document` | `#D7BA7D` (gold) | a `.svh` / `.vh` file |
+
+  Each icon has a matching `-dark` variant (same hue, lifted towards white) so
+  the colour stays legible on a dark theme.
 - **Node badges** mirror the editor's NavigatePanel: an exclamation triangle at
   the bottom-left for parse **errors** (red) or **warnings** (orange), and a
   shine at the top-right for **unsaved edits** (dirty). At most one badge is

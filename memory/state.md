@@ -3,6 +3,50 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy の全ノードアイコンに色を付ける (module / interface / package / header / document)** → 実装完了 (ビルド成功 0 errors、テスト 136 合格、全 60 SVG を機械検証、コミット済み)
+  - ユーザ要求: `他のmodule/systemverilog moduleのアイコンにも色をつけて`
+  - 原因: 同梱アイコン (`vscode-extension/icons/*.svg`) は **すべてベース fill が中立グレー固定**
+    (light `#4b4b4b` / dark `#c5c5c5`) だった。デスクトップ版の NavigatePanel は種類ごとに色を付けている
+    (`FolderNode` = Color_Folder / `ProjectNode` = Color_Project / `VerilogFileNode.GetIcon` = Color_Verilog /
+    header・package = 水色) ため、VS Code 側だけ全ノードが無彩色に見えていた
+  - **配色の決定方針**: デスクトップ版の `Color_Verilog` は RGB(124,140,140) のほぼグレーで「色を付ける」要件に合わないため、
+    プラグインの構文色パレット (`CodeDrawStyle`) の色相を流用し、種類ごとに 1 色を割り当てた
+    | icon | light | dark | 意味 |
+    |---|---|---|---|
+    | folder | `#556992` | `#8fa8d9` | ディレクトリ (editor `Global.Color_Folder`) |
+    | project | `#925555` | `#d69a9a` | 複数ルート時のワークスペースルート (editor `Global.Color_Project`) |
+    | module | `#4EC9B0` | `#7FE0CE` | module instance (teal = module 宣言色) |
+    | interface | `#569CD6` | `#8FC4EE` | interface instance (blue = interface keyword 色) |
+    | package | `#C8A2E0` | `#E0C6F5` | imported package (violet) |
+    | header | `#D7BA7D` | `#EBD3A5` | include header (gold) |
+    | systemverilog-document | `#3FA08F` | `#6CC9B5` | `.sv` ファイル (deep teal) |
+    | verilog-document | `#4A8FC0` | `#7FB8E0` | `.v` ファイル (deep blue) |
+    | verilog-header-document | `#D7BA7D` | `#EBD3A5` | `.svh` / `.vh` ファイル (gold) |
+  - 変更1 (アイコン 56 ファイル = 7 ベース × 4 種 × light/dark を一括着色): ベースの fill のみを差し替え、
+    **バッジのオーバーレイ色 (error `#f14c4c` / warning `#cca700` / dirty `#ffd24a`) は変更しない**
+    (異なる hex なので置換対象にならない)。一時 C# ツールで実行し、削除済み
+  - 変更2 (`vscode-extension/hierarchy.js`): アイコン節のコメントを「グレー固定」から
+    「種類ごとに着色 / light は彩度高め・dark は同色相を明るく」に書き換え、色表を記載
+  - 変更3 (`vscode-extension/scripts/generate-badge-icons.js`): `BASE_ICONS` のコメントに
+    「ベースアイコンは着色済み。スクリプトはベースの fill をそのまま引き継いでバッジを合成するだけなので、
+    色の単一情報源は `icons/<icon>.svg`」と明記 (色の二重管理なし)
+  - 変更4 (`vscode-extension/README.md`): RTL Hierarchy 節のアイコン説明を色表 (icon / colour / meaning) に置き換え、
+    `-dark` 版は同色相を明るくしたものと明記
+  - **検証 (使い捨て C# ツール、削除済み)**: 全 60 SVG (folder/project 4 + 7 ベース ×4 種 ×2 テーマ = 56) について
+    (1) `<svg>` / `16x16` / `viewBox 512` が揃う (2) 期待するベース色を持つ (3) 中立グレー `#4b4b4b` / `#c5c5c5` が残っていない
+    (4) バッジ付きはバッジ色を保持し `<g transform>` を持つ / バッジ無しは持たない
+    (5) path 数が期待どおり (module=2 / package=3 / 他=1、バッジで +1) (6) 全ベース path が着色済み
+    → **60 ファイル 0 失敗**
+  - 検証: `dotnet build SystemVerilogLanguageServer.Tests.csproj -clp:ErrorsOnly` 0 errors /
+    `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **136 合格 / 0 失敗**
+  - Next: VS Code で Reload Window 後、RTL Hierarchy の
+    (1) module instance が teal (2) interface instance が blue (3) package が violet (4) header が gold
+    (5) `.sv` / `.v` ファイルが deep teal / deep blue で表示されること、
+    エラー / 警告 / dirty バッジが従来どおり重なること、ライト / ダーク両テーマで読めることを確認。
+    アイコンは拡張側 (`vscode-extension/icons/`) のため **publish 不要** (Reload Window のみで反映)
+  - メモ: 一時ツール (`_tmp_iconcolor` / `_tmp_svgcheck`) は削除済み。`CodeEditor2` と
+    `SystemVerilogLanguageServer` の modified はユーザのローカル変更のためコミットから除外
+
 - **RTL Hierarchy の Project / Folder ノードにアイコンを追加** → 実装完了 (ビルド成功 0 errors、テスト 136 合格、コミット済み)
   - ユーザ要求: `vscode extensionのRtlHierarchyに対してProject/Folder Nodeのiconを追加して`
   - 原因: `folder` ノードはサーバが `Icon = "folder"` を返していたが、拡張の `ICON_NAMES` (同梱 SVG 名の集合) に `folder` が無かったため
