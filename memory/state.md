@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **module instance の出力ポート経由の二重駆動チェックが効いていない** → 修正完了 (ビルド成功 0 errors、テスト 136 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: `module instanceの出力ポートの二重駆動チェックが効いてない気がします。output portで信号を二重駆動するとエラーを出してほしい`
+  - **再現 (プローブ、削除済み)**: 修正前は二重駆動がすべて無警告だった
+    | ケース | 修正前 | 修正後 |
+    |---|---|---|
+    | 2 instance の output を同じ net へ (named `.o(w)`) | **診断なし** | `'w' is driven by multiple module instance output ports` |
+    | 2 instance の output を同じ net へ (ordered `u1(w, a)`) | **診断なし** | 同上 |
+    | output port + `assign w = a;` | **診断なし** | `'w' has multiple continuous assignments` |
+    | output port + `always_comb w = a;` | **診断なし** | `'w' is assigned by both a continuous and a procedural assignment` |
+    | 単一 instance (control) | 診断なし | 診断なし (誤検出なし) |
+  - **根本原因 (`ModuleInstantiation.connectPort` の output 分岐)**: output ポート接続時に `expression.AssertAssigned()` を呼ぶだけで、**二重駆動チェックを一切呼んでいなかった**。`AssertAssigned()` は `DataObject.AssignedMap` を埋めるだけ (undriven notice 用) で、`ContinuousAssigned` / `ContinuousAssignedMap` / `ProceduralAssigned` には触れない。二重駆動の判定ロジックは `ContinuousAssign.checkContinuousAssignmentConflict` にしか存在せず、`assign` 文の経路からしか呼ばれていなかった。output ポートは連続代入と同じく接続信号をドライブする (IEEE 1800-2017 6.5 / 23.3.3) ため、この経路にも同じ判定が必要だった
+  - 修正1 (`CodeEditor2VerilogPlugin/Verilog/Items/ContinuousAssign.cs`): `checkContinuousAssignmentConflict` を `private` → `internal` 化し、**メッセージ差し替えオーバーロード** `checkContinuousAssignmentConflict(word, netLValue, string? multipleDriveMessage)` を新設 (既存 2 引数版は `null` を渡す薄いラッパ)。「既にドライブ済み」の報告文だけを呼び出し元が指定できるようにした (procedural 混在の判定は共通)
+  - 修正2 (`CodeEditor2VerilogPlugin/Verilog/Items/ModuleInstantiation.cs` `connectPort` の output 分岐): `AssertAssigned()` の直後に `ContinuousAssign.checkContinuousAssignmentConflict(word, expression, "'<name>' is driven by multiple module instance output ports")` を追加。`!word.Prototype && word.CompletionContext == null` の real pass のみで実行 (prototype / partial parse の共有 name space 汚染を防止)
+  - 回帰テスト追加 (`SystemVerilogLanguageServer.Tests/WorkspaceHierarchyTests`, 4 件): `OutputPorts_DrivingTheSameNet_IsReported` (named) / `OutputPorts_OrderedConnection_DrivingTheSameNet_IsReported` (ordered) / `OutputPort_AndContinuousAssign_OnTheSameNet_IsReported` / `SingleOutputPort_IsNotReported` (誤検出防止)。**修正を stash で戻すと 3 件が `Collection: ["unused", "undriven"]` 等で失敗**することを実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **136 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - コミット: CodeEditor2VerilogPlugin `97f483c`、メイン `fa2527e` (submodule pointer + WorkspaceHierarchyTests.cs)
+  - Next: VS Code で Reload Window 後、2 つの instance の output を同じ net に接続したファイルで波線が出ることを確認。**publish 更新が必要** (`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`)
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/DebugDoubleDriveProbe.cs`) は削除済み。`CodeEditor2` の modified は本タスク外のユーザ変更のためコミットから除外
+  - 残課題 (本タスク外・要判断): `inout` ポートは `outPort = true` として同じ経路を通るため二重駆動として報告される。双方向ポートは複数ドライブが合法な場合もあるため、必要なら `inout` を除外する調整が要る
+
 - **`include` を module 本体の中に書くと必ずエラーになる (`illegal module item`)** → 修正完了 (ビルド成功 0 errors、テスト 140 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: `verilog parserで`includeしたときにエラーがでます`
   - **再現 (プローブ、削除済み)**: LSP ホスト / `CoreBridge.ParseEngine` の両方で同じ結果。`include` の位置だけが分岐点だった
