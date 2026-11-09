@@ -1889,6 +1889,135 @@ public class WorkspaceHierarchyTests : IDisposable
             m => m.Contains("bit width mismatch", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Two module instances connecting their OUTPUT ports to the same net is a
+    /// multiple drive and must be reported.
+    ///
+    /// <para>
+    /// An output port drives the connected signal exactly like a continuous
+    /// assignment (IEEE 1800-2017 6.5 / 23.3.3), but the port-connection path
+    /// only called <c>AssertAssigned()</c> (which fills AssignedMap for the
+    /// "undriven" notice) and never ran the multiple-drive check, so a double
+    /// drive through output ports produced no diagnostic at all.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OutputPorts_DrivingTheSameNet_IsReported()
+    {
+        File.WriteAllText(Path.Combine(_root, "child.sv"),
+            "module child (output o, input i);\n  assign o = i;\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  wire w;\n  wire a, b;\n  child u1(.o(w), .i(a));\n  child u2(.o(w), .i(b));\nendmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new
+            {
+                uri = topUri,
+                languageId = "systemverilog",
+                version = 1,
+                text = File.ReadAllText(Path.Combine(_root, "top.sv")),
+            },
+        });
+
+        Assert.Contains(DiagnosticMessages(core, topUri),
+            m => m.Contains("multiple module instance output ports", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The ordered form (<c>inst(w, a)</c>) must report the same double drive
+    /// as the named form.
+    /// </summary>
+    [Fact]
+    public void OutputPorts_OrderedConnection_DrivingTheSameNet_IsReported()
+    {
+        File.WriteAllText(Path.Combine(_root, "child.sv"),
+            "module child (output o, input i);\n  assign o = i;\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  wire w;\n  wire a, b;\n  child u1(w, a);\n  child u2(w, b);\nendmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new
+            {
+                uri = topUri,
+                languageId = "systemverilog",
+                version = 1,
+                text = File.ReadAllText(Path.Combine(_root, "top.sv")),
+            },
+        });
+
+        Assert.Contains(DiagnosticMessages(core, topUri),
+            m => m.Contains("multiple module instance output ports", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// An output port plus a continuous assignment on the same net is also a
+    /// multiple drive (the existing continuous-assignment wording is reused).
+    /// </summary>
+    [Fact]
+    public void OutputPort_AndContinuousAssign_OnTheSameNet_IsReported()
+    {
+        File.WriteAllText(Path.Combine(_root, "child.sv"),
+            "module child (output o, input i);\n  assign o = i;\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  wire w;\n  wire a;\n  child u1(.o(w), .i(a));\n  assign w = a;\nendmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new
+            {
+                uri = topUri,
+                languageId = "systemverilog",
+                version = 1,
+                text = File.ReadAllText(Path.Combine(_root, "top.sv")),
+            },
+        });
+
+        Assert.Contains(DiagnosticMessages(core, topUri),
+            m => m.Contains("multiple continuous assignments", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// A single instance driving a net must stay clean: the new check must not
+    /// report a false positive on the ordinary case.
+    /// </summary>
+    [Fact]
+    public void SingleOutputPort_IsNotReported()
+    {
+        File.WriteAllText(Path.Combine(_root, "child.sv"),
+            "module child (output o, input i);\n  assign o = i;\nendmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n  wire w;\n  wire a;\n  child u1(.o(w), .i(a));\nendmodule\n");
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new
+            {
+                uri = topUri,
+                languageId = "systemverilog",
+                version = 1,
+                text = File.ReadAllText(Path.Combine(_root, "top.sv")),
+            },
+        });
+
+        List<string> messages = DiagnosticMessages(core, topUri);
+        Assert.DoesNotContain(messages, m => m.Contains("multiple module instance output ports", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(messages, m => m.Contains("multiple continuous assignments", StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>Diagnostic messages the server currently holds for a file.</summary>
     private static List<string> DiagnosticMessages(InMemorySystemVerilogCore core, string uri)
     {
