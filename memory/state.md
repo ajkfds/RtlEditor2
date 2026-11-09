@@ -3,6 +3,25 @@
 
 ## 進行中タスク (最新)
 
+- **`include` を module 本体の中に書くと必ずエラーになる (`illegal module item`)** → 修正完了 (ビルド成功 0 errors、テスト 140 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: `verilog parserで`includeしたときにエラーがでます`
+  - **再現 (プローブ、削除済み)**: LSP ホスト / `CoreBridge.ParseEngine` の両方で同じ結果。`include` の位置だけが分岐点だった
+    | ケース | 診断 |
+    |---|---|
+    | ファイルスコープ (`include` が module の外) | エラーなし (undriven / unused のみ) |
+    | **module 本体の中** | **`illegal module item`** + `unsupported macro call` (マクロ未展開) |
+    | package / interface 本体の中 | `illegal package item` / `illegal interface item` |
+    | 拡張子 `.inc` / `.h` | `file not found` (プロジェクト item tree に未登録の拡張子のため) |
+    | `<...>` 形式 | `" expected` (BNF 上 `include` は二重引用符のみ。仕様どおり) |
+  - **根本原因 (`WordScanner.diveIntoIncludeFile` の非 prototype 経路)**: module 本体の `include` は **prototype pass でも走る**ため、prototype が `VerilogHeaderInstance` を `ParsedDocument.IncludeFiles` に登録する。real pass はそのインスタンスを見つけて `vhInstance.VerilogParsedDocument` を読むが、この getter は `InstanceTextFile.ParsedDocument` → `SourceVerilogFile.GetInstancedParsedDocument(_getKey())` 経由で **ソースファイルのインスタンス parse テーブル**を引く。一方 `addIncludeFile` はインスタンス自身の `_parsedDocument` にしか設定せず、そのテーブルへは登録しない → **常に null**。結果 `if (newParsedDocument == null) return;` で include 本体を読まずに戻り、スキャナがファイル名トークン (文字列リテラル) 上に残って module が `illegal module item` を報告していた。ファイルスコープの include は prototype pass が走らないためこの経路に入らず、正常だった (症状が「module 内だけ」な理由)
+  - 修正 (`CodeEditor2VerilogPlugin/Verilog/WordScanner.cs` `diveIntoIncludeFile`): `vhInstance != null` でも `VerilogParsedDocument == null` なら `addIncludeFile(...)` で **その場で parse する**フォールバックを追加 (経緯コメント付き)。`ParsedDocument? newParsedDocument = null;` で初期化 (CS0165 回避)
+  - 回帰テスト追加 (`SystemVerilogLanguageServer.Tests/IncludeResolutionTests.IncludeInsideModuleBody_Resolves`): `module top;` の中に `` `include "defs.svh" `` を書き、`illegal module item` / `file not found` / `unsupported macro call` が出ないことを assert。**修正を stash で戻すと `Collection: ["illegal module item", "unsupported macro call", "undriven", "unused"]` で失敗**することを実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **140 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - コミット: CodeEditor2VerilogPlugin `360651a`、メイン `79c2743` (submodule pointer + IncludeResolutionTests.cs)
+  - Next: VS Code で Reload Window 後、module 本体に `include` を書いたファイルで波線が出ないこと / include 先のマクロが展開されることを確認。**publish 更新が必要** (`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`)
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/DebugIncludeProbe*.cs` 9 個) は削除済み。`CodeEditor2` の modified は本タスク外のユーザ変更のためコミットから除外
+  - 残課題 (本タスク外・要判断): `.inc` / `.h` など `.svh`/`.vh` 以外の拡張子は `InMemorySystemVerilogCore.GetOrCreatePluginItem` が `VerilogFile` として登録するが、`LspHandler.ScanWorkspaceFiles` の対象拡張子が `.sv/.svh/.v/.vh` のみのため **ワークスペーススキャンで登録されず** `file not found` になる。対応するならスキャン対象拡張子の追加が必要
+
 - **scr1/src/top/scr1_top_axi.sv の 2〜6 行目に色が付かない (ファイル先頭のコメントヘッダが1行目しか着色されない)** → 修正完了 (ビルド成功 0 errors、テスト 116 + sv-tests 1028 合格、publish 更新、コミット済み)
   - ユーザ報告: `scr1/src/top/scr1_top_axi.sv の2-6行目までが色がつきません`
   - **実測 (プローブ、削除済み)**: `pluginVerilog.CodeDocument.TextColors` を直接検査した結果
