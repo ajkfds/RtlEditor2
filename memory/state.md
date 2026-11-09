@@ -3,6 +3,36 @@
 
 ## 進行中タスク (最新)
 
+- **module instance の出力ポート二重駆動チェックが再び「エラーが出ない」と報告される** → 再調査完了、原因は同梱サーババイナリが古かったこと (publish 更新のみ、コード変更なし)
+  - ユーザ報告: `module instanceのoutput portでの駆動が複数重複した場合にエラーがでるべきですが、エラーがでてないです`
+  - **調査 (プローブ 3 種、すべて削除済み)**:
+    - `DebugDoubleDriveProbe` (in-process, LSP 経由) で 30 ケースのバリエーションを実測 → **ほぼ全ケースで検出済み**
+      | ケース | 結果 |
+      |---|---|
+      | 別ファイル / 同一ファイル (前方・後方定義) / ベクタ net / logic 変数 / implicit net | 検出 |
+      | ordered 接続 / 1 文に 2 instance / 3 instance / 別モジュール | 検出 |
+      | `output reg` / 非 ANSI ポート / parameterised child / package 同居 / subdir | 検出 |
+      | generate if 内 / ネストした mid.sv | 検出 |
+      | **instance array (`child u1[1:0](...)`)** | **未検出 (既知の制限、parser が 1 回しか展開しない)** |
+      | **generate for ループ (`for(genvar i...)`)** | **未検出 (同上、`not defined here` のみ)** |
+      | 親の output ポート + 子 output / 互いに素な `w[0]`,`w[1]` | 未検出 (**正当**。親出力ポートは伝播ポート、部分選択は合法) |
+    - `DebugBundledServerProbe` (同梱 DLL のバイナリ検査): **`vscode-extension/server/CodeEditor2VerilogPlugin.dll` に修正メッセージ文字列が含まれていなかった**
+      - 同梱 DLL: size=1178112 / mtime=**2026-11-08 22:19Z** → message **False**
+      - bin/Debug DLL: size=1384448 / mtime=2026-11-09 14:50Z → message **True**
+      - 修正コミット `97f483c` は **2026-11-09 23:26 +0900** → 同梱バイナリは確かに修正前のビルド
+  - **根本原因**: コードの修正 (`connectPort` の output 分岐から `checkContinuousAssignmentConflict` を呼ぶ) は正しく入っていたが、**VS Code 拡張が使う同梱サーバ (`vscode-extension/server/`) が修正前のビルドのまま**だった。拡張は同梱サーバを優先使用するため、いくらソースが直っていてもクライアント側の動作は変わらなかった (state.md の既出記録「publish 更新が必要」と同じ落とし穴)
+  - **修正**: `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=false` で同梱バイナリを更新 (コード変更なし)
+  - **検証**:
+    - publish 後の同梱 DLL: size=1178624 / mtime=2026-11-09 14:59Z / message **True**
+    - `DebugBundledE2EProbe` (**同梱サーバを stdio 起動**し VS Code と同一手順で didOpen → publishDiagnostics 受信): `{"severity":1,"code":"verilog/w-is-driven-by-multiple-module-i","message":"'w' is driven by multiple module instance output ports"}`
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **135 合格 / 0 失敗**
+    - `dotnet test --filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - Next: VS Code で Reload Window 後、2 つの instance の output を同じ net に接続したファイルで波線 + Problems パネルにエラーが出ることを確認
+  - メモ: 検証用プローブ (`DebugDoubleDriveProbe` / `DebugBundledServerProbe` / `DebugBundledE2EProbe`) は削除済み。`CodeEditor2` (modified) は本タスク外のユーザ変更のためコミットから除外。`vscode-extension/server/` は .gitignore 対象のためコミット対象外
+  - 残課題 (本タスク外・要判断): instance array / generate for ループ内の同一 instance は 1 回しか展開されないため二重駆動を検出できない (parser がループを unroll しない設計による)
+
+
 - **module instance の出力ポート経由の二重駆動チェックが効いていない** → 修正完了 (ビルド成功 0 errors、テスト 136 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: `module instanceの出力ポートの二重駆動チェックが効いてない気がします。output portで信号を二重駆動するとエラーを出してほしい`
   - **再現 (プローブ、削除済み)**: 修正前は二重駆動がすべて無警告だった
