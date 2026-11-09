@@ -12,7 +12,13 @@
     `ProjectNode` → `CodeEditor2/Assets/Icons/home.svg` を `Color_Project` (146,85,85) で描画
   - 変更1 (アイコンアセット 4 個新規): `vscode-extension/icons/folder.svg` / `folder-dark.svg` /
     `project.svg` / `project-dark.svg`。プラグイン SVGS を 16x16 viewBox 512 に合わせて同梱
-    (light は #4b4b4b 系、dark は #c5c5c5 系。project は FolderNode の home polygon を #925555 / #d69a9a で着色)
+    - **folder**: デスクトップ版 `FolderNode` の `Global.Color_Folder` = RGB(85,105,146) = `#556992` (青系) で着色
+      (dark 版はダークテーマで見えるよう明るめの `#8fa8d9`)
+    - **project**: `ProjectNode` の `Global.Color_Project` = RGB(146,85,85) = `#925555` (赤系) / dark は `#d69a9a`
+  - 追加修正 (ユーザ報告「アイコンに色がついてないです」): 初回実装では folder.svg の fill を他アイコンと同じ
+    `#4b4b4b` (ダークグレー) にしていたため **色が付いていないように見えていた**。`Color_Folder` の青に修正した。
+    なお editor 側で色として目立つのは folder (青) / project (赤) のみで、document / module / interface は
+    `Global.Color_Verilog` = `#7C8C8C` (ほぼグレー) のため、VS Code 側もこの 2 種だけ色を付けている
   - 変更2 (`SystemVerilogLanguageServer/Server/LspHandler.cs` `BuildFolderNodes`):
     複数ルート時のワークスペースルートノードの `Icon` を `"folder"` → **`"project"`** に変更
     (単一ルート時は中身を直下に並べるためルートノード自体が出ない = 挙動不変)。
