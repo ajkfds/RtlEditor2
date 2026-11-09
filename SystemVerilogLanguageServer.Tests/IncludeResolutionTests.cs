@@ -136,6 +136,49 @@ public class IncludeResolutionTests : IDisposable
     }
 
     /// <summary>
+    /// An include written INSIDE a module body must resolve too.
+    ///
+    /// <para>
+    /// A file-scope include is parsed only by the real pass, but an include
+    /// inside a design element is also seen by the prototype pass, which
+    /// registers a <c>VerilogHeaderInstance</c> for that position. The real
+    /// pass then found that instance and read
+    /// <c>VerilogHeaderInstance.VerilogParsedDocument</c>, which resolves
+    /// through the SOURCE file's instanced-parse table
+    /// (<c>VerilogFile.GetInstancedParsedDocument</c>) - a table
+    /// <c>addIncludeFile</c> never fills (it only assigns the instance's own
+    /// <c>_parsedDocument</c>). The document was therefore always null, the
+    /// method returned without consuming the file-name token, and the module
+    /// reported "illegal module item" for the include line.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void IncludeInsideModuleBody_Resolves()
+    {
+        string topPath = Path.Combine(_root, "rtl", "top.sv");
+        string headerPath = Path.Combine(_root, "rtl", "defs.svh");
+        File.WriteAllText(headerPath, "`define WIDTH 8\n");
+        string topText =
+            """
+            module top;
+            `include "defs.svh"
+                logic [`WIDTH-1:0] data;
+            endmodule
+            """;
+        File.WriteAllText(topPath, topText);
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        DidOpen(handler, topPath, topText);
+
+        List<string> diagnostics = DiagnosticsOf(core, topPath);
+        Assert.DoesNotContain(diagnostics, m => m.Contains("illegal module item", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(diagnostics, m => m.Contains("file not found", StringComparison.OrdinalIgnoreCase));
+        // the macro from the header must have been expanded (no "unsupported macro call")
+        Assert.DoesNotContain(diagnostics, m => m.Contains("unsupported macro call", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
     /// A header that does not exist must still be reported: the fix must not
     /// silence the diagnostic by resolving anything.
     /// </summary>
