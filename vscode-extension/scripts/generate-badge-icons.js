@@ -36,6 +36,9 @@ const BADGES = {
 
 // Base icon names the hierarchy server can return (see ResolveItemIcon and
 // BuildFileNodes in SystemVerilogLanguageServer).
+// Folder / project (workspace directory and workspace root) are deliberately
+// absent: the editor's FolderNode / ProjectNode never draw the error / warning
+// / dirty overlays, so those icons have no badge variants.
 const BASE_ICONS = [
     'module',
     'interface',

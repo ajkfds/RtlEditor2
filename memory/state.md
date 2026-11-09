@@ -3,6 +3,49 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy の Project / Folder ノードにアイコンを追加** → 実装完了 (ビルド成功 0 errors、テスト 136 合格、コミット済み)
+  - ユーザ要求: `vscode extensionのRtlHierarchyに対してProject/Folder Nodeのiconを追加して`
+  - 原因: `folder` ノードはサーバが `Icon = "folder"` を返していたが、拡張の `ICON_NAMES` (同梱 SVG 名の集合) に `folder` が無かったため
+    `_resolveIconPath` が codicon フォールバック (`ThemeIcon('folder')`) に落ちていた (SVG アセット自体も未同梱)。
+    さらに複数ルート時のワークスペースルートノードも同じ `"folder"` で、デスクトップ版の `ProjectNode` (home アイコン) と区別できていなかった
+  - デスクトップ版の対応関係を再現: `FolderNode` → `CodeEditor2/Assets/Icons/folder.svg` を `Color_Folder` (85,105,146) で描画 /
+    `ProjectNode` → `CodeEditor2/Assets/Icons/home.svg` を `Color_Project` (146,85,85) で描画
+  - 変更1 (アイコンアセット 4 個新規): `vscode-extension/icons/folder.svg` / `folder-dark.svg` /
+    `project.svg` / `project-dark.svg`。プラグイン SVGS を 16x16 viewBox 512 に合わせて同梱
+    (light は #4b4b4b 系、dark は #c5c5c5 系。project は FolderNode の home polygon を #925555 / #d69a9a で着色)
+  - 変更2 (`SystemVerilogLanguageServer/Server/LspHandler.cs` `BuildFolderNodes`):
+    複数ルート時のワークスペースルートノードの `Icon` を `"folder"` → **`"project"`** に変更
+    (単一ルート時は中身を直下に並べるためルートノード自体が出ない = 挙動不変)。
+    `BuildDirectoryNodes` のサブフォルダは従来どおり `"folder"`
+  - 変更3 (`vscode-extension/hierarchy.js`):
+    - `ICON_NAMES` に `folder` / `project` を追加 (同梱 SVG として解決される)
+    - `ICON_FALLBACKS` に `project: 'home'` を追加 (SVG が無い環境向け)
+    - `NO_BADGE_ICONS = {'folder','project'}` と `BADGEABLE_ICONS` (ICON_NAMES から NO_BADGE_ICONS を除いたもの) を新設。
+      `_resolveIconPath` は `BADGEABLE_ICONS` のときだけ `icons/<icon>-<badge>.svg` を選ぶ
+      (folder/project はバッジ変種を同梱しないため。存在しないパスを返すと VS Code はアイコンを描画しない)
+    - `_resolveIconPath` の doc コメントを更新
+  - 変更4 (`vscode-extension/scripts/generate-badge-icons.js`): `BASE_ICONS` は 7 種のまま維持し、
+    「folder / project はバッジ変種を持たない (editor の FolderNode / ProjectNode がバッジを描かないため)」旨をコメントで明記
+  - 変更5 (`vscode-extension/README.md`): RTL Hierarchy 節のアイコン説明に folder / project を追加し、
+    folder/project はバッジ変種を持たないことを明記
+  - 変更6 (`SystemVerilogLanguageServer/RtlHierarchy.cs`): `HierarchyNode.Icon` / `HierarchyNodeDescriptor.Icon` の
+    doc コメントに `"folder"` / `"project"` の意味を追記 (クライアント側の対応付けの根拠)
+  - 変更7 (回帰テスト 2 件):
+    - `StandardLspFeatureTests.FolderNode_ExpandToken_ExpandsToItsContents` に
+      「ディレクトリの icon が `folder` であること」の assert を追加
+    - `StandardLspFeatureTests.WorkspaceRootNodes_CarryTheProjectIcon` を新設 (2 ルートで initialize →
+      ルートノード 2 個が `icon="project"` / 内側の `rtl` フォルダが `icon="folder"` であることを assert)
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors /
+    `dotnet build SystemVerilogLanguageServer.Tests.csproj -clp:ErrorsOnly` 0 errors /
+    `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **136 合格 / 0 失敗**
+  - メモ: `node` がコマンド許可リスト外のため `node --check` / アイコン生成スクリプトは実行できず。
+    生成 SVG は generator と同一形式で手書きし、`BADGEABLE_ICONS` は ICON_NAMES から導出して二重管理を回避
+  - Next: VS Code で Reload Window 後、RTL Hierarchy の
+    (1) フォルダノードにフォルダ アイコン (青系) が出ること
+    (2) 複数フォルダを開いたときワークスペースルートが home アイコン (赤系) になること
+    (3) ライト / ダーク両テーマで見えること
+    を確認。**publish 更新が必要** (`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=false`)
+
 - **module instance の出力ポート二重駆動チェックが再び「エラーが出ない」と報告される** → 再調査完了、原因は同梱サーババイナリが古かったこと (publish 更新のみ、コード変更なし)
   - ユーザ報告: `module instanceのoutput portでの駆動が複数重複した場合にエラーがでるべきですが、エラーがでてないです`
   - **調査 (プローブ 3 種、すべて削除済み)**:

@@ -470,6 +470,9 @@ public class StandardLspFeatureTests : IDisposable
         Assert.Equal("rtlFolder", folderNode.GetProperty("contextValue").GetString());
         Assert.Equal("collapsed", folderNode.GetProperty("collapsible").GetString());
         Assert.True(folderNode.GetProperty("hasChildren").GetBoolean());
+        // a directory uses the editor's FolderNode icon; the extension ships
+        // icons/folder.svg (-dark) so the tree is not left with a codicon
+        Assert.Equal("folder", folderNode.GetProperty("icon").GetString());
 
         string token = folderNode.GetProperty("expandToken").GetString() ?? "";
         Assert.False(string.IsNullOrEmpty(token), "folder node must carry an expand token");
@@ -482,6 +485,71 @@ public class StandardLspFeatureTests : IDisposable
             if (c.GetProperty("label").GetString() == "rtl") { foundRtl = true; break; }
         }
         Assert.True(foundRtl, "expected the nested 'rtl' folder");
+    }
+
+    [Fact]
+    public void WorkspaceRootNodes_CarryTheProjectIcon()
+    {
+        // With several folders open each root becomes its own node. That node
+        // stands for the project, so it uses the editor's ProjectNode icon
+        // ("home" in Color_Project) rather than the plain folder icon, while
+        // the directories inside it stay "folder". The extension ships
+        // icons/project.svg (-dark) and icons/folder.svg (-dark).
+        string second = Path.Combine(_root, "second");
+        Directory.CreateDirectory(Path.Combine(second, "rtl"));
+        File.WriteAllText(Path.Combine(second, "rtl", "leaf.sv"), "module leaf; endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"), "module top; endmodule\n");
+
+        LspHandler handler = new(new InMemorySystemVerilogCore());
+        string firstUri = new Uri(_root).AbsoluteUri;
+        string secondUri = new Uri(second).AbsoluteUri;
+        string initialize = JsonSerializer.Serialize(new
+        {
+            processId = 1,
+            rootUri = firstUri,
+            workspaceFolders = new[]
+            {
+                new { uri = firstUri, name = "first" },
+                new { uri = secondUri, name = "second" },
+            },
+            capabilities = new { },
+        });
+        using (JsonDocument doc = JsonDocument.Parse(initialize))
+        {
+            handler.TryHandleRequest("initialize", doc.RootElement, default, out _);
+        }
+
+        JsonElement top = Request(handler, "rtl/hierarchy", new { }).GetProperty("nodes");
+        int roots = 0;
+        foreach (JsonElement n in top.EnumerateArray())
+        {
+            if (n.GetProperty("kind").GetString() != "folder") continue;
+            roots++;
+            Assert.Equal("rtlFolder", n.GetProperty("contextValue").GetString());
+            Assert.Equal("project", n.GetProperty("icon").GetString());
+        }
+        Assert.Equal(2, roots);
+
+        // inside a root the ordinary directories keep the folder icon
+        string secondToken = string.Empty;
+        foreach (JsonElement n in top.EnumerateArray())
+        {
+            if (n.GetProperty("label").GetString() == "second")
+            {
+                secondToken = n.GetProperty("expandToken").GetString() ?? string.Empty;
+                break;
+            }
+        }
+        Assert.False(string.IsNullOrEmpty(secondToken));
+        JsonElement children = Request(handler, "rtl/hierarchy", new { expandToken = secondToken })
+            .GetProperty("nodes");
+        JsonElement rtlFolder = default;
+        foreach (JsonElement c in children.EnumerateArray())
+        {
+            if (c.GetProperty("label").GetString() == "rtl") { rtlFolder = c; break; }
+        }
+        Assert.NotEqual(JsonValueKind.Undefined, rtlFolder.ValueKind);
+        Assert.Equal("folder", rtlFolder.GetProperty("icon").GetString());
     }
 
     [Fact]

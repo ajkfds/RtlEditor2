@@ -84,15 +84,19 @@ Explorer container.
   File, Delete, Open in Explorer, Copy Path, Property, Reveal in Editor, Copy
   Instance Path (e.g. `u_mid.u_leaf`).
 - Icons come from the editor's own SVG assets (shipped in `icons/`, light and
-  dark variants): SystemVerilog / Verilog / header documents, module and
-  interface instances, imported packages.
+  dark variants): folders (`folder`, mirroring the editor's `FolderNode`), the
+  workspace root when several folders are open (`project`, the editor's
+  `ProjectNode` "home" icon), SystemVerilog / Verilog / header documents, module
+  and interface instances, imported packages.
 - **Node badges** mirror the editor's NavigatePanel: an exclamation triangle at
   the bottom-left for parse **errors** (red) or **warnings** (orange), and a
   shine at the top-right for **unsaved edits** (dirty). At most one badge is
   shown, in the priority order error > warning > dirty.
   VS Code's `TreeItem.iconPath` can only hold one icon and one theme colour, so
   the badge cannot be drawn by the extension; it is composited into the asset
-  (`icons/<icon>-<badge>.svg`, e.g. `icons/module-error.svg`).
+  (`icons/<icon>-<badge>.svg`, e.g. `icons/module-error.svg`). Folder / project
+  nodes never carry a badge (the editor's `FolderNode` / `ProjectNode` do not
+  draw one either), so only the file / instance icons ship badge variants.
   Regenerate them with `node scripts/generate-badge-icons.js` after editing a
   base icon.
 

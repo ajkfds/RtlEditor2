@@ -24,12 +24,17 @@ const path = require('path');
 // dark variant: the plugin SVGs are filled with a fixed dark grey (#4b4b4b),
 // which is invisible on a dark theme, so the dark variant uses a light grey.
 //
-// The server sends a stable icon *name* ("module" / "interface" / "package" /
-// "header" / "systemverilog-document" / "verilog-document" /
-// "verilog-header-document"); the client maps it onto the two files. An
-// unknown name falls back to a codicon so a new server-side kind still renders
-// something.
+// The server sends a stable icon *name* ("folder" / "project" / "module" /
+// "interface" / "package" / "header" / "systemverilog-document" /
+// "verilog-document" / "verilog-header-document"); the client maps it onto the
+// two files. An unknown name falls back to a codicon so a new server-side kind
+// still renders something.
 const ICON_NAMES = new Set([
+    // a workspace directory (editor: FolderNode -> Assets/Icons/folder.svg)
+    'folder',
+    // a workspace root when several folders are open (editor: ProjectNode ->
+    // Assets/Icons/home.svg, drawn in Color_Project)
+    'project',
     'module',
     'interface',
     'package',
@@ -45,9 +50,18 @@ const ICON_NAMES = new Set([
 // top-right for unsaved edits).
 const BADGES = new Set(['error', 'warning', 'dirty']);
 
+// Icons that ship `<icon>-<badge>` variants. Folder / project nodes never
+// carry a badge (the editor's FolderNode / ProjectNode do not draw them), so
+// they are excluded: asking for "folder-error.svg" would resolve to a missing
+// file and VS Code would render no icon at all.
+const NO_BADGE_ICONS = new Set(['folder', 'project']);
+const BADGEABLE_ICONS = new Set(
+    [...ICON_NAMES].filter((name) => !NO_BADGE_ICONS.has(name)));
+
 // codicon fallbacks for names the client does not ship an SVG for
 const ICON_FALLBACKS = {
     folder: 'folder',
+    project: 'home',
     file: 'file',
     module: 'symbol-module',
     interface: 'symbol-interface',
@@ -266,12 +280,16 @@ class HierarchyProvider {
      * composited in - VS Code's iconPath cannot draw an overlay, so the badge is
      * part of the asset. `icons/<icon>.svg` is used when no badge applies.
      *
-     * When the name has no shipped SVG (a folder, or a kind added on the server
-     * later) a codicon is used, which still carries the theme colour fallback.
+     * When the name has no shipped SVG (a kind added on the server later) a
+     * codicon is used, which still carries the theme colour fallback.
      */
     _resolveIconPath(iconName, badge, iconColor) {
         if (iconName && ICON_NAMES.has(iconName) && this.extensionUri) {
-            const decorated = badge && BADGES.has(badge) ? iconName + '-' + badge : iconName;
+            // Only icons that actually ship a badge variant may take one; a
+            // missing file would leave the node without any icon.
+            const decorated = badge && BADGES.has(badge) && BADGEABLE_ICONS.has(iconName)
+                ? iconName + '-' + badge
+                : iconName;
             return {
                 light: vscode.Uri.joinPath(this.extensionUri, 'icons', decorated + '.svg'),
                 dark: vscode.Uri.joinPath(this.extensionUri, 'icons', decorated + '-dark.svg'),
