@@ -3,6 +3,106 @@
 
 ## 進行中タスク (最新)
 
+- **verilog parser の警告/エラー追加 5 件** → 実装完了 (ビルド成功 0 errors、sv-tests 1028 合格、コミット済み)
+  - ユーザ要求:
+    1. parameter/localparam を同名で重複定義したときにエラーを出す
+    2. function 内から function 外の信号を port を介さず参照したときに warning を出す
+    3. autoFormatSnippet の pin 接続に Concatenation があると内容が消えるバグを修正
+    4. `if()` のカッコ内の bit 幅が 1 でないときに warning を出す
+    5. `case(exp) A:` の A の bit 幅が exp と異なるとき warning を出す
+  - 進捗:
+    - [x] 1. parameter/localparam 重複定義エラー → 実装完了
+      - `Constants.isDuplicateDeclaration(existing, nameReference)` を新設
+        (prototype pass と real pass は同一宣言を再登録するため、`DefinedReference.Index` の
+        一致で「同一宣言の再 parse」と「同名の別宣言」を区別する)
+      - 適用箇所: `ParseCreateDeclaration` の real pass 分岐 /
+        `ParseCreateDeclarationForPort` の real pass 分岐 /
+        `ParseCreateParamAssignmentsForPort` の real pass 分岐
+      - メッセージ: `parameter name duplicated`
+      - 実測 (DebugParserWarningsTests): param-dup / param-dup-same-stmt / localparam-dup /
+        param-port-dup すべて Error 検出、param-ok はエラーなし
+    - [x] 2. function 外信号参照 warning → 実装完了
+      - `DataObjectReference.checkOuterSignalReference(word, nameSpace, dataObject, reference)` を新設し、
+        `ParseCreate` の参照解決直後に呼ぶ
+      - 判定: 現在の nameSpace から `Function` / `Task_` を探し、その内側から
+        `NamedElements` を辿っても見つからない Net / Variable を「port を介さない外部参照」とする
+      - 除外: parameter/localparam (Constants) / genvar / class メソッド (class のメンバは参照可) /
+        prototype / partial parse
+      - メッセージ: `'<name>' is referenced from a function without a port`
+        (task 内なら `from a task`)
+      - 実測: func-outer-ref / task-outer-ref で Warning、func-port-ok / func-local-ok /
+        func-param-ok / class-method-ok は誤検出なし
+    - [x] 3. autoFormatSnippet Concatenation 消失バグ → 修正完了
+      - 原因: `Concatenation` / `MultipleConcatenation` / `StreamingConcatenation` /
+        `StreamExpression` / `ArrayRangeExpression` / `EmptyUnpackedArrayConcatenation` が
+        `CreateString()` を override しておらず、基底 `Primary.CreateString()` の `""` が返っていた。
+        `ModuleInstantiation.CreateString` は port 接続を `PortConnection[port].CreateString()` で
+        再生成するため、autoFormat snippet でインスタンスを整形すると `{x, y}` が消えていた
+      - 修正: 上記 6 クラスに `CreateString()` を実装
+        (`{a, b}` / `{N{a, b}}` / `{>> {a, b}}` / `expr with [range]` / `e1:e2` / `{}`)
+      - 実測 (Debug_ConcatCreateString): `child u_child(.a({x, y}), .o(z));` の
+        `CreateString` が `.a\t( {x, y} )` を出力 (修正前は空)
+    - [x] 4. if() 条件の bit 幅 warning → 実装完了
+      - `ConditionalStatement.checkConditionBitWidth(word, conditionExpression)` を新設し、
+        `if (...)` と `else if (...)` の条件式解析直後に呼ぶ
+      - 判定: `BitWidth` が既知かつ 1 以外なら Warning
+        (幅不明の式 = 関数呼び出し / 未解決参照はスキップ、prototype / partial parse もスキップ)
+      - メッセージ: `if condition bit width is N (expected 1)`
+      - 実測: if-wide (`logic [3:0] a; if (a)`) で Warning、if-ok (`logic a; if (a)`) は誤検出なし
+    - [x] 5. case item の bit 幅 warning → 実装完了
+      - `CaseStatement.ParseCreate` で case 式の `BitWidth` を取得し、
+        `CaseItem.checkItemBitWidth(word, caseItem, caseExpressionBitWidth)` で各 item を比較
+      - 対象は通常の case / casez / casex のみ (matches / inside は対象外)
+      - 判定: item の `BitWidth` が既知かつ case 式と異なる場合に Warning
+        (幅不明の式はスキップ、prototype / partial parse もスキップ)
+      - メッセージ: `case item bit width is N (case expression is M)`
+      - 実測: case-wide / case-multi-item (2 番目の item のみ) で Warning、
+        case-ok / casez-ok / case-inside-ok / case-var-item は誤検出なし
+  - 追加修正 (sv-tests の誤検出対策):
+    - randsequence の production は `RandsequenceStatement.registerProduction` /
+      `preRegisterProductions` が合成 `Function` として登録するため、
+      「function 外信号参照」が誤検出された (18.17.6 で 7 件)。
+      `Function.IsRandsequenceProduction` フラグを新設し、production 生成時に true を設定。
+      `checkOuterSignalReference` はこのフラグが立っている Function をスキップする
+    - 修正後 sv-tests の診断は元の状態 (Error 1 / Warning 1 / Notice 3) に戻った
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/ParserWarningTests.cs`, 15 件):
+    - 重複 parameter / localparam / 同一文内重複 / parameter port 重複 → Error
+    - 別名 parameter はエラーなし
+    - function / task の外信号参照 → Warning、port のみ / ローカル変数 + parameter /
+      class メンバ参照は誤検出なし
+    - if 条件 4bit → Warning、1bit → 誤検出なし
+    - case item 4bit (case 式 2bit) → Warning、同幅 / case inside は誤検出なし
+    - **修正を stash で戻すと 8 件が失敗**することを実証
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` **137 合格 / 0 失敗**
+    - `dotnet test --filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+  - メモ: 検証用プローブ (`DebugParserWarningsTests.cs`) は削除済み
+  - Next: エディタ / VS Code で (1) parameter 重複に赤波線 (2) function 外信号参照に
+    オレンジ波線 (3) if 条件幅 / case item 幅にオレンジ波線 (4) autoFormat snippet で
+    `{x, y}` が消えないこと を確認。**publish 更新が必要**
+    (`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`)
+  - 調査メモ:
+    - 1: `Constants.ParseCreateDeclaration` の prototype 分岐に `name duplicated` があるが
+      `WordScanner.AddError` が `if (prototype) return;` で抑制するため実際には出ない。
+      real pass 分岐は既存要素を再利用するだけで重複検出しない。
+      `ParseCreateDeclarationForPort` は重複チェックがコメントアウト、
+      `ParseCreateParamAssignmentsForPort` は ContainsKey で単に skip。
+    - 2: `DataObjectReference.ParseCreate` で解決した DataObject が
+      現在の nameSpace から Function 境界まで遡っても見つからない場合に warning。
+    - 3: `Concatenation` が `CreateString()` を override していないため
+      `Primary.CreateString()` の `""` が返り、`ModuleInstantiation.CreateString` の
+      port 接続出力で内容が消える。
+    - 4: `ConditionalStatement.ParseCreate` の条件式 BitWidth を検査。
+
+- **RTL Hierarchy の全ノードアイコンに色を付ける
+=======
+    - 5: `CaseStatement.CaseItem.ParseCreate` に case 式の BitWidth を渡して比較。
+
+- **RTL Hierarchy の全ノードアイコンに色を付ける
+=======
+
 - **RTL Hierarchy の全ノードアイコンに色を付ける (module / interface / package / header / document)** → 実装完了 (ビルド成功 0 errors、テスト 136 合格、全 60 SVG を機械検証、コミット済み)
   - ユーザ要求: `他のmodule/systemverilog moduleのアイコンにも色をつけて`
   - 原因: 同梱アイコン (`vscode-extension/icons/*.svg`) は **すべてベース fill が中立グレー固定**
