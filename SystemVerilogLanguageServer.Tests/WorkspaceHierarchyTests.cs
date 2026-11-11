@@ -1116,6 +1116,68 @@ public class WorkspaceHierarchyTests : IDisposable
     }
 
     /// <summary>
+    /// Applying a parameter override must not report
+    /// "parameter name duplicated" in the instanced module.
+    /// </summary>
+    /// <remarks>
+    /// The module body is parsed twice (prototype pass, then real pass) into
+    /// the same name space, and the override replaces the declared Parameter
+    /// object in BOTH passes. Building that replacement with
+    /// <c>DefinedReference = overrideExpression.Reference</c> pointed the
+    /// declaration at the INSTANTIATING file's coordinate, so the real pass saw
+    /// "same name declared at a different position" and reported
+    /// "parameter name duplicated" - an error on every overridden parameter.
+    /// The replacement must keep the declaration reference.
+    /// </remarks>
+    [Fact]
+    public void ParameterOverride_DoesNotReportDuplicateParameter()
+    {
+        File.WriteAllText(Path.Combine(_root, "leaf.sv"),
+            "module leaf #(parameter P_WIDTH = 8) (\n" +
+            "  output [P_WIDTH-1:0] AA\n" +
+            ");\n" +
+            "  assign AA = 0;\n" +
+            "endmodule\n");
+        File.WriteAllText(Path.Combine(_root, "top.sv"),
+            "module top;\n" +
+            "  wire [4:0] w;\n" +
+            "  leaf #(.P_WIDTH(5)) u_leaf(.AA(w));\n" +
+            "endmodule\n");
+        string leafUri = new Uri(Path.Combine(_root, "leaf.sv")).AbsoluteUri;
+        string topUri = new Uri(Path.Combine(_root, "top.sv")).AbsoluteUri;
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = topUri, languageId = "systemverilog", version = 1, text = File.ReadAllText(Path.Combine(_root, "top.sv")) },
+        });
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = leafUri, languageId = "systemverilog", version = 1, text = File.ReadAllText(Path.Combine(_root, "leaf.sv")) },
+        });
+
+        using (JsonDocument reparse = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            uri = leafUri,
+            instancePathSegments = new[] { "u_leaf" },
+            parentUri = topUri,
+        })))
+        {
+            handler.TryHandleRequest("rtl/reparse", reparse.RootElement, default, out _);
+        }
+
+        // the override is applied ...
+        Assert.Equal("5", ParameterValue(core, leafUri, "leaf", "P_WIDTH"));
+        // ... without a duplicate-declaration error on the instanced module
+        List<string> messages = DiagnosticMessages(core, leafUri);
+        Assert.DoesNotContain("parameter name duplicated", messages);
+        // and the override hint is reported exactly once
+        Assert.Equal(1, messages.Count(m => m == "override 5"));
+    }
+
+    /// <summary>
     /// Editing a document that was opened AS an instance must keep the
     /// instantiation's parameter overrides (the editor keeps editing the
     /// instance, not the file).

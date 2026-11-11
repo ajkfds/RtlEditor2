@@ -3,6 +3,36 @@
 
 ## 進行中タスク (最新)
 
+- **module instance の parameter override で instanced module 側に `parameter name duplicated` エラーが出る** → 修正完了 (ビルド成功 0 errors、テスト 138 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: `module instance時にparameter値のoverrideを行うとmodule instance側でparameter overrideエラーがでます`
+  - **再現 (プローブ、削除済み)**: `leaf #(.P_WIDTH(5)) u_leaf(...)` を `rtl/reparse` でインスタンスとして開くと
+    `leaf diagnostics: override 5 | parameter name duplicated | undriven | unused`
+  - **根本原因 (`Module.parseModuleAsync` 等の override 適用処理)**: override を適用するとき
+    `new Parameter() { DefinedReference = vkp.Value.Reference, ... }` と **override 式の参照位置 (インスタンスを書いた親ファイルの座標)** を
+    `DefinedReference` に入れていた。module / interface / class / interface class / program の本体は
+    **prototype パス → real パスの 2 回** 同じ name space に parse され、override 適用も両パスで走る。
+    real パスでパラメータ宣言を再チェックすると `Constants.isDuplicateDeclaration(existing, nameReference)` が
+    `existing.DefinedReference.Index != nameReference.Index` で「同名を別の位置で宣言した」と判定し、
+    `parameter name duplicated` (Error) を出していた (override したパラメータすべてで発生)
+  - 修正1 (`Verilog/BuildingBlocks/Module.cs` / `Interface.cs` / `Class.cs` / `InterfaceClass.cs` / `Program.cs`):
+    override 適用時の `DefinedReference` を **元の宣言参照** (`constants.DefinedReference ?? vkp.Value.Reference`) に変更。
+    併せて `DataType` / `ConstantType` も引き継ぐようにした (型情報が落ちないように)
+  - 修正2 (同 5 箇所): `override <value>` の hint を `constants.DefinedReference.AddHint(...)` で直接出していたため
+    `WordScanner.AddHint` の prototype 抑制が効かず **2 回** 出ていた → `!word.Prototype` ガードを追加 (real パスのみ)
+  - 回帰テスト追加 (`WorkspaceHierarchyTests.ParameterOverride_DoesNotReportDuplicateParameter`):
+    `leaf #(parameter P_WIDTH = 8)` を `leaf #(.P_WIDTH(5))` で instance し、`rtl/reparse` 後に
+    (1) `P_WIDTH` が `5` (2) `parameter name duplicated` が **出ない** (3) `override 5` が **1 回だけ**
+    を assert。**修正を stash で戻すと `Collection: ["override 5", "parameter name duplicated"]` で失敗**することを実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors /
+    `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors /
+    `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` **138 合格 / 0 失敗** /
+    `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - Next: VS Code で Reload Window 後、parameter を override した instance をクリックしても
+    instanced module 側に `parameter name duplicated` の赤波線が出ないこと、
+    `override <value>` の hint が 1 回だけ出ることを確認。**publish 更新が必要**
+    (`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`)
+  - メモ: 検証用プローブ (`DebugParamOverrideErrorTests.cs`) は削除済み
+
 - **verilog parser の警告/エラー追加 5 件** → 実装完了 (ビルド成功 0 errors、sv-tests 1028 合格、コミット済み)
   - ユーザ要求:
     1. parameter/localparam を同名で重複定義したときにエラーを出す
