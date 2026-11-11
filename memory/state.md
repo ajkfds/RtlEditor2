@@ -3,6 +3,57 @@
 
 ## 進行中タスク (最新)
 
+- **sync mismatch チェックに「RHS のドメイン検証」と「LHS 宣言ドメイン vs 駆動クロック検証」を追加** → 実装完了 (ビルド成功 0 errors、テスト 147 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: `CodeEditor2VerilogPlugin/verilog_sample/mySample/mod2.v` で sync mismatch error が出ない理由を調査 → `RHS検証とLHSの比較検証を追加して`
+  - **調査結果 (`mod2.v` が出ない理由)**: `DATA_I` は `// @sync:CLK_I`、`DATA1_O` は `// @sync:CLK2_I` で
+    `always @(posedge CLK2_I ...) DATA1_O <= DATA_I;` と書かれている (CLK_I → CLK2_I のドメイン跨ぎ)。
+    しかしチェックが 2 箇所で欠けていた
+    | パス | event control のクロック vs LHS 宣言ドメイン | RHS ドメイン vs LHS ドメイン |
+    |---|---|---|
+    | `NonBlockingAssignment` (`<=`) | **あり** (`AddClockDomain`) | **なし** |
+    | `BlockingAssignment` (`=`) | **なし** | あり (`PropageteClockDomainFrom`) |
+    | `VariableAssignment` (`assign`) | **なし** (event control が無いので対象外) | あり |
+    → mod2.v は non-blocking なので「RHS が CLK_I」が一切検証されず、LHS の CLK2_I と always の CLK2_I が
+    一致するため warning ゼロになっていた (バグではなく未実装)
+  - 修正1 (`Verilog/Statements/NonBlockingAssignment.cs`): RHS → LHS のドメイン比較
+    `lExpression.SyncContext.PropageteClockDomainFrom(expression.SyncContext, lExpression.Reference, SameSync)` を追加
+    (BlockingAssignment / VariableAssignment と同一パターン)。クロスドメイン伝播で `sync mismatch` を報告
+  - 修正2 (`Verilog/Statements/BlockingAssignment.cs`):
+    - `ParseCreate` / `ParseCreateAfterAssignmentOperator` に `List<string>? clockDomains` 引数を追加
+    - `internal static addEnclosingClockDomains(...)` を新設 (旧 `NonBlockingAssignment` のインライン実装を共通化)。
+      always の sensitivity list のクロックを LHS の SyncContext に注入し、宣言ドメインと食い違えば
+      `sync mismatch <clock> assigned` を報告
+    - RHS 伝播の**前**に呼ぶようにした (先に LHS の宣言ドメイン検証 → そのドメインに対して RHS を比較)
+  - 修正3 (`Verilog/Statements/NonBlockingAssignment.cs`): インライン実装を `addEnclosingClockDomains` 呼び出しに置換
+  - 修正4 (`Verilog/Statements/Statements.cs`): blocking (`=`) と複合代入 (`<<<=` 等) の 2 呼び出しに `clockDomains` を伝播
+  - **実測 (プローブ、削除済み)**:
+    | ケース | 修正前 | 修正後 |
+    |---|---|---|
+    | `mySample/mod2.v` (CLK_I → CLK2_I の NB) | 警告なし | **`sync mismatch`** |
+    | NB: RHS が別ドメイン | 警告なし | `sync mismatch` |
+    | blocking: RHS が別ドメイン | `sync mismatch` | `sync mismatch` (維持) |
+    | assign: RHS が別ドメイン | `sync mismatch` | `sync mismatch` (維持) |
+    | NB: LHS 宣言が always クロックと食い違う | `sync mismatch CLK2_I assigned` | 同上 (維持) |
+    | blocking: LHS 宣言が always クロックと食い違う | `sync mismatch` のみ | **`sync mismatch CLK2_I assigned`** + `sync mismatch` |
+    | 同一ドメイン (NB / blocking) | 警告なし | 警告なし (誤検出なし) |
+    | reset 分岐 (リテラル代入) / アノテーション無し | 警告なし | 警告なし (誤検出なし) |
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/SyncDomainTests.cs`, 9 件):
+    `NonBlockingAssignment_FromAnotherClockDomain_IsReported` / `BlockingAssignment_FromAnotherClockDomain_IsReported` /
+    `ContinuousAssignment_FromAnotherClockDomain_IsReported` / `SampleMod2_CrossDomainCapture_IsReported` /
+    `NonBlockingAssignment_DrivenByAnotherClock_IsReported` / `BlockingAssignment_DrivenByAnotherClock_IsReported` /
+    `SameClockDomain_IsNotReported` / `ResetBranchWithLiteral_IsNotReported` / `NoAnnotation_IsNotReported`
+    **修正を stash で戻すと 3 件失敗** (mod2 / NB-RHS / blocking-LHS) することを実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors /
+    `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors /
+    `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` **147 合格 / 0 失敗** /
+    `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - Next: エディタ / VS Code で `mySample/mod2.v` を開き `DATA1_O <= DATA_I;` 行に
+    `sync mismatch` のオレンジ波線が出ることを確認。**publish 更新が必要**
+    (`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server`)
+  - メモ: 検証用プローブ (`DebugSyncMismatchProbe.cs`) は削除済み。既知の制限: `@samesync` は
+    `BuildinBlock.SameSync` 経由で許容ドメインを広げるのみで、RHS が宣言されていない信号 (暗黙 net 等) は
+    比較対象外 (従来どおり)
+
 - **module instance の parameter override で instanced module 側に `parameter name duplicated` エラーが出る** → 修正完了 (ビルド成功 0 errors、テスト 138 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: `module instance時にparameter値のoverrideを行うとmodule instance側でparameter overrideエラーがでます`
   - **再現 (プローブ、削除済み)**: `leaf #(.P_WIDTH(5)) u_leaf(...)` を `rtl/reparse` でインスタンスとして開くと
