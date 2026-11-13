@@ -3,6 +3,56 @@
 
 ## 進行中タスク (最新)
 
+- **SimulationSetup の収集処理が途中で止まっていた (TODO 分岐 / トップファイル未収集 / インスタンス parse 未使用)** → 実装完了 (ビルド成功 0 errors、テスト 156 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Data/SimulationSetup.cs` の修正が途中だった
+  - **着手時の状態**: 作業ツリーに「インスタンス parse を辿る」途中の変更 (コミット前) があり、ビルドは通るが未完成だった
+    - `Create(IVerilogRelatedFile, buildingBlockName)` が追加済み / `findModuleInstance` 追加済み
+    - 一方で `appendImportedPackage` / `appendClass` / `appendVerilogHeaderInstance` の外部プロジェクト分岐が **`// TODO` のまま**、
+      `GetAllFiles` / `GetAllIncludePaths` / `GetAbsolutePath` が **コメントアウト**、
+      `appendClassInstance` / `appendInterfaceClassInstance` / `appendVirtualInterfaceInstance` も **コメントアウト** のままだった
+  - **実測 (検証用プローブ、削除済み)**: `module top; leaf u_leaf(); endmodule` の構成で
+    - 修正前: `Files: leaf.sv` のみ → **トップファイル `top.sv` がシミュレータに渡っていない**
+    - `import mypkg::*; Packet p;` の構成: `ImportFiles` / `ClassFiles` に名前は入るが **`Files` に入っていない** (コンパイル対象にならない)
+  - 修正1 (`Create(IVerilogRelatedFile, buildingBlockName)`): 先頭の非 class ブロックではなく **指定名の building block** を辿る
+    (複数 building block のファイルでインスタンスされた側を選べる)。未知の名前は `null` を返す
+  - 修正2 (同): トップの実体ソースを **`setup.Files` に追加** (再帰は参照経由でしかファイルを積まないため、トップが欠けていた)
+  - 修正3 (`getSourceFile` 新設): `InstanceTextFile` (module / interface / package / header instance) は **ソースファイルに展開**してから
+    `Files` / `IncludeFiles` に入れる (インスタンス wrapper にはパスが無く、コンパイルできない)
+  - 修正4 (`RootSetup` / `ProjectSetups` 新設 + `getExternalProjectSetup` 実装): **1 プロジェクトにつき 1 サブセットアップ**。
+    `ExternalProjectReferences` は参照エッジ (どの setup から見ているか + `InstancePath`) のみを持つ。
+    以前は外部プロジェクト参照のたびに `SimulationSetup.Create` で **新しい setup を作り直していた** (同一プロジェクトのファイル一覧が分裂)
+  - 修正5 (外部プロジェクト / package / class / include / virtual interface の分岐): `// TODO` を実装。
+    定義ファイルを **所有プロジェクトのサブセットアップ** に振り分け、package / class ファイルも `Files` に追加
+  - 修正6 (`GetAllFiles` / `GetAllIncludePaths` / `GetAbsolutePath` 復活): backend (Icarus / Vivado) が外部プロジェクトを
+    コンパイル一覧に含められるようにする。外部プロジェクトを先、自プロジェクトを後の順
+  - 修正7 (`collectUnfoundModules` 復活 + `ReorderFilesByClassDependencies` の再帰化): サブセットアップの unfound も報告し、
+    クラス依存順の整列もサブセットアップへ適用
+  - 修正8 (stale unfound で走査を打ち切らない): `searchHier` の class 未解決分岐が `setup.Failed = true; return;` で
+    **サブツリー全体を捨てていた** (UnfoundModules 早期 return と同じ失敗モード) → `addUnfoundModule` で記録して走査継続。
+    `isResolvableCrossProjectReference` を復活させ、`@project` 先で解決できる stale エントリは報告しない
+  - 修正9 (インスタンス parse の利用): module / interface インスタンスの依存は **インスタンス parse**
+    (`VerilogModuleInstance.VerilogParsedDocument` = module 名 + parameter override のキー) で辿る。
+    定義ファイルの base parse は複数 building block のファイルで未生成 / 既定パラメータのままなので、
+    サブツリー欠落や `generate if` の誤った分岐収集が起きていた
+  - 修正10 (死んだコードの削除): 旧 dictionary API (`ExternalProjectReferences.ContainsKey`) を参照していた
+    コメントアウト済みの `appendFile` / `appendExternalProjectDependencies` / `hasInstantiationItem` /
+    `getReferencedDefinitionProjects` / `getProjectName` を削除
+  - 回帰テスト追加 (`SystemVerilogLanguageServer.Tests/SimulationSetupTests.cs`, 3 件):
+    `TopFile_IsIncludedInFiles` / `ImportedPackageAndClass_AreCollected` / `CreateByName_SelectsTheRequestedBuildingBlock`
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` → **156 合格 / 0 失敗**
+    - `dotnet test --filter "FullyQualifiedName~ParseSvTestFile"` → **1028 合格 / 0 失敗**
+  - コミット: CodeEditor2VerilogPlugin `734e4f7` (SimulationSetup 本体) / メイン `48581cf` (submodule pointer + SimulationSetupTests.cs)
+  - Next: エディタ上で (1) 複数 building block を含むファイル / 外部プロジェクト (`@project`) を参照する RTL で
+    simulation 実行し、command / .prj に **トップファイルと外部プロジェクトのソースが含まれる** こと
+    (2) `import` した package / class 型変数を持つ設計でそのソースがコンパイル対象になること
+    (3) `#(...)` でパラメータ上書きした `generate if` の選択分岐が収集されること を確認
+  - メモ: 検証用プローブ (`SystemVerilogLanguageServer.Tests/DebugSimulationSetupProbe.cs`) は削除済み。
+    `CodeEditor2` (modified) / `SystemVerilogLanguageServer` (modified) / `RtlEditor2.Desktop/Program.cs` /
+    `vscode-extension/*` の作業ツリー変更は本タスク外のためコミットから除外
+
 - **sync mismatch チェックに「RHS のドメイン検証」と「LHS 宣言ドメイン vs 駆動クロック検証」を追加** → 実装完了 (ビルド成功 0 errors、テスト 147 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: `CodeEditor2VerilogPlugin/verilog_sample/mySample/mod2.v` で sync mismatch error が出ない理由を調査 → `RHS検証とLHSの比較検証を追加して`
   - **調査結果 (`mod2.v` が出ない理由)**: `DATA_I` は `// @sync:CLK_I`、`DATA1_O` は `// @sync:CLK2_I` で
