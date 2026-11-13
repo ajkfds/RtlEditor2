@@ -158,5 +158,121 @@ namespace SystemVerilogLanguageServer.Tests
             // and the stale entry is surfaced instead of silently ignored
             Assert.Contains(setup.UnfoundModules, m => m.Contains("some_removed_module", StringComparison.Ordinal));
         }
+
+        /// <summary>
+        /// The top file itself is a compile unit: the simulator has to be given
+        /// it. Nothing else adds it (the traversal only records the files it
+        /// reaches through references).
+        /// </summary>
+        [Fact]
+        public async Task TopFile_IsIncludedInFiles()
+        {
+            EnsurePluginRegistered();
+
+            CodeEditor2.Data.Project project = CreateProject("simsetup_top", _root);
+
+            pluginVerilog.Data.VerilogFile top = await CreateParsedFile(project, "top.sv",
+                """
+                module top;
+                endmodule
+                """);
+
+            pluginVerilog.Data.SimulationSetup? setup = pluginVerilog.Data.SimulationSetup.Create(top);
+            Assert.NotNull(setup);
+
+            Assert.Contains(setup!.Files, f => f.RelativePath.EndsWith("top.sv", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(setup.GetAllFiles(), f => f.RelativePath.EndsWith("top.sv", StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// An imported package and a class used by a variable declaration are
+        /// compile units of the setup as well (they used to be skipped because
+        /// the corresponding branches were left as TODO).
+        /// </summary>
+        [Fact]
+        public async Task ImportedPackageAndClass_AreCollected()
+        {
+            EnsurePluginRegistered();
+
+            CodeEditor2.Data.Project project = CreateProject("simsetup_pkg", _root);
+
+            await CreateParsedFile(project, "mypkg.sv",
+                """
+                package mypkg;
+                  localparam int W = 4;
+                endpackage
+                """);
+            await CreateParsedFile(project, "packet.sv",
+                """
+                class Packet;
+                  int v;
+                endclass
+                """);
+
+            pluginVerilog.Data.VerilogFile top = await CreateParsedFile(project, "top.sv",
+                """
+                module top;
+                  import mypkg::*;
+                  Packet p;
+                endmodule
+                """);
+
+            pluginVerilog.Data.SimulationSetup? setup = pluginVerilog.Data.SimulationSetup.Create(top);
+            Assert.NotNull(setup);
+
+            Assert.Contains(setup!.Files, f => f.RelativePath.EndsWith("mypkg.sv", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(setup.Files, f => f.RelativePath.EndsWith("packet.sv", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(setup.ImportFiles, f => f.RelativePath.EndsWith("mypkg.sv", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(setup.ClassFiles, f => f.RelativePath.EndsWith("packet.sv", StringComparison.OrdinalIgnoreCase));
+            // the definition files must reach the compile list of the backend
+            Assert.Contains(setup.GetAllFiles(), f => f.RelativePath.EndsWith("mypkg.sv", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(setup.GetAllFiles(), f => f.RelativePath.EndsWith("packet.sv", StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// A file that declares several building blocks must be able to start
+        /// the traversal from the requested one: Create(file, name) selects the
+        /// block by name instead of taking the first non-class block.
+        /// </summary>
+        [Fact]
+        public async Task CreateByName_SelectsTheRequestedBuildingBlock()
+        {
+            EnsurePluginRegistered();
+
+            CodeEditor2.Data.Project project = CreateProject("simsetup_byname", _root);
+
+            await CreateParsedFile(project, "leaf.sv",
+                """
+                module leaf;
+                endmodule
+                """);
+
+            pluginVerilog.Data.VerilogFile top = await CreateParsedFile(project, "top.sv",
+                """
+                module first;
+                endmodule
+
+                module second;
+                  leaf u_leaf();
+                endmodule
+                """);
+
+            // "first" has no dependencies, "second" instances leaf
+            pluginVerilog.Data.SimulationSetup? first =
+                pluginVerilog.Data.SimulationSetup.Create(top, "first");
+            Assert.NotNull(first);
+            Assert.Equal("first", first!.TopName);
+            Assert.DoesNotContain(first.Files, f => f.RelativePath.EndsWith("leaf.sv", StringComparison.OrdinalIgnoreCase));
+
+            pluginVerilog.Data.SimulationSetup? second =
+                pluginVerilog.Data.SimulationSetup.Create(top, "second");
+            Assert.NotNull(second);
+            Assert.Equal("second", second!.TopName);
+            Assert.Contains(second.Files, f => f.RelativePath.EndsWith("leaf.sv", StringComparison.OrdinalIgnoreCase));
+
+            // an unknown building block is refused instead of silently walking
+            // the first block
+            Assert.Null(pluginVerilog.Data.SimulationSetup.Create(top, "does_not_exist"));
+        }
     }
 }
