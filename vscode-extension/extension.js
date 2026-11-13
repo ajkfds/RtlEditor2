@@ -1456,6 +1456,11 @@ function activateCore(context) {
     // extension only inserts it.
     registerSnippetCommands(context);
 
+    // Tool menu: the desktop editor opens it with Shift+Space at the caret.
+    // The list comes from the server (rtl/toolMenu); this side shows a
+    // QuickPick and dispatches to the commands above.
+    registerToolMenuCommand(context);
+
     // Auto-connect form: the rows come from the server (rtl/autoConnect) and
     // the chosen connections go back through rtl/autoConnectApply. The
     // extension only renders the webview and forwards the choices.
@@ -1605,6 +1610,7 @@ async function applyOneSnippet(editor, doc, snippet) {
 function registerSnippetCommands(context) {
     const commands = [
         ['systemverilogLsp.snippet.alwaysFF', 'alwaysFF', undefined],
+        ['systemverilogLsp.snippet.autoFormat', 'autoFormat', undefined],
         ['systemverilogLsp.snippet.moduleInstance', 'moduleInstance', undefined],
         ['systemverilogLsp.snippet.portConnectionCreate', 'portConnectionCreate', undefined],
         ['systemverilogLsp.snippet.portInvert', 'portInvert', undefined],
@@ -1615,7 +1621,141 @@ function registerSnippetCommands(context) {
             vscode.commands.registerCommand(command, () => applySnippet(kind, argument))
         );
     }
-    logLine('snippet commands registered (alwaysFF / moduleInstance / portConnectionCreate / portInvert / modport)');
+    logLine('snippet commands registered (alwaysFF / autoFormat / moduleInstance / portConnectionCreate / portInvert / modport)');
+}
+
+// ---- tool menu (Shift+Space) -------------------------------------------
+//
+// The desktop editor opens its tool list with Shift+Space at the caret. The
+// VS Code counterpart asks the server for the same list (rtl/toolMenu) and
+// shows it in a QuickPick, because VS Code has no API to place a flyout at the
+// caret. The list itself lives in the plugin's CoreBridge.ToolMenuCatalog, and
+// each row's availability is decided by the server, so the two menus cannot
+// drift apart; this file only maps a row id to the VS Code command that runs
+// it.
+
+/**
+ * Maps a server tool id to the command that runs it.
+ *
+ * The snippet tools reuse the systemverilogLsp.snippet.* commands registered
+ * above, so there is one implementation per tool. The remaining ids map to VS
+ * Code's own commands; `connectionCheck` has no counterpart (it shows a tree
+ * view only the desktop editor has) and is reported as unavailable.
+ *
+ * `autoFormat` deliberately does NOT map to editor.action.formatDocument: the
+ * editor's tool reformats only the instantiation at the caret, while VS Code's
+ * format command asks the server for textDocument/formatting, which rewrites
+ * every instantiation in the file. It therefore goes through rtl/snippet like
+ * the other tools (kind "autoFormat").
+ */
+const TOOL_MENU_COMMANDS = {
+    alwaysFF: 'systemverilogLsp.snippet.alwaysFF',
+    autoConnect: 'systemverilogLsp.autoConnect',
+    autoFormat: 'systemverilogLsp.snippet.autoFormat',
+    moduleInstance: 'systemverilogLsp.snippet.moduleInstance',
+    portConnectionCreate: 'systemverilogLsp.snippet.portConnectionCreate',
+    portInvert: 'systemverilogLsp.snippet.portInvert',
+    modport: 'systemverilogLsp.snippet.modport',
+    connectionCheck: null,
+    toUpper: 'editor.action.transformToUppercase',
+    toLower: 'editor.action.transformToLowercase',
+};
+
+/** Shows the tool menu (the Shift+Space list) as a QuickPick. */
+async function showToolMenu() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+        vscode.window.showWarningMessage('SystemVerilog LSP: open a SystemVerilog file first.');
+        return;
+    }
+    const doc = editor.document;
+    if (doc.languageId !== 'systemverilog' && doc.languageId !== 'verilog') {
+        vscode.window.showWarningMessage('SystemVerilog LSP: the active file is not SystemVerilog / Verilog.');
+        return;
+    }
+
+    const params = {
+        textDocument: { uri: doc.uri.toString() },
+        position: toLspPosition(editor.selection.active),
+    };
+    if (!editor.selection.isEmpty) {
+        params.selection = {
+            start: toLspPosition(editor.selection.start),
+            end: toLspPosition(editor.selection.end),
+        };
+    }
+
+    let result;
+    try {
+        const c = await ensureClient();
+        result = await c.request('rtl/toolMenu', params);
+    } catch (e) {
+        logLine('rtl/toolMenu ERROR: ' + (e && e.stack ? e.stack : e));
+        vscode.window.showErrorMessage('SystemVerilog LSP: tool menu request failed (see the log).');
+        return;
+    }
+
+    if (!result || !result.entries || result.entries.length === 0) {
+        const message = (result && result.message) || 'no tool available at the caret';
+        vscode.window.showInformationMessage('SystemVerilog LSP: ' + message);
+        return;
+    }
+
+    const items = [];
+    for (const entry of result.entries) {
+        const command = TOOL_MENU_COMMANDS[entry.id];
+        // A row with neither a command nor server-side availability cannot be
+        // run here at all, so it is not offered.
+        if (!command) continue;
+        // showQuickPick cannot disable an item, so a row that cannot run stays
+        // visible with the reason in its description (the user can still pick
+        // it; the guard after the pick explains why nothing happened). Hiding
+        // it instead would make the menu look different from the editor's,
+        // which always lists every tool.
+        const description = entry.enabled
+            ? entry.detail
+            : (entry.detail ? entry.detail + ' — ' : '') + (entry.reason || 'not available at the caret');
+        items.push({ label: entry.label, description, toolId: entry.id });
+    }
+
+    if (items.length === 0) {
+        vscode.window.showInformationMessage('SystemVerilog LSP: no tool available at the caret.');
+        return;
+    }
+
+    const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: 'SystemVerilog tool (Shift+Space)',
+        matchOnDescription: true,
+        matchOnDetail: true,
+    });
+    if (!picked) return;
+
+    const entry = result.entries.find((e) => e.id === picked.toolId);
+    if (entry && !entry.enabled) {
+        vscode.window.showInformationMessage(
+            'SystemVerilog LSP: ' + entry.label + ' is not available — ' +
+            (entry.reason || 'nothing to do at the caret'));
+        return;
+    }
+
+    const command = TOOL_MENU_COMMANDS[picked.toolId];
+    if (!command) return;
+
+    logLine('tool menu: ' + picked.toolId + ' -> ' + command);
+    try {
+        await vscode.commands.executeCommand(command);
+    } catch (e) {
+        logLine('tool menu command ERROR (' + command + '): ' + (e && e.stack ? e.stack : e));
+        vscode.window.showErrorMessage('SystemVerilog LSP: ' + command + ' failed (see the log).');
+    }
+}
+
+/** Registers the tool menu command. */
+function registerToolMenuCommand(context) {
+    context.subscriptions.push(
+        vscode.commands.registerCommand('systemverilogLsp.showToolMenu', () => showToolMenu())
+    );
+    logLine('tool menu command registered (systemverilogLsp.showToolMenu)');
 }
 
 /**

@@ -3,6 +3,35 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張の ToolMenu 実装が途中だった (autoFormat の意味ずれ / デスクトップ版メニューからの PortInvert 消失)** → 修正完了 (ビルド成功 0 errors、テスト 159 + ツールメニュー 7 / スニペット 8 合格)
+  - ユーザ報告: `vscode extension実装時のToolMenuの実装が途中だったと思います`
+  - **着手時の状態 (作業ツリーに未コミットで存在していたもの)**: ToolMenu 一式は概ね書かれていた
+    - プラグイン: `CoreBridge/ToolMenuCatalog.cs` (メニュー定義の単一情報源) / `CoreBridge/ToolMenuAdapter.cs` (行ごとの可否判定) / `SnippetAdapter.HasModuleInstantiationAt` / `AutoCompleteHandler.GetToolItems` をカタログ駆動に変更
+    - サーバ: `RtlToolMenu.cs` (DTO) / `Server/LspHandler.ToolMenu.cs` (`rtl/toolMenu`) / `InMemoryFile.GetToolMenu` / `_requestHandlers` 登録
+    - 拡張: `extension.js` の `showToolMenu` (QuickPick) + `TOOL_MENU_COMMANDS`、`package.json` のコマンド / `editor/context` / `keybindings` (Shift+Space)
+    - テスト: `SystemVerilogLanguageServer.Tests/ToolMenuTests.cs` (6 件)
+  - **見つけた不備1 (デスクトップ版メニューからの PortInvert 消失 = 回帰)**: `ToolMenuCatalog.EditorTools` が `AppliesToSelection` で行を除外していた。`CodeView.ShowToolSelectionPopupMenu` が自分で追加するのは **ToUpper / ToLower だけ** で、`PortInvertSnippet` はファイルの tool 一覧から来るため、除外条件が広すぎてエディタの Shift+Space から PortInvert が消えていた
+    - 修正: `Entry.AppendedByEditor` を新設 (エディタが自分で追加する行の印) し、`EditorTools` はこれだけを除外。`AppliesToSelection` は「選択が要る」という情報専用にした (`PortInvert` は選択必須だがエディタは追加しないので残る)
+  - **見つけた不備2 (autoFormat の意味が違う)**: 拡張が `autoFormat` を `editor.action.formatDocument` に繋いでいた。VS Code の整形コマンドは `textDocument/formatting` (= **ファイル内の全インスタンス**を整形) を呼ぶため、デスクトップ版の「カーソル位置のインスタンスだけ整形」と挙動が違っていた (`SnippetAdapter` に `autoFormat` の kind が無かったのが原因)
+    - 修正1 (`CoreBridge/SnippetAdapter.cs`): `SnippetName.AutoFormat` + `BuildAutoFormat` を新設。`FindInstantiationAt` でカーソル位置のインスタンスを特定し、`ModuleInstantiation.CreateString(indent)` の結果を `kind = replace` のスニペットとして返す (末尾 `;` を補完。範囲はインスタンスのみなので他行は不変)
+    - 修正2 (`CoreBridge/ToolMenuAdapter.cs`): `autoFormat` の可否判定を `HasModuleInstantiationAt` の専用分岐から `ProbeSnippetReason` (スニペット実装に問い合わせる) に移動。メニューと実行が食い違わない
+    - 修正3 (`vscode-extension/extension.js`): `TOOL_MENU_COMMANDS.autoFormat` を `editor.action.formatDocument` → `systemverilogLsp.snippet.autoFormat` に変更 (理由コメント付き)。`registerSnippetCommands` に `autoFormat` を追加
+    - 修正4 (`vscode-extension/package.json`): `systemverilogLsp.snippet.autoFormat` コマンド (`AutoFormat Instance at Caret`) を追加し、`editor/context` の group 番号を 1..7 に振り直し
+  - 回帰テスト追加:
+    - `SnippetTests.Snippet_AutoFormat_ReformatsTheInstantiationAtTheCaret` (replace / `u_leaf` を含む / `endmodule` を含まない / start > 0 = 文書先頭ではない)
+    - `SnippetTests.Snippet_AutoFormat_OutsideInstantiation_ReportsMessage` (インスタンス外ではメッセージ)
+    - `ToolMenuTests.EditorToolList_KeepsPortInvert_AndDoesNotDuplicateCaseTransforms` (エディタ一覧に `portInvert` が残り、`toUpper`/`toLower` は重複しない)
+  - ドキュメント (`vscode-extension/README.md`): Features に Tool menu を追加、Snippets 表に `AutoFormat Instance at Caret` を追加、「Tool menu (`Shift+Space`)」節を新設 (カタログが単一情報源 / 可否はサーバ判定 / 実行不可の行は理由付きで残す / Connection Check はデスクトップ専用 / QuickPick を使う理由)
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` → **159 合格 / 0 失敗**
+    - `--filter FullyQualifiedName~ToolMenuTests` → **7 合格** / `~SnippetTests` → **8 合格**
+  - メモ: 作業ツリーの `SystemVerilogLanguageServer.Tests/DebugBundledSyncProbe.cs` (未追跡の検証プローブ) は同梱サーバの古いバイナリを叩くため失敗する。本タスク外なのでコミットから除外 (従来方針)
+  - Next: VS Code で Reload Window 後、(1) `Shift+Space` でツールメニューが開くこと (2) インスタンス上では `AutoFormat Instance` / `Fill Port Connections` が有効、外では理由付きで無効になること (3) `AutoFormat` が **カーソル位置のインスタンスだけ** を整形すること (4) 選択なしでは `Invert Ports` / `To Upper` / `To Lower` が無効、選択ありで有効になること (5) デスクトップ版の Shift+Space に `PortInvert` が戻っていること を確認。**publish 更新が必要** (`dotnet publish SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=false`)
+
+
 - **SimulationSetup の収集処理が途中で止まっていた (TODO 分岐 / トップファイル未収集 / インスタンス parse 未使用)** → 実装完了 (ビルド成功 0 errors、テスト 156 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: `CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Data/SimulationSetup.cs` の修正が途中だった
   - **着手時の状態**: 作業ツリーに「インスタンス parse を辿る」途中の変更 (コミット前) があり、ビルドは通るが未完成だった

@@ -109,6 +109,11 @@
         "category": "SystemVerilog Snippet"
       },
       {
+        "command": "systemverilogLsp.snippet.autoFormat",
+        "title": "AutoFormat Instance at Caret",
+        "category": "SystemVerilog Snippet"
+      },
+      {
         "command": "systemverilogLsp.snippet.moduleInstance",
         "title": "Insert Module Instance",
         "category": "SystemVerilog Snippet"
@@ -134,6 +139,11 @@
         "category": "SystemVerilog Snippet"
       },
       {
+        "command": "systemverilogLsp.showToolMenu",
+        "title": "Show Tool Menu (Shift+Space)",
+        "category": "SystemVerilog Snippet"
+      },
+      {
         "command": "systemverilogLsp.showMessages",
         "title": "SystemVerilog: Show Messages",
         "icon": "$(warning)"
@@ -156,29 +166,39 @@
           "group": "systemverilogSnippet@1"
         },
         {
-          "command": "systemverilogLsp.snippet.moduleInstance",
+          "command": "systemverilogLsp.snippet.autoFormat",
           "when": "editorLangId == systemverilog || editorLangId == verilog",
           "group": "systemverilogSnippet@2"
         },
         {
-          "command": "systemverilogLsp.snippet.portConnectionCreate",
+          "command": "systemverilogLsp.snippet.moduleInstance",
           "when": "editorLangId == systemverilog || editorLangId == verilog",
           "group": "systemverilogSnippet@3"
         },
         {
-          "command": "systemverilogLsp.snippet.portInvert",
+          "command": "systemverilogLsp.snippet.portConnectionCreate",
           "when": "editorLangId == systemverilog || editorLangId == verilog",
           "group": "systemverilogSnippet@4"
         },
         {
-          "command": "systemverilogLsp.snippet.modport",
+          "command": "systemverilogLsp.snippet.portInvert",
           "when": "editorLangId == systemverilog || editorLangId == verilog",
           "group": "systemverilogSnippet@5"
         },
         {
-          "command": "systemverilogLsp.autoConnect",
+          "command": "systemverilogLsp.snippet.modport",
           "when": "editorLangId == systemverilog || editorLangId == verilog",
           "group": "systemverilogSnippet@6"
+        },
+        {
+          "command": "systemverilogLsp.autoConnect",
+          "when": "editorLangId == systemverilog || editorLangId == verilog",
+          "group": "systemverilogSnippet@7"
+        },
+        {
+          "command": "systemverilogLsp.showToolMenu",
+          "when": "editorLangId == systemverilog || editorLangId == verilog",
+          "group": "systemverilogSnippet@0"
         }
       ],
       "view/title": [
@@ -241,6 +261,13 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "systemverilogLsp.showToolMenu",
+        "key": "shift+space",
+        "when": "editorTextFocus && !editorReadonly && (editorLangId == systemverilog || editorLangId == verilog)"
+      }
+    ],
     "languages": [
       {
         "id": "systemverilog",

@@ -173,6 +173,70 @@ public class SnippetTests : IDisposable
     }
 
     /// <summary>
+    /// autoFormat reformats only the instantiation at the caret (the editor's
+    /// tool scope), not the whole document - that is what distinguishes it
+    /// from the LSP <c>textDocument/formatting</c> feature.
+    /// </summary>
+    [Fact]
+    public void Snippet_AutoFormat_ReformatsTheInstantiationAtTheCaret()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        const string text =
+            "module leaf(input logic a, output logic b);\n" +
+            "  assign b = a;\n" +
+            "endmodule\n" +
+            "module top();\n" +
+            "  leaf u_leaf(.a(sig), .b(out_sig));\n" +
+            "endmodule\n";
+        string uri = WriteFile("top.sv", text);
+        DidOpen(handler, uri, text);
+
+        // caret inside the instantiation on line 4
+        JsonElement result = Request(handler, "rtl/snippet", new
+        {
+            textDocument = new { uri },
+            position = new { line = 4, character = 10 },
+            kind = "autoFormat",
+        });
+
+        JsonElement snippets = result.GetProperty("snippets");
+        Assert.Equal(1, snippets.GetArrayLength());
+        Assert.Equal("replace", snippets[0].GetProperty("kind").GetString());
+        string snippetText = snippets[0].GetProperty("snippetText").GetString() ?? "";
+        // the replaced range is the instantiation only, so the module
+        // declaration on line 3 stays untouched
+        Assert.Contains("u_leaf", snippetText);
+        Assert.Contains(".a", snippetText);
+        Assert.DoesNotContain("endmodule", snippetText);
+        Assert.True(
+            snippets[0].GetProperty("start").GetInt32() > 0,
+            "the replacement must start at the instantiation, not at the document start");
+    }
+
+    /// <summary>
+    /// autoFormat outside an instantiation reports a message (the menu row is
+    /// disabled for the same reason).
+    /// </summary>
+    [Fact]
+    public void Snippet_AutoFormat_OutsideInstantiation_ReportsMessage()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        const string text = "module top();\nendmodule\n";
+        string uri = WriteFile("top.sv", text);
+        DidOpen(handler, uri, text);
+
+        JsonElement result = Request(handler, "rtl/snippet", new
+        {
+            textDocument = new { uri },
+            position = new { line = 0, character = 8 },
+            kind = "autoFormat",
+        });
+
+        Assert.Equal(0, result.GetProperty("snippets").GetArrayLength());
+        Assert.Contains("module instantiation", result.GetProperty("message").GetString());
+    }
+
+    /// <summary>
     /// portInvert flips input/output and the _I / _O suffix of the selected
     /// port declarations, and reports the range to replace.
     /// </summary>

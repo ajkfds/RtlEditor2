@@ -17,8 +17,10 @@ or build step needed once it is packaged).
   NavigatePanel
 - **Messages** pane (see below) on the right-hand side, the equivalent of
   RtlEditor2's MessageView
-- **Snippets** from the editor (see below): alwaysFF block, module instance,
-  port connection fill, port inversion, modport generation
+- **Snippets** from the editor (see below): alwaysFF block, instance
+  auto-format, module instance, port connection fill, port inversion, modport
+  generation
+- **Tool menu** (see below): the editor's `Shift+Space` tool list in a QuickPick
 - **Auto Connect** form (see below): every port of an instantiation in one
   panel, with the signal the editor would connect
 
@@ -32,6 +34,7 @@ menu:
 | Command | What it does |
 |---|---|
 | `Insert alwaysFF Block` | `always @(posedge clk or negedge rst)` block; the clock / reset are taken from the ports annotated `// @sync: clock` / `// @sync: reset` |
+| `AutoFormat Instance at Caret` | Reformats **only** the module instantiation under the caret (one port connection per line). This is the editor's `autoFormat` tool, not the whole-document formatter |
 | `Insert Module Instance` | Full instantiation of a module (parameter overrides + one named port connection per port). Shows a module picker first |
 | `Fill Port Connections` | Rewrites the instantiation under the caret, filling every port connection |
 | `Invert Selected Ports` | Flips `input`/`output` and the `_I`/`_O` name suffix of the selected port declarations |
@@ -40,6 +43,26 @@ menu:
 The inserted text uses VS Code snippet tab stops (`${1:name}`), so `Tab` jumps
 between the fields. The interactive key handling of the editor's snippets is not
 reproduced.
+
+## Tool menu (`Shift+Space`)
+
+`Shift+Space` in a SystemVerilog / Verilog editor (or
+`SystemVerilog Snippet: Show Tool Menu` from the command palette) opens the same
+tool list the desktop editor shows, as a QuickPick:
+
+- the list itself is the server's (`rtl/toolMenu`), built from
+  `CoreBridge.ToolMenuCatalog` - the **same** catalog the editor iterates, so
+  adding a tool is a one-place change and the two menus cannot drift apart;
+- each row's availability is decided by the server (`CoreBridge.ToolMenuAdapter`),
+  which asks the snippet code itself whether the tool applies at the caret. A
+  row that cannot run stays visible with the reason in its description, so the
+  menu still matches the editor's (which always lists every tool);
+- picking a row runs the corresponding command (`systemverilogLsp.snippet.*`,
+  `systemverilogLsp.autoConnect`, or VS Code's own case-transform commands);
+- `Connection Check` is reported as unavailable: it needs the desktop editor's
+  connection tree view, which has no VS Code counterpart.
+
+A QuickPick is used because VS Code has no API to place a flyout at the caret.
 
 ## Auto Connect
 
