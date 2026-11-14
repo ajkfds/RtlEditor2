@@ -399,6 +399,19 @@ function resolveServerCommand(context) {
     }
 
     if (serverPath) {
+        // Log which binary is actually used, with its timestamp. The bundled
+        // server under <extension>/server/ is a copy of a publish, so it goes
+        // stale silently after a source change; the first symptom is an old
+        // server answering ("unknown snippet: autoFormat", a missing rtl/*
+        // method, ...). Printing the path + mtime makes that obvious without
+        // having to inspect the DLLs.
+        try {
+            const stat = require('fs').statSync(serverPath);
+            logLine('server binary: ' + serverPath + ' (' + stat.size + ' bytes, ' +
+                stat.mtime.toISOString() + ')');
+        } catch (e) {
+            logLine('server binary: ' + serverPath + ' (stat failed: ' + e + ')');
+        }
         return { command: serverPath, args: [] };
     }
 
@@ -1529,8 +1542,11 @@ function toLspPosition(pos) {
 /**
  * Requests a snippet from the server and applies it.
  *
- * @param {string} kind one of the server's snippet names
- *        (alwaysFF / moduleInstance / portConnectionCreate / portInvert / modport)
+ * @param {string} kind one of the server's snippet names (alwaysFF /
+ *        autoFormat / moduleInstance / portConnectionCreate / portInvert /
+ *        modport). The server rejects an unknown kind with
+ *        "unknown snippet: <kind>", which also happens when the running server
+ *        binary is older than the extension (see resolveServerCommand).
  * @param {string} [argument] extra argument (module name for moduleInstance)
  */
 async function applySnippet(kind, argument) {
@@ -1583,7 +1599,16 @@ async function applySnippet(kind, argument) {
     }
 
     if (!result.snippets || result.snippets.length === 0) {
-        const message = result.message || 'no snippet available at the caret';
+        let message = result.message || 'no snippet available at the caret';
+        // "unknown snippet: X" means the server answered but does not know the
+        // kind: the running binary predates the kind (a stale bundled server,
+        // see resolveServerCommand). Say so, otherwise the message reads like a
+        // bug in the extension.
+        if (/^unknown snippet/i.test(message)) {
+            message += ' — the running language server does not know this tool yet. ' +
+                'Republish it (dotnet publish SystemVerilogLanguageServer.csproj -c Release ' +
+                '-o vscode-extension/server) and Reload Window. See the log for the server binary in use.';
+        }
         vscode.window.showInformationMessage('SystemVerilog LSP: ' + message);
         return;
     }

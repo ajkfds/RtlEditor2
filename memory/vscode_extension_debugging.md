@@ -284,7 +284,8 @@ codicon 文字列（`$(warning)` 等）を書いたのが原因。
 | 波線 (diagnostics) が出ない | `[server]` 行に parse エラーが出ているか。`publishDiagnostics` は didOpen/didChange 後に push される |
 | 補完 / hover が効かない | `initialize succeeded` が出ているか。出ていなければサーバ未起動 |
 | Message view が空 | スコープが `Current file` のまま別ファイルを見ている可能性（URI キーは `canonicalKey` で正規化済み） |
-| サーバが古い | `vscode-extension/server/` の同梱バイナリが publish 済みか。**プロトコル変更後は publish 更新が必須** |
+| サーバが古い | `svlsp-extension.log` の `server binary: <path> (size, mtime)` 行で、実際に使われているバイナリと日時を確認する。`vscode-extension/server/` の同梱バイナリが publish 済みか。**プロトコル変更後は publish 更新が必須** |
+| `unknown snippet: <kind>` / `rtl/*` が method not found | クライアントが知っている機能をサーバが知らない = **同梱サーバが古い**。拡張は `unknown snippet` を検出すると「republish して Reload Window」をメッセージに付ける。上の `server binary:` 行の mtime と直近の publish 時刻を比べる |
 
 ## 5. 注意事項
 

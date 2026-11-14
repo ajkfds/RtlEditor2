@@ -3,6 +3,30 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張で `autoFormat` を実行すると `unknown snippet: autoFormat` が出る** → 修正完了 (原因は同梱サーバが古いこと。publish 更新 + 切り分けログ追加。ビルド 0 errors、テスト 159 + ToolMenu 7 / Snippet 8 合格、同梱バイナリで end-to-end 実測済み)
+  - ユーザ報告: `vscode extentionでautoFormatを実行すると下記のエラーがでます` / `SystemVerilog LSP: unknown snippet: autoFormat`
+  - **原因 (同梱サーバが古い)**: メッセージはプラグイン `CoreBridge/SnippetAdapter.cs` の `default:` 分岐 (`unknown snippet: <name>`) が出所で、**サーバは応答しているが kind を知らない**状態。ソースには `SnippetName.AutoFormat` / `BuildAutoFormat` が入っていた (`2820913`) が、`vscode-extension/server/` の同梱バイナリが **2026-11-11 の publish** で `BuildAutoFormat` を含んでいなかった (修正コミットは 2026-11-13)。拡張は同梱サーバを優先使用するため、ソースが正しくても VS Code 側の挙動は変わらない (state.md に既出の「publish 更新が必要」の再発)
+  - **実測 (使い捨て C# ツール、削除済み)**: DLL のメタデータ (`#Strings` = UTF-8) と文字列リテラル (`#US` = UTF-16) を別々に走査して判定
+    | DLL | mtime | `BuildAutoFormat` (meta) | `the instantiation could not be reformatted` (str) |
+    |---|---|---|---|
+    | `vscode-extension/server/CodeEditor2VerilogPlugin.dll` (修正前) | 2026-11-11 23:13Z | **False** | **False** |
+    | `CodeEditor2VerilogPlugin/bin/Debug/.../CodeEditor2VerilogPlugin.dll` | 2026-11-14 13:25Z | True | True |
+    | `vscode-extension/server/...` (publish 後) | 2026-11-14 13:28Z | **True** | **True** |
+    - 注意: `search_files` (テキスト検索) はバイナリを走査しないため、DLL の鮮度判定はこの方法が必要。**文字列リテラルは UTF-16 なので `Encoding.UTF8` での検索は常に False になる** (最初これで誤判定した)。さらに `#US` ヒープは奇数バイト境界から始まる文字列もあるため、`Encoding.Unicode` を offset 0 と offset 1 の両方で走査する必要がある (`rtl/snippet` は offset 1 でしかヒットしなかった)
+  - **修正1 (publish 更新、コード変更なし)**: `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o vscode-extension/server -p:DebugType=None -p:DebugSymbols=false`
+  - **修正2 (`vscode-extension/extension.js` `resolveServerCommand`)**: 実際に使うサーバの **パス + size + mtime** を `svlsp-extension.log` に出すようにした (`server binary: <path> (N bytes, <ISO mtime>)`)。同梱サーバは publish のコピーなので黙って古くなるが、これで一目で分かる
+  - **修正3 (`vscode-extension/extension.js` `applySnippet`)**: `unknown snippet` を受けたら「**the running language server does not know this tool yet. Republish it (...) and Reload Window.**」をメッセージに付け、ログの `server binary:` 行を見るよう案内する (従来は拡張側のバグに見えた)
+  - **修正4 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`)**: `GetSnippets` の doc コメントに kind 一覧 (`autoFormat` を含む) と「unknown snippet はサーバが古い場合にも出る」旨を明記
+  - **修正5 (`memory/vscode_extension_debugging.md`)**: 症状表に `unknown snippet: <kind>` / `rtl/*` が method not found の行を追加し、「サーバが古い」行に `server binary:` ログで確認する手順を追記
+  - **検証 (同梱サーバを stdio 起動し VS Code と同一手順、プローブは削除済み)**:
+    - `initialize` → ok → `didOpen` (`leaf u_leaf(.CLK_I(clk), .DATA_O(data));`) → `rtl/snippet` (`kind: autoFormat`, カーソルはインスタンス内) → `{"snippets":[{"label":"autoFormat","detail":"reformat u_leaf","kind":"replace","start":14,"end":54,"snippetText":"leaf u_leaf (\r\n  .CLK_I\t( clk ),\n  .DATA_O\t( data )\n);"}]}`
+    - 対照 (存在しない kind) → `{"snippets":[],"message":"unknown snippet: noSuchKind"}` = **修正前と同じメッセージが出るのはサーバが古い場合だけ**であることを確認
+    - `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` **159 合格 / 0 失敗** / `~ToolMenuTests` **7 合格** / `~SnippetTests` **8 合格**
+    - publish 更新後の同梱サーバで `--selftest` 正常 (capabilities 応答確認)
+  - Next: VS Code で **Reload Window** 後、(1) `Shift+Space` → `AutoFormat Instance` が実行できること (2) カーソル位置のインスタンス**だけ**が整形されること (3) ログに `server binary: ... (mtime)` が出て、その mtime が直近の publish 時刻と一致すること を確認
+  - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは未実施 (目視確認のみ)。`vscode-extension/server/` は .gitignore 対象のためコミット対象外。`SystemVerilogLanguageServer.Tests/DebugBundledSyncProbe.cs` (未追跡の検証プローブ) と `CodeEditor2` / `RtlEditor2.Desktop/Program.cs` のユーザ変更は本タスク外のためコミットから除外
+
 - **VS Code 拡張の ToolMenu 実装が途中だった (autoFormat の意味ずれ / デスクトップ版メニューからの PortInvert 消失)** → 修正完了 (ビルド成功 0 errors、テスト 159 + ツールメニュー 7 / スニペット 8 合格)
   - ユーザ報告: `vscode extension実装時のToolMenuの実装が途中だったと思います`
   - **着手時の状態 (作業ツリーに未コミットで存在していたもの)**: ToolMenu 一式は概ね書かれていた
