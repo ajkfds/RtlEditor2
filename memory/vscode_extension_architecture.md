@@ -143,6 +143,24 @@
 - 方針: **メニューの「定義」（contributes.menus / when / ラベル）は VS Code 宣言なので TS に残す**。ただし「どのノードにどのメニューを出すか」を決める `contextValue` と、各アクションが必要とするパス・判断は C# のノード記述子に寄せる。TS のコマンド実装は「記述子の値を使って `vscode.workspace.fs` / `revealFileInOS` を呼ぶだけ」に痩せさせる。
 - 補足: メニュー項目のラベルを C# から動的に変えたい場合は `contributes.menus` では不可。必要なら `TreeItem.contextValue` を細分化するか、`vscode.commands` を TS 側で動的登録する（この場合もラベル文字列は C# が `rtl/hierarchy` のノード記述子で返せる）。
 
+### C# から RTL Hierarchy のノードメニューを増設する（実装済み）
+
+`contributes.menus` は静的宣言なので、C# に項目を足しても拡張を再パッケージしないと出ない。これを解消するため、**「1 個の汎用コマンド + サーバが返す項目一覧」** 方式にした。
+
+| 層 | 内容 | 置き場所 |
+|---|---|---|
+| (a) メニュー項目の一覧 | どの id / ラベル / どのノード種別に出すか / 並び順 | **C#**（`CoreBridge.HierarchyMenuCatalog`。他プラグインは `Register(...)` で追加） |
+| (b) 出し分けの判断 | そのノードで実行可能か + 不可の理由 | **C#**（`CoreBridge.HierarchyMenuAdapter.Build`） |
+| (c) 実行内容 | 何を表示 / コピー / 開くか（`text` / `clipboardText` / `fsPath`） | **C#**（`CoreBridge.HierarchyMenuAdapter.Invoke`） |
+| (d) 表示と実行 | QuickPick の表示、クリップボード、`revealFileInOS`、テキスト表示 | **TS**（`hierarchy.js` の `showNodeMenu` / `runNodeMenuEntry` の 1 実装のみ） |
+
+- プロトコル: `rtl/hierarchyMenu`（`{ kind, uri, label, instancePath }` → `{ entries: [{ id, label, detail, enabled, reason, group }] }`）と `rtl/hierarchyMenuInvoke`（`{ id, kind, uri, label, instancePath, fsPath, relativePath }` → `{ title, text?, clipboardText?, fsPath?, message? }`）。
+- 拡張側の静的宣言は `systemverilogLsp.showNodeMenu` の 1 コマンドだけ（`view/item/context` と `view/title`）。**項目を増やすときは `HierarchyMenuCatalog` に 1 件足すだけで、拡張の変更も再パッケージも不要**。
+- 現在の項目: `Simulation Setup (files)`（`SimulationSetup` の収集結果 = トップ / コンパイル対象ファイル / include path / 未解決参照）/ `Open in Explorer` / `Copy Path` / `Copy Instance Path` / `Property`。
+- 純粋なファイル操作（Add Folder / Add Blank File / Delete）は解析結果を必要としないため、従来どおり静的な `package.json` 項目のまま。
+- 注意（実装上の必須手順）: メニュー実行時は **`InMemoryFile.EnsureProjectBuilt` + `InMemoryFile.PrepareItemTree`** を先に呼ぶ。`initialize` はファイル一覧を走査するだけで parse は遅延、`Data.Item.Items` はエディタの `VerilogCommon.Updater` が埋めるため、これを省くと `SimulationSetup` がトップファイルしか返さない。
+- 注意（パス解決）: `CodeEditor2.Data.Project.RootPath` は `init` 専用だったため、`initialize` 後にルートを知る LSP ホストでは `GetAbsolutePath` がプレースホルダ配下を返していた。`RootPath` を settable にし、ルート確定時に `InMemoryProject.SetPluginRootPath` で同期する。
+
 ### まとめ（どちらも「定義は TS・中身は C#」）
 
 | 機能 | TS に残るもの | C# に寄せるもの |

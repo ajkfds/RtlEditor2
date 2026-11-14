@@ -52,12 +52,12 @@ jobs:
         run: npm install -g @vscode/vsce
 
       - name: Bundle server + package VSIX
-        working-directory: vscode-extension
+        working-directory: RtlEditorVscodeExtension
         run: npm run package
 
       - name: Locate VSIX
         id: vsix
-        working-directory: vscode-extension
+        working-directory: RtlEditorVscodeExtension
         shell: bash
         run: |
           f=$(ls *.vsix | head -n 1)
@@ -67,12 +67,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: systemverilog-lsp-vsix
-          path: vscode-extension/${{ steps.vsix.outputs.file }}
+          path: RtlEditorVscodeExtension/${{ steps.vsix.outputs.file }}
 
       - name: Create / update GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: vscode-extension/${{ steps.vsix.outputs.file }}
+          files: RtlEditorVscodeExtension/${{ steps.vsix.outputs.file }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

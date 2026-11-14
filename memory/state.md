@@ -3,6 +3,42 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張のフォルダ移動 / snippet がキーワード補完になる / C# から RTL Hierarchy メニュー増設** → 実装完了 (ビルド 0 errors、テスト 165 + sv-tests 1028 合格、publish は VS Code 終了後に要実行)
+  - ユーザ報告 4 点: (1) 拡張フォルダを `RtlEditorVscodeExtension` へ移動 (2) `begin` などの snippet が単なるキーワード補完になる (3) module 名の snippet も単なるキーワード補完になる (4) C# から RTL Hierarchy ノードのメニューを増設したい (Simulation 設定など)
+  - **原因 (2)(3) は 1 個のバグで説明できた (同梱サーバの completion が常に失敗していた)**:
+    - 同梱サーバ (`RtlEditorVscodeExtension/server`) を stdio 起動し VS Code と同じ URI (`file:///c%3A/...`) で `textDocument/completion` を実測 → **module 本体行の先頭で caret を置くと `{"code":-32603,"message":"Internal error: Unable to locate 'Avalonia.Platform.IAssetLoader'."}`**
+    - スタック: `CompletionContext.AppendModuleInstanceSnippets` → `new ModuleInstanceSnippet(moduleName)` → `AjkAvaloniaLibs.Libs.Icons.GetSvgBitmap` → `AssetLoader.Open` (Avalonia 未初期化のヘッドレス LSP では `IAssetLoader` が存在しない)
+    - つまり **module 名候補を作る過程で例外が出て completion 要求全体がエラー**。module 名候補も一緒に落ちるため「module 名 snippet が単なるキーワード補完」に見え、statement 位置でも候補が壊れていた。`begin` の snippet 自体 (`insertText` / `insertTextFormat:2`) は生成できていた (実測で確認)
+  - 修正1 (`CodeEditor2VerilogPlugin/Global.cs`): `Global.Icons.TryGetSvgBitmap(svgPath, color)` を新設 (失敗時 null)。ヘッドレスホストではアイコン無しで処理を続ける
+  - 修正2 (`Verilog/Snippets/ModuleInstanceSnippet.cs`): アイコン取得を `TryGetSvgBitmap` に変更 (経緯コメント付き)。**parse 中に構築されるクラスなのでアイコン取得で例外を投げてはいけない**
+  - 修正3 (`CoreBridge/CompletionAdapter.cs`): module 名候補を `Verilog.Snippets.ModuleInstanceSnippet` として判定し、**`SnippetAdapter` でインスタンス化テキスト (parameter override + 全 port の named 接続 + `${n:name}` タブストップ) を生成**して `kind=9 (Module)` / `insertTextFormat=2` で返す。従来はラベル文字列のみで、エディタの `ModuleInstanceSnippet.ApplyAsync` 相当の展開が無かった
+  - **修正4 (C# からメニュー増設)**: `contributes.menus` は静的宣言なので C# に足しても再パッケージが必要 → **「汎用コマンド 1 個 + サーバが返す項目一覧」** 方式
+    - 新規 `CoreBridge/HierarchyMenuCatalog.cs`: メニュー項目の単一情報源 (`MenuId` / `AppliesTo` / `Entry` / `Register` / `Unregister` / `All`)。他プラグインは `Register(...)` で追加できる
+    - 新規 `CoreBridge/HierarchyMenuAdapter.cs`: `Build(kind, file, instancePath)` でノードに適用される行と可否理由、`Invoke(...)` で実行結果 (`text` / `clipboardText` / `fsPath`) を返す
+    - 初期項目: `Simulation Setup (files)` (**`Data.SimulationSetup` の収集結果 = トップ / コンパイル対象ファイル / include path / 未解決参照**。デスクトップ版の Run Simulation と同じ収集コード) / `Open in Explorer` / `Copy Path` / `Copy Instance Path` / `Property`
+    - 新規 `SystemVerilogLanguageServer/Server/LspHandler.HierarchyMenu.cs`: `rtl/hierarchyMenu` / `rtl/hierarchyMenuInvoke` + DTO
+    - `RtlEditorVscodeExtension/hierarchy.js`: `showNodeMenu` / `runNodeMenuEntry` の **2 関数だけ** (QuickPick 表示 / クリップボード / `revealFileInOS` / テキスト表示)
+    - `RtlEditorVscodeExtension/package.json`: `systemverilogLsp.showNodeMenu` を `view/item/context` と `view/title` に 1 行ずつ追加 (項目追加時に触るのはここではなく C# のカタログ)
+  - **メニュー実装で判明した副次バグ 2 件も修正**:
+    - `InMemoryFile.PrepareItemTree()` 新設: `Data.Item.Items` はエディタの `VerilogCommon.Updater` が埋めるため、階層展開を経ずに `SimulationSetup` を呼ぶと **トップファイルしか収集されない**。メニュー実行時に Updater を 1 回走らせる
+    - `InMemoryFile.EnsureProjectBuilt(project)` を共通化: `initialize` はファイル一覧を走査するだけで parse は遅延するため、依存ファイルが未 parse だと収集漏れになる
+    - `CodeEditor2.Data.Project.RootPath` を `init` → `set` に変更 + `InMemoryProject.SetPluginRootPath(root)` 新設: ルートは `initialize` 後に判明するため、init 専用だと `GetAbsolutePath` がプレースホルダ (temp) 配下を返し、シミュレーション対象パスが全部誤っていた。ルート確定 4 箇所 (LoadWorkspaceFiles / didChangeWorkspaceFolders / EnsureWorkspaceRootFromFile / EnsureWorkspaceRootFromKnownFiles) で同期
+  - **フォルダ移動 (1)**: `RtlEditorVscodeExtension` はサブモジュール (`a58bac7`)。旧 `vscode-extension/` の追跡ファイルを `git rm -r --cached` で削除し、`README.md` (ツリー / ビルド手順 / vsix パス / server サイズ注記)、`.github/workflows/vscode-extension-release.yml` (`working-directory` / artifact / release パス)、`extension.js` (コメント + エラーメッセージの publish 先) を新パスへ更新
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` **165 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+    - 回帰テスト新設 `SystemVerilogLanguageServer.Tests/HierarchyMenuTests.cs` (6 件): カタログ全項目が `rtl/hierarchyMenu` に出る / `SimulationSetup` が file ノードで enabled かつ `leaf.sv` を含む収集結果を返す / `Copy Instance Path` の値 / instancePath 無しは理由付きで disabled / folder には解析依存項目を出さない / `Register` で足した項目が配信される
+    - **fresh publish のサーバを stdio 起動し VS Code と同じ URI で end-to-end 実測**:
+      - module 本体行頭 `beg` → `[{child, kind:9, insertText:"child child_0 (\n\t.a\t( ${1:a} ),\n\t.b\t( ${2:b} )\n);"}, {top, ...}]`
+      - statement 位置 `beg` → `{label:"begin", kind:14, insertText:"begin\n\t$0\nend", insertTextFormat:2}`
+      - `rtl/hierarchyMenu` → `simulationSetup` / `openInExplorer` / `copyPath` / `showProperty`
+      - `rtl/hierarchyMenuInvoke(simulationSetup)` → `top: top` + `files (1)` (**実測時は依存ファイルが initialize 後の作成で未走査。テストは initialize 前に作成して `leaf.sv` を確認**)
+    - JS 4 ファイルの括弧バランス + `package.json` の strict JSON 検証 (regex リテラルを考慮した一時ツール、削除済み) → すべて OK
+  - **未完了 (最重要)**: 同梱サーバの更新が **稼働中サーバ (PID 28488) の DLL ロックで失敗** (MSB3027/MSB3021)。**VS Code を完全に終了してから**:
+    `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o RtlEditorVscodeExtension/server -p:DebugType=None -p:DebugSymbols=false -p:CopyOutputSymbolsToPublishDirectory=false`
+  - Next: Reload Window 後、(1) module 本体行頭で module 名候補が出て、選ぶと **インスタンス全体 (parameter + port 接続)** が挿入されること (2) statement 位置で `begin` が `begin/end` に展開されること (3) RTL Hierarchy のノード右クリック (または view title) の `Show Menu...` に C# 定義の項目が出て、`Simulation Setup (files)` がトップ + コンパイル対象ファイル + include path を表示すること を確認
+  - メモ: 検証用の一時プローブ (`DebugCompletionProbe.cs` / `DebugMenuProbe.cs` / `_tmp_dllcheck` / `_tmp_snippetprobe`) は削除済み。`CodeEditor2` の `Project.RootPath` 変更は本タスク由来。`RtlEditor2.Desktop/Program.cs` と `RtlEditor2.code-workspace` の既存の作業ツリー変更は本タスク外のためコミットから除外
+
 - **VS Code 拡張で `autoFormat` を実行すると `unknown snippet: autoFormat` が出る** → 修正完了 (原因は同梱サーバが古いこと。publish 更新 + 切り分けログ追加。ビルド 0 errors、テスト 159 + ToolMenu 7 / Snippet 8 合格、同梱バイナリで end-to-end 実測済み)
   - ユーザ報告: `vscode extentionでautoFormatを実行すると下記のエラーがでます` / `SystemVerilog LSP: unknown snippet: autoFormat`
   - **原因 (同梱サーバが古い)**: メッセージはプラグイン `CoreBridge/SnippetAdapter.cs` の `default:` 分岐 (`unknown snippet: <name>`) が出所で、**サーバは応答しているが kind を知らない**状態。ソースには `SnippetName.AutoFormat` / `BuildAutoFormat` が入っていた (`2820913`) が、`vscode-extension/server/` の同梱バイナリが **2026-11-11 の publish** で `BuildAutoFormat` を含んでいなかった (修正コミットは 2026-11-13)。拡張は同梱サーバを優先使用するため、ソースが正しくても VS Code 側の挙動は変わらない (state.md に既出の「publish 更新が必要」の再発)

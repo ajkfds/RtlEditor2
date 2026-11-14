@@ -80,7 +80,7 @@ RtlEditor2/                           # Main repository
 ├── AvaloniaEdit/                     # Text editor control
 ├── SystemVerilogLanguageServer/      # LSP server (bundled into the VS Code extension)
 ├── SystemVerilogLanguageServer.Tests/# LSP server parser / hierarchy tests
-└── vscode-extension/                 # VS Code extension (see "VS Code extension" below)
+└── RtlEditorVscodeExtension/         # VS Code extension (see "VS Code extension" below)
 
 # Build & Run
 - Both Linux and Windows: dotnet build && dotnet run
@@ -97,7 +97,8 @@ dotnet build "RtlEditor2.Desktop.csproj"
 
 ## VS Code extension (`.vsix`)
 
-The repository also ships a **VS Code extension** under `vscode-extension/` that
+The repository also ships a **VS Code extension** under
+`RtlEditorVscodeExtension/` (a submodule) that
 exposes the SystemVerilog language server (definition, references, hover,
 completion, diagnostics, RTL Hierarchy view). It bundles the published server, so
 the generated `.vsix` is self-contained: end users need neither .NET nor this
@@ -110,7 +111,7 @@ Prerequisites: **.NET 10 SDK**, **Node.js 18+**, and `@vscode/vsce`
 `npx --yes @vscode/vsce` when it is not installed globally.
 
 ```bash
-cd vscode-extension
+cd RtlEditorVscodeExtension
 npm run vsix
 ```
 
@@ -124,11 +125,11 @@ problem with a readable message:
 | 3 | **verify the bundle** | runs `--selftest` against the exact DLL that will be shipped, so a missing / stale server fails here instead of silently shipping an extension that does nothing |
 | 4 | **package** | removes stale `.vsix` files, runs `vsce package --no-dependencies`, and prints the resulting path, size and install command |
 
-Produced file: `vscode-extension/systemverilog-lsp-<version>.vsix`
+Produced file: `RtlEditorVscodeExtension/systemverilog-lsp-<version>.vsix`
 
 ```bash
 # install it
-code --install-extension vscode-extension/systemverilog-lsp-0.1.0.vsix
+code --install-extension RtlEditorVscodeExtension/systemverilog-lsp-0.1.0.vsix
 ```
 
 Useful flags:
@@ -142,12 +143,12 @@ node scripts/make-vsix.js --out dist      # also copy the .vsix into dist/
 for CI that already published the server.
 
 > [!NOTE]
-> `vscode-extension/server/` should stay around **100 MB**. It once grew to
-> 734 MB because `dotnet publish -o` never removes old files (stale `.pdb`
+> `RtlEditorVscodeExtension/server/` should stay around **100 MB**. It once grew
+> to 734 MB because `dotnet publish -o` never removes old files (stale `.pdb`
 > files, every platform's native runtimes, a bundled Playwright `node.exe`).
 > A folder that large makes the extension development host die with exit code
 > 134 right after `Loading development extension`. The build script prunes it;
-> see `vscode-extension/README.md` for details.
+> see `RtlEditorVscodeExtension/README.md` for details.
 
 ### Release
 
