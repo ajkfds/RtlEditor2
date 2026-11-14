@@ -43,3 +43,6 @@ url=git@github.com:ajkfds/AvaloniaEdit.git
 [submodule "SystemVerilogLanguageServer"]
 	path = SystemVerilogLanguageServer
 	url = git@github.com:ajkfds/SystemVerilogLanguageServer.git
+[submodule "RtlEditorVscodeExtension"]
+	path = RtlEditorVscodeExtension
+	url = https://github.com/ajkfds/RtlEditorVscodeExtension.git
