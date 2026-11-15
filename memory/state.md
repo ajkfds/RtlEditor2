@@ -3,6 +3,35 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張の autoConnect フォームを RtlEditor の `AutoConnectWindow` と同じ操作モデルに変更 (combobox 廃止)** → 実装完了 (ビルド 0 errors、AutoConnectTests 5 合格)
+  - ユーザ要求: `vscodeのautoConnect snippetに関して。comboboxではなく、現状の接続 & 接続候補表示して結果をボタンでacceptするrtl editor側と似た実装にしてほしい。カーソル上下、左右、enterだけで操作して決定できるようにして。`
+  - 変更前 (`RtlEditorVscodeExtension/autoConnectView.js`): 1 行 1 個の `<select>` (ドロップダウン) で候補を選び、**Apply ボタンでしか確定できない**。デスクトップ版 `AutoConnectWindow` の「行ごとに accept / reject して最後に Enter」という操作が再現できていなかった
+  - **デスクトップ版の操作モデル (`Views/AutoConnectWindow.axaml.cs` を実装確認して再現)**:
+    | キー | 動作 |
+    |---|---|
+    | `Up` / `Down` | `ListBox0.SelectedIndex` を増減 (端でクランプ) |
+    | `Left` / `Space` | `ConnectionItem.Accept()` = `target = cantidates[0]` → 次の行へ |
+    | `Right` | `ConnectionItem.Reject()` = `target` を空に → 次の行へ |
+    | `Enter` | `Complete()` = 全行を `PortConnection` に反映して閉じる |
+    | `Escape` | `Cancel()` |
+    - 行の表示は `ConnectionItem.UpdateVisual()` の `.port( <target> )  ->  <cantidates[0]>` (候補が target と異なるときだけ矢印を出す) を再現
+    - ポートグループは `CommentItem` のコメント行で、**選択対象にしない** (デスクトップ版も `ConnectionItem` 以外は Left/Right で moveDownWard するだけ)
+  - 変更内容 (`autoConnectView.js` のみ。サーバ / C# は無変更):
+    - テーブル + `<select>` を廃止し、`#rows` に行を `<div class="row">` で描画。**行 = `.port(result)` + `→ 候補`** (候補が複数なら `+N`)。`Dir` 列は残置
+    - 状態を 4 種のアイコンで表現: `accepted` (✓ 候補を採用) / `kept` (= 既存接続のまま) / `rejected` (✗ 未接続) / `empty` (· 候補なし)
+    - `results[portName]` を**フォームの状態**として保持し、初期値は `currentConnection` (デスクトップ版 `ConnectionItem.target` の初期化と同じ)。Apply 時に全ポートを送るので既存接続は維持され、reject した行は明示的に `null` でクリアされる
+    - `document.addEventListener('keydown')` で ↑↓ ←(Space も) → Enter Escape を処理。`stepSelection` は端でクランプし、**repaint は呼び出し側で 1 回だけ**にする (当初 `move()` 内で render しており「最終行で accept しても状態が描画されない」バグを出したため修正)
+    - マウスは同じ 2 操作の代替のみ: 行の `✓` / `✗` ボタンと行クリック。`mousedown` + `preventDefault` で **focus を body から動かさない** (クリック後も矢印キーが効く)。行ボタンは `tabindex="-1"` でタブ移動の対象外
+    - Enter のキーリピートで二重適用しないよう `applied` ラッチを追加。`rtl/autoConnectApply` が空を返した / 例外時は拡張から `{ type: 'applyFailed' }` を post してラッチを解除 (再試行可能)
+    - モデルは `JSON.stringify` してインライン `<script>` に埋め (`<` を `\u003c` にエスケープ)。accept / reject のたびに拡張ホストへ往復せず再描画する
+    - `isSettled` は webview では未使用になったため送らない (`AutoConnectAdapter` / `LspHandler.AutoConnect` は変更なし)
+  - 検証:
+    - `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → **0 errors**
+    - `dotnet test --filter FullyQualifiedName~AutoConnectTests` → **5 合格 / 0 失敗** (C# 無変更のため regression なし)
+    - 一時 C# チェッカーで機械検証 (削除済み): ファイル全体の backtick 偶数 / 括弧バランス / 埋め込み `<script>` 単体の括弧バランス (正規表現リテラルを考慮) / 必須キー分岐 (`ArrowDown`/`ArrowUp`/`ArrowLeft`/`ArrowRight`/`Enter`/`Escape`) / `stepSelection` / `applyFailed` ラッチ / **`<select>` が残っていないこと** → すべて OK
+  - Next: VS Code で Reload Window 後、インスタンス上で Auto Connect Ports を開き (1) 行が `.port(接続) → 候補` で表示されること (2) ↑↓ でカーソル移動 (3) ←/Space で accept・→ で reject して自動で次行へ (4) Enter でインスタンスが書き換わること (5) Esc で何も変わらないこと (6) クリック後も矢印キーが効くこと を確認。**拡張側 (`RtlEditorVscodeExtension/`) のみの変更なので publish 不要** (Reload Window のみ)
+  - メモ: `node --check` はコマンド許可リスト外のため JS 構文チェックは上記の C# 代替チェッカーで実施
+
 - **VS Code 拡張で comment annotation の色が comment と同じになる** → 修正完了 (ビルド 0 errors、テスト 166 + sv-tests 1028 合格、publish は VS Code 終了後に要実行)
   - ユーザ報告: `vscode extensionでcomment annotation箇所の色がcommentと同じになってます`
   - **実測 (プローブ、削除済み)**: `// @sync:clk` / `// @clock` を含むファイルで、パーサの色セグメントは正しかった
