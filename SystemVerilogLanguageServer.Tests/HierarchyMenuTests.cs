@@ -92,6 +92,11 @@ public class HierarchyMenuTests : IDisposable
                  in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
         {
             if ((entry.Targets & pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo.Instance) == 0) continue;
+            // A submenu only groups rows. The native VS Code menu renders it as
+            // a flyout; a QuickPick cannot nest, so rtl/hierarchyMenu lists its
+            // children (prefixed with the submenu label) instead of the
+            // grouping row itself.
+            if (entry.IsSubmenu) continue;
 
             bool found = false;
             foreach (JsonElement e in entries.EnumerateArray())
@@ -100,6 +105,16 @@ public class HierarchyMenuTests : IDisposable
             }
             Assert.True(found, "menu is missing catalog entry " + entry.Id);
         }
+
+        // the submenu's children are listed, so the row is still reachable
+        // from the QuickPick fallback
+        bool hasNested = false;
+        foreach (JsonElement e in entries.EnumerateArray())
+        {
+            if (e.GetProperty("id").GetString()
+                == pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.SimulationSetup) hasNested = true;
+        }
+        Assert.True(hasNested, "the submenu's child row must be listed in the QuickPick");
     }
 
     /// <summary>

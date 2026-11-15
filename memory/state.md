@@ -3,6 +3,29 @@
 
 ## 進行中タスク (最新)
 
+- **RTL Hierarchy の右クリックメニューに C# 定義の階層メニューを TS 実装と区別なく出す** → 実装完了 (ビルド 0 errors、テスト 187 + sv-tests 1028 合格。**publish は VS Code 終了後に要実行**)
+  - ユーザ要求: `vscode extensionのrtl hierarchy 要素に対する右クリックメニューのc#拡張に関して。C#側のメニューを開くのではなく、vscode内のメニューに階層的なメニュー要素をts側実装と区別がつかない形でC#側で追加したい`
+  - **VS Code の制約 (これが設計を決める)**: `contributes.commands` / `contributes.submenus` / `contributes.menus` は `package.json` の**静的宣言**で、**実行時にメニュー行を追加する API は存在しない** (`vscode.commands.registerCommand` は実装の登録のみ)。よって「C# に足すだけで即ネイティブ行が出る」は原理的に不可。従来の `Show Menu...` → QuickPick は 2 段階で TS 側の静的項目と見た目が揃わなかった
+  - **採用方式 = カタログから `package.json` の contributes を生成する**: C# カタログを単一情報源のまま、ネイティブメニュー行（サブメニュー含む）を生成物として持つ。行は通常の `contributes` 行なので **TS 側の静的項目と見た目・挙動が完全に同一**
+  - 実装1 (`CodeEditor2VerilogPlugin/CoreBridge/HierarchyMenuCatalog.cs`): `Entry.ParentId` (親サブメニュー id) / `Entry.IsSubmenu` (グループ行) を新設。`Children(parentId)` helper を追加 (`All` は QuickPick 用のフラット順のまま)。`MenuId.Simulation` を新設し `SimulationSetup` をその子に
+  - 実装2 (`CoreBridge/HierarchyMenuManifest.cs` 新規): `Build()` が `commands` / `submenus` / `menus.viewItemContext` を組み立てる。`CommandId(id)` = `systemverilogLsp.hierarchy.<id>` / `SubmenuId(id)` = `systemverilogLsp.hierarchySubmenu.<id>`。ノード種別ごとに 1 行 (`viewItem == rtlFolder/rtlFile/rtlInstance`)、`group` は 3 桁ゼロ詰め + `_hierarchyMenu`。`ToJson()` は人間が貼れるよう `UnsafeRelaxedJsonEscaping` で整形出力
+  - 実装3 (`SystemVerilogLanguageServer/Program.cs`): `--hierarchy-menu-manifest` で生成 JSON を stdout へ出力
+  - 実装4 (`CoreBridge/HierarchyMenuAdapter.cs`): `Build()` はサブメニュー行を除外 (QuickPick は入れ子にできない) し、子は `親 › 子` のラベルで列挙。`Invoke()` はサブメニュー id を明示的に拒否
+  - 実装5 (`RtlEditorVscodeExtension/package.json`): `contributes.submenus` に `Simulation`、`contributes.commands` に生成 5 件、`menus.view/item/context` に生成 14 行 (サブメニュー 2 + コマンド 12) を追加。既存の TS 静的行 (Add Folder / Delete / Reveal 等) はそのまま
+  - 実装6 (`RtlEditorVscodeExtension/hierarchy.js`): `GENERATED_COMMAND_PREFIX` / `GENERATED_HIERARCHY_MENU_IDS` を新設し、**id ごとに実装を 1 つ登録**して `rtl/hierarchyMenuInvoke` へ転送 (静的項目と同じ経路)
+  - 実装7 (`RtlEditorVscodeExtension/README.md` / `memory/vscode_extension_architecture.md`): 「なぜ生成するのか」「生成コマンド」「`Show Menu...` は実行時登録項目のフォールバックとして残す」を明記
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/HierarchyMenuManifestTests.cs`, 4 件): カタログ全項目に対応する contributes がある / 適用ノード種別ごとに行が出る (出るべきでない所に出ない) / ネストが `submenu` で表現される / `hierarchy.js` の id 一覧がカタログと一致。**`package.json` / `hierarchy.js` / カタログのドリフトを検出**
+  - 既存テスト更新 (`HierarchyMenuTests.Menu_ServesTheCatalogEntries`): サブメニュー行は QuickPick に出ない新仕様に合わせ、代わりに子 (`simulationSetup`) が列挙されることを assert
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **187 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+    - `dotnet ...SystemVerilogLanguageServer.dll --hierarchy-menu-manifest` の出力を実測 (submenus 1 / commands 5 / menus 14)
+    - `package.json` の strict JSON 妥当性 + JS 4 ファイルの括弧バランスを機械検証 (一時プローブ、削除済み) → すべて OK
+  - **未完了 (最重要)**: 同梱サーバの更新が**稼働中サーバ (PID 14224) の DLL ロック**で失敗 (MSB3027/MSB3021)。**VS Code を完全に終了してから**:
+    `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o RtlEditorVscodeExtension/server -p:DebugType=None -p:DebugSymbols=false -p:CopyOutputSymbolsToPublishDirectory=false`
+  - Next: VS Code で Reload Window 後、RTL Hierarchy のノードを右クリックし (1) `Simulation ›` サブメニューが TS 側項目と同じ見た目で出ること (2) その中の `Simulation Setup (files)` が動作すること (3) `Open in Explorer` / `Copy Path` / `Copy Instance Path` / `Property` がネイティブ行として出て動作すること (4) `Show Menu...` が従来どおり全項目を QuickPick で出せること を確認
+  - メモ: 検証用プローブ (`DebugManifestJsonProbe.cs`) は削除済み。カタログに項目を足したら **`--hierarchy-menu-manifest` の出力を `package.json` に反映**すること (忘れるとテストが落ちる)
+
 - **VS Code 拡張で comment annotation の色がおかしくなった** → 修正完了 (ビルド 0 errors、テスト 183 + sv-tests 1028 合格)
   - ユーザ報告: `commentannotationの色がおかしくなりました`
   - **根本原因 (拡張側の placeholder legend がサーバより 1 要素少ない)**: `extension.js` の `tokenTypesByIndex`（activate 時点のプレースホルダ）が **`reference` を欠いて 13 要素**だった。サーバの legend は 14 要素:

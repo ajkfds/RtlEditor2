@@ -158,6 +158,19 @@
 - 拡張側の静的宣言は `systemverilogLsp.showNodeMenu` の 1 コマンドだけ（`view/item/context` と `view/title`）。**項目を増やすときは `HierarchyMenuCatalog` に 1 件足すだけで、拡張の変更も再パッケージも不要**。
 - 現在の項目: `Simulation Setup (files)`（`SimulationSetup` の収集結果 = トップ / コンパイル対象ファイル / include path / 未解決参照）/ `Open in Explorer` / `Copy Path` / `Copy Instance Path` / `Property`。
 - 純粋なファイル操作（Add Folder / Add Blank File / Delete）は解析結果を必要としないため、従来どおり静的な `package.json` 項目のまま。
+
+### ネイティブ階層メニュー化（C# を単一情報源のまま、TS と区別できない行にする）
+
+上の QuickPick 方式は「メニューを開いてから選ぶ」2 段階で、TS 側の静的項目と見た目が揃わない。ユーザ要求は「C# 側のメニューを開くのではなく、vscode 内のメニューに階層的なメニュー要素を TS 実装と区別がつかない形で C# 側で追加する」。
+
+- **制約**: VS Code の `contributes.commands` / `contributes.submenus` / `contributes.menus` は `package.json` の静的宣言で、**実行時にメニュー行を追加する API は無い**（`vscode.commands.registerCommand` は実装の登録のみ）。したがって「C# に足すだけで即座にネイティブ行が出る」ことは原理的に不可能。
+- **採用方式: カタログから manifest を生成する**。`CoreBridge/HierarchyMenuManifest` が `HierarchyMenuCatalog` を `contributes.commands` / `contributes.submenus` / `menus.view/item/context` に射影し、`SystemVerilogLanguageServer --hierarchy-menu-manifest` が JSON を出力する。生成物を `package.json` に貼る。
+  - 行は通常の `contributes` 行なので、TS 側の静的項目（Add Folder 等）と**見た目・挙動が完全に同一**。ネイティブのサブメニュー（`submenu` プロパティ + `contributes.submenus`）で階層化される。
+  - コマンド id は `systemverilogLsp.hierarchy.<catalog id>`。`hierarchy.js` が id ごとに実装を 1 つ登録し、`rtl/hierarchyMenuInvoke` へ転送する（静的項目と同じ経路）。
+  - 階層は `Entry.ParentId` / `Entry.IsSubmenu` で表現。サブメニュー行は `Build()` の QuickPick から除外し、子は `親 › 子` のラベルで列挙する（QuickPick は入れ子にできないため）。
+  - ドリフト防止: `HierarchyMenuManifestTests` が `package.json` / `hierarchy.js` / カタログの三者一致を検証する。
+- **QuickPick (`Show Menu...`) は残す**: プラグインが**実行時**に `Register(...)` した項目は manifest に現れないため、その経路のフォールバックとして必要。
+- 限界: 生成を忘れると C# の新項目はネイティブメニューに出ない（テストが検出する）。完全自動化するには `.vsix` パッケージ時に manifest を再生成するビルド手順が必要（`scripts/make-vsix.js` に組み込む余地あり）。
 - 注意（実装上の必須手順）: メニュー実行時は **`InMemoryFile.EnsureProjectBuilt` + `InMemoryFile.PrepareItemTree`** を先に呼ぶ。`initialize` はファイル一覧を走査するだけで parse は遅延、`Data.Item.Items` はエディタの `VerilogCommon.Updater` が埋めるため、これを省くと `SimulationSetup` がトップファイルしか返さない。
 - 注意（パス解決）: `CodeEditor2.Data.Project.RootPath` は `init` 専用だったため、`initialize` 後にルートを知る LSP ホストでは `GetAbsolutePath` がプレースホルダ配下を返していた。`RootPath` を settable にし、ルート確定時に `InMemoryProject.SetPluginRootPath` で同期する。
 
