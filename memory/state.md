@@ -3,6 +3,22 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張で comment annotation の色がおかしくなった** → 修正完了 (ビルド 0 errors、テスト 183 + sv-tests 1028 合格)
+  - ユーザ報告: `commentannotationの色がおかしくなりました`
+  - **根本原因 (拡張側の placeholder legend がサーバより 1 要素少ない)**: `extension.js` の `tokenTypesByIndex`（activate 時点のプレースホルダ）が **`reference` を欠いて 13 要素**だった。サーバの legend は 14 要素:
+    | index | サーバ legend | 拡張の placeholder | 結果 |
+    |---|---|---|---|
+    | 11 | `identifier` | `identifier` | OK |
+    | 12 | **`reference`** | **`annotation`** | reference が annotation 色 (#C8FF64) で描画 |
+    | 13 | **`annotation`** | (範囲外) | annotation の色が付かない |
+  - **なぜ効くか**: `registerDocumentSemanticTokensProvider` は **activate 時**（LSP handshake 前）に呼ばれ、VS Code はその時点の legend を固定して以降のトークン index を解釈する。initialize 後に `tokenTypesByIndex` を採用しても、この side が stream を**組み立てる**側にしか効かず、登録済み legend は変わらない。前回 `reference` トークン型を追加した際 (`bc1e3a0` / `faaa781`) に placeholder を更新し忘れたのが原因
+  - 修正1 (`RtlEditorVscodeExtension/extension.js`): placeholder に `'reference'` を追加してサーバ legend と完全一致させ、**VS Code が legend を登録時に固定すること**と、ずれると index が 1 つずれることを経緯コメントで明記
+  - 修正2 (同 `registerSemanticTokensProvider` / `reregisterSemanticTokensProvider` 新設): 登録処理をヘルパに切り出し、disposable を `semanticTokensDisposables` で管理。**サーバ legend を採用した直後に provider を正しい legend で再登録**する（placeholder が将来ずれても自己修復する）。`deactivate` で明示的に破棄
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/ExtensionLegendTests.cs`): `extension.js` の `tokenTypesByIndex` リテラルを正規表現で読み取り、`LspHandler.SemanticTokenTypes` と**完全一致**することを assert。**修正を stash で戻すと `Collections differ ↓ (pos 12) Expected: [... "identifier", "reference", "annotation"] / Actual: [... "identifier", "annotation"]` で失敗**することを実証
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **183 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗** / JS 4 ファイルの括弧バランス検証 OK
+  - Next: VS Code で Reload Window 後、(1) `// @sync:CLK_I` の `@sync:CLK_I` が **lime (#C8FF64)** で表示されること (2) 通常コメントは従来どおり緑 (#6A9955) であること (3) 未分類の単語（lightweight scanner の fallback）が lime ではなく既定前景色であること を確認。**拡張側 (`RtlEditorVscodeExtension/`) のみの変更なので publish 不要** (Reload Window のみ)
+  - メモ: 検証用プローブ (`DebugJsSyntaxProbe.cs`) は削除済み。`node --check` はコマンド許可リスト外のため JS 構文チェックは C# の括弧バランス検証で代替
+
 - **VS Code 拡張で floating input 警告のマーク範囲が `(` の 1 文字だけになる** → 修正完了 (ビルド 0 errors、テスト 182 + sv-tests 1028 合格、publish 更新・selftest 正常)
   - ユーザ報告: `mod2 mod2_0 (.DATA_I (  ), ...)` の floating input error について、RtlEditor は `(` から `)` までマークされるが、VS Code 拡張では `(` の位置にのみマークが出る
   - **実測 (プローブ 2 種、削除済み)**:
