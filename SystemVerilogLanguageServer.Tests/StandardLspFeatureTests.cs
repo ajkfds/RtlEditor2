@@ -424,6 +424,97 @@ public class StandardLspFeatureTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A comment annotation (<c>// @sync:clk</c>, <c>// @clock</c>,
+    /// <c>// @scope ...</c>) must keep its own colour inside the comment.
+    ///
+    /// <para>
+    /// The parser paints the whole comment with <c>ColorType.Comment</c> and
+    /// then re-paints the annotation tokens with
+    /// <c>HighLightedComment</c> / <c>CommentAnnotation</c>. Reporting those as
+    /// the "comment" token type - and dropping them as an overlap of the
+    /// covering comment - made an annotation look exactly like the comment
+    /// text, which is the reported symptom.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void SemanticTokens_CommentAnnotationKeepsItsOwnColour()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        string text =
+            "module top;\n" +
+            "    // plain comment\n" +
+            "    logic clk;\n" +
+            "    // @sync:clk\n" +
+            "    logic d;\n" +
+            "endmodule\n";
+        string uri = WriteFile("annotation.sv", text);
+        DidOpen(handler, uri, text);
+
+        // the legend must advertise the annotation token type
+        string initialize = JsonSerializer.Serialize(new { processId = 1, capabilities = new { } });
+        using JsonDocument initDoc = JsonDocument.Parse(initialize);
+        handler.TryHandleRequest("initialize", initDoc.RootElement, default, out object? initResult);
+        List<string> legend = new();
+        foreach (JsonElement t in JsonDocument.Parse(JsonSerializer.Serialize(initResult)).RootElement
+                     .GetProperty("capabilities").GetProperty("semanticTokensProvider")
+                     .GetProperty("legend").GetProperty("tokenTypes").EnumerateArray())
+        {
+            legend.Add(t.GetString() ?? "");
+        }
+        int annotationIndex = legend.IndexOf("annotation");
+        Assert.True(annotationIndex >= 0, "the legend must advertise the 'annotation' token type");
+        int commentIndex = legend.IndexOf("comment");
+        Assert.True(commentIndex >= 0);
+
+        JsonElement tokens = Request(handler, "textDocument/semanticTokens/full",
+            new { textDocument = new { uri } });
+        JsonElement data = tokens.GetProperty("data");
+
+        // decode the delta-encoded stream (LSP 3.17 semantic tokens) and collect
+        // (line, char, len, type)
+        List<(int Line, int Char, int Len, int Type)> decoded = new();
+        int line = 0, character = 0;
+        for (int i = 0; i + 4 < data.GetArrayLength(); i += 5)
+        {
+            int deltaLine = data[i].GetInt32();
+            int deltaChar = data[i + 1].GetInt32();
+            if (deltaLine == 0)
+            {
+                character += deltaChar;
+            }
+            else
+            {
+                line += deltaLine;
+                character = deltaChar;
+            }
+            decoded.Add((line, character, data[i + 2].GetInt32(), data[i + 3].GetInt32()));
+        }
+
+        // line 3 is "    // @sync:clk": the annotation part must be coloured
+        // with the annotation token type, not with "comment"
+        List<(int Line, int Char, int Len, int Type)> annotationLine =
+            decoded.FindAll(t => t.Line == 3);
+        Assert.True(annotationLine.Count > 0, "line 3 produced no semantic tokens");
+        Assert.Contains(annotationLine, t => t.Type == annotationIndex);
+
+        // the plain comment line (line 1) must stay a plain comment
+        List<(int Line, int Char, int Len, int Type)> plainLine = decoded.FindAll(t => t.Line == 1);
+        Assert.Contains(plainLine, t => t.Type == commentIndex);
+        Assert.DoesNotContain(plainLine, t => t.Type == annotationIndex);
+
+        // the stream must stay strictly non-overlapping (VS Code drops
+        // overlapping tokens and the span would lose its colour)
+        for (int i = 1; i < decoded.Count; i++)
+        {
+            (int Line, int Char, int Len, int Type) prev = decoded[i - 1];
+            (int Line, int Char, int Len, int Type) cur = decoded[i];
+            if (cur.Line != prev.Line) continue;
+            Assert.True(cur.Char >= prev.Char + prev.Len,
+                $"overlap on line {cur.Line} at char {cur.Char} (previous ends at {prev.Char + prev.Len})");
+        }
+    }
+
     [Fact]
     public void Theme_LegendMatchesInitializeCapability()
     {

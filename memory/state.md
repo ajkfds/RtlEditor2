@@ -3,6 +3,35 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張で comment annotation の色が comment と同じになる** → 修正完了 (ビルド 0 errors、テスト 166 + sv-tests 1028 合格、publish は VS Code 終了後に要実行)
+  - ユーザ報告: `vscode extensionでcomment annotation箇所の色がcommentと同じになってます`
+  - **実測 (プローブ、削除済み)**: `// @sync:clk` / `// @clock` を含むファイルで、パーサの色セグメントは正しかった
+    | セグメント | 範囲 | ColorType |
+    |---|---|---|
+    | `// @sync:clk` (行全体) | idx=52 len=12 | **Comment** (#6A9955) |
+    | `@sync` | idx=55 len=5 | **HighLightedComment** (#C8FF64) |
+    | `:` | idx=60 len=1 | HighLightedComment |
+    | `clk` | idx=61 len=3 | HighLightedComment |
+    - つまりエディタは「コメント全体を Comment で塗り、その内側を annotation 色で上塗り」している。`ColorType.CommentAnnotation` も同じ **#C8FF64**
+  - **根本原因 1 (`NormalizeTokens` が入れ子の上塗りを捨てていた)**: 重なりを「先に確定したトークンを優先して後続を捨てる」実装だったため、**外側の Comment が先に確定 → 内側の annotation が破棄**されていた (LSP semantic tokens は重なり不可なので捨てる処理自体は必要)
+  - **根本原因 2 (`ColorTypeToTokenType` が両方 Comment にマップ)**: `HighLightedComment` / `CommentAnnotation` → `TokenTypes.Comment`。たとえ生き残っても comment と同じ色になる
+  - 修正1 (`SystemVerilogLanguageServer/Server/LightweightParser.cs`): `TokenTypes.Annotation = 12` を新設
+  - 修正2 (`Server/InMemorySystemVerilogCore.cs` `ColorTypeToTokenType`): `HighLightedComment` / `CommentAnnotation` → `TokenTypes.Annotation`
+  - 修正3 (同 `NormalizeTokens`): **`IsNestedHighlight` + `SplitAround` を新設**。外側 Comment の内側にある Annotation は捨てずに、外側 Comment を「前 / annotation / 後」に分割して出力する (LSP の非重なり制約を保ったまま上塗りを表現)。`TokenTypePriority` にも Annotation を追加
+  - 修正4 (`Server/LspHandler.Theme.cs`): 凡例 (`SemanticTokenTypes`) に `"annotation"` を追加し、`TokenColorMap` に `("annotation", ColorType.CommentAnnotation)` を追加 (色は #C8FF64)
+  - 修正5 (`RtlEditorVscodeExtension/extension.js`): フォールバック凡例に `annotation` を追加 + **古いパレットの自動移行**を追加 (`rules.annotation` が無ければ `rtl/theme` から書き直す)。旧ビルドが既にユーザ設定へ書き込んだパレットには `annotation` ルールが無く、放置すると annotation が comment 色のままになる
+  - 修正6 (`RtlEditorVscodeExtension/package.json`): `configurationDefaults` の `semanticTokenColorCustomizations.rules` に `"annotation": "#C8FF64"` を追加
+  - 検証:
+    - 実サンプル `CodeEditor2VerilogPlugin/verilog_sample/mySample/mod2.v` の semantic tokens を実測: `// @sync:CLK_I` → `Comment '// '` + `Annotation '@sync' / ':' / 'CLK_I'` に分離 (6 行すべてで計 18 個の annotation トークン)
+    - 実サンプル 400 ファイルを走査して **トークン重なり 0 件** / annotation トークン 36 個を確認 (`SplitAround` がストリームを壊していないことの確認)
+    - 回帰テスト新設 (`StandardLspFeatureTests.SemanticTokens_CommentAnnotationKeepsItsOwnColour`): 凡例に `annotation` があること / `// @sync:clk` 行に annotation トークンがあること / 通常コメント行は comment のまま annotation を含まないこと / ストリームが同一行で重ならないこと。**修正を stash で戻すと「the legend must advertise the 'annotation' token type」で失敗**することを実証
+    - `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` **166 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+  - **未完了**: 同梱サーバの更新が稼働中サーバの DLL ロックで失敗する (MSB3027/MSB3021)。**VS Code を完全に終了してから**:
+    `dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release -o RtlEditorVscodeExtension/server -p:DebugType=None -p:DebugSymbols=false -p:CopyOutputSymbolsToPublishDirectory=false`
+  - Next: Reload Window 後、`mod2.v` の `// @sync:CLK_I` の `@sync:CLK_I` 部分がコメント色 (#6A9955) ではなく annotation 色 (#C8FF64) で表示されること、`// @clock` / `// @scope` も同様であること、通常コメントは従来どおりであることを確認
+  - メモ: 検証用プローブ (`DebugAnnotationProbe.cs` / `DebugTokenIntegrityProbe.cs`) は削除済み。annotation の実際の ColorType は `HighLightedComment` (DataObject / Port / ModuleInstantiation の `@project` 経路) と `CommentAnnotation` (CommentAnnotationItem / PortAnnotation / RefInstanceAnnotation) の 2 種だが、パレット値が同一 (#C8FF64) のため 1 トークンに集約した
+
 - **VS Code 拡張のフォルダ移動 / snippet がキーワード補完になる / C# から RTL Hierarchy メニュー増設** → 実装完了 (ビルド 0 errors、テスト 165 + sv-tests 1028 合格、publish は VS Code 終了後に要実行)
   - ユーザ報告 4 点: (1) 拡張フォルダを `RtlEditorVscodeExtension` へ移動 (2) `begin` などの snippet が単なるキーワード補完になる (3) module 名の snippet も単なるキーワード補完になる (4) C# から RTL Hierarchy ノードのメニューを増設したい (Simulation 設定など)
   - **原因 (2)(3) は 1 個のバグで説明できた (同梱サーバの completion が常に失敗していた)**:
