@@ -3,6 +3,28 @@
 
 ## 進行中タスク (最新)
 
+- **ChatControl の tool call ヘッダが引数 JSON をそのまま出している** → 修正完了 (ビルド 0 errors、テスト 196 + sv-tests 1028 合格)
+  - ユーザ要求: `BuildToolCallHeader` で返す内容は invocation をそのまま返すのではなく、実装されているなら tool ごとにカスタマイズした返答であってほしい。例えば replace_in_file の tool call は json encode した結果ではなく、引数の path と diff の値が分かるように表示してほしい
+  - **修正前**: `BuildToolCallHeader(toolName, invocation)` が `**Tool call: <name>**` + ` ```json <引数 JSON 整形> ``` ` を出すだけだった。`replace_in_file` は `{"path": "...", "diff": "..."}` がそのまま並び、diff の本文が読みにくかった
+  - 修正1 (`CodeEditor2/LLM/ToolCallHeaderFormatter.cs` 新規): tool ごとの整形を専用クラスに切り出した (UI 非依存なのでテストできる)
+    - `Build(toolName, invocation)`: 引数 JSON を `Dictionary<string,string>` に parse (非文字列値は compact に再シリアライズ) し、既知の tool なら専用整形、未知の tool なら従来どおり生 JSON を fenced で表示 (何も隠さない)
+    - `replace_in_file`: `**path**: <path>` + `**diff**` をフェンス付きで全文表示。複数ブロックなら `**diff** (N blocks)` と件数を出す (`<<<<<<< SEARCH` 行を数える)。diff がまだストリームされていなければ `**diff**: (not streamed yet)`
+    - `read_file`: `**path**` + `**lines**: 10 - 20` (start_line/end_line 指定時のみ)
+    - `write_to_file`: `**path**` + `**content** (N lines)` + フェンス。**長すぎる場合は 40 行 / 4000 文字で打ち切り** `... (M more lines not shown; the tool received the full content)` を付ける (tool call item は折りたたまれないため、巨大ファイルの貼り付けで chat が埋まるのを防ぐ。tool に渡る内容は不変)
+    - `execute_command`: `**command**: ` + インラインコード (バッククォートを含むコマンドでフェンスが壊れないよう、フェンスではなくインラインコード)
+    - `search_files`: `**path**` / `**pattern**: `<regex>` / `**file pattern**: `<glob>`
+    - `list_files`: `**path**` / `**recursive**`
+    - `get_lib_definition`: `**library type**: <name>`
+    - `build_dotnet`: 引数なしなので tool 名のみ
+  - 修正2 (`CodeEditor2/LLM/ChatControl.axaml.cs`): `BuildToolCallHeader` を `ToolCallHeaderFormatter.Build` への薄いラッパに変更 (経緯コメント付き)。呼び出し側 (`ApplyToolCallStarted` / `SetToolCallInvocation`) は不変
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/ToolCallHeaderFormatterTests.cs`, 9 件): replace_in_file が path と diff を出し **`"path"` / `"diff"` の JSON キーが出ない** / 複数ブロックの件数 / 未ストリーム時の表示 / read_file の行範囲 / execute_command のインラインコード / search_files の 3 引数 / 未知 tool の raw JSON フォールバック / 途中までストリームされた非 JSON の表示 / 引数なし tool
+  - 検証:
+    - `dotnet build CodeEditor2.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **196 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗**
+    - 一時プローブで実際の描画を実測 (削除済み): replace_in_file は `**path**: CodeEditor2/LLM/ChatControl.axaml.cs` + SEARCH/REPLACE のフェンス、write_to_file は 101 行中 40 行 + `(60 more lines not shown...)`、未知 tool は ` ```json `
+  - Next: エディタ上で (1) `replace_in_file` の tool call が path と diff 本文で表示されること (2) `read_file` / `execute_command` / `search_files` / `write_to_file` が見やすくなっていること (3) 長い write_to_file が打ち切られて chat が埋まらないこと を確認。**CodeEditor2 のみの変更なので publish 不要**
+  - メモ: 検証用プローブ (`DebugToolCallHeaderProbe.cs`) は削除済み。新しい tool を追加したら `ToolCallHeaderFormatter.FormatKnownTool` に case を足す (足さなければ raw JSON 表示にフォールバックするだけで壊れない)
+
 - **RTL Hierarchy の右クリックメニューに C# 定義の階層メニューを TS 実装と区別なく出す** → 実装完了 (ビルド 0 errors、テスト 187 + sv-tests 1028 合格。**publish は VS Code 終了後に要実行**)
   - ユーザ要求: `vscode extensionのrtl hierarchy 要素に対する右クリックメニューのc#拡張に関して。C#側のメニューを開くのではなく、vscode内のメニューに階層的なメニュー要素をts側実装と区別がつかない形でC#側で追加したい`
   - **VS Code の制約 (これが設計を決める)**: `contributes.commands` / `contributes.submenus` / `contributes.menus` は `package.json` の**静的宣言**で、**実行時にメニュー行を追加する API は存在しない** (`vscode.commands.registerCommand` は実装の登録のみ)。よって「C# に足すだけで即ネイティブ行が出る」は原理的に不可。従来の `Show Menu...` → QuickPick は 2 段階で TS 側の静的項目と見た目が揃わなかった
