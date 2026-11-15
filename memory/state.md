@@ -3,6 +3,27 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張で floating input 警告のマーク範囲が `(` の 1 文字だけになる** → 修正完了 (ビルド 0 errors、テスト 182 + sv-tests 1028 合格、publish 更新・selftest 正常)
+  - ユーザ報告: `mod2 mod2_0 (.DATA_I (  ), ...)` の floating input error について、RtlEditor は `(` から `)` までマークされるが、VS Code 拡張では `(` の位置にのみマークが出る
+  - **実測 (プローブ 2 種、削除済み)**:
+    | メッセージ | plugin `Message.Index/Length` | その範囲のテキスト | 修正前の LSP range |
+    |---|---|---|---|
+    | `floating input` | **102 / 4** | `(  )` | `5:10 - 5:11` (**1 文字**) |
+    | `floating input` | 117 / 4 | `(  )` | `6:9 - 6:10` (1 文字) |
+    | `unused` | 25 / 6 | `DATA_I` | `0:25 - 0:31` (6 文字、正しい) |
+    | `Size mismatch 5 <- 8` | 30 / 5 | `8'h00` | `1:18 - 1:19` (1 文字、誤り) |
+    | `bit width mismatch` | 575 / 12 | `b || fun(c))` | 1 文字 (誤り) |
+    - エディタは `ParsedDocument.AddWarning` が `document.Marks.SetMarkAt(index, length, 1)` を呼ぶため、**`Message.Index/Length` がそのままマーク範囲**
+  - **根本原因 (`InMemorySystemVerilogCore.CollectDiagnostics`)**: `Message.Length` を**捨てて**、`Message.Index` 位置の識別子を再スキャンして幅を求めていた。state.md に記録されている「`WordReference.Length` は次トークンまでの距離」は **`WordReference` の性質**で、`Message.Length` には当てはまらない (プラグインはマークしたい範囲を渡している)
+    - sv_tests 全体 5175 メッセージを実測: **5075 件がトークン幅と一致**、残り 100 件は意図的に広い範囲 (`(  )` / `b || fun(c)` / `randomize() with {...}` 等)。つまり再スキャンは 100 件を破壊していた
+    - 前回の修正 (`WordReference` 経由の references で幅が伸びた件) の対策を、より狭い `Message` 側にまで広げてしまっていたのが原因
+  - 修正1 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs` `CollectDiagnostics`): `message.Length` をそのまま使うよう変更 (経緯コメント付き)。`doc` の取得をループ外へ移動
+  - 修正2 (同 `GetDiagnosticLength` 新設): `message.Length` を文書長でクランプし、**行内に収める** (改行に当たったらその手前で切る)。`Length == 0` (「>100 errors」サマリ等、位置を持たないメッセージ) は 1 文字に補正
+  - 回帰テスト新設 (`SystemVerilogLanguageServer.Tests/WorkspaceHierarchyTests.Diagnostics_CoverTheSpanTheEditorMarks`): 空の port 接続 `.DATA_I (  )` に対する `floating input` が **同一行で 4 文字** (`(  )`) であることを assert。**修正を stash で戻すと `Expected: 4 / Actual: 1` で失敗**することを実証
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **182 合格 / 0 失敗** / `--filter "FullyQualifiedName~ParseSvTestFile"` **1028 合格 / 0 失敗** / publish 更新 + `--selftest` 正常
+  - Next: VS Code で Reload Window 後、`mod2 mod2_0 (.DATA_I (  ), ...)` の各ポートの `floating input` 波線が **`(` から `)` まで** になること、`bit width mismatch` が式全体、識別子系 (`unused` / `undriven`) が従来どおりトークン幅であることを確認
+  - メモ: 検証用プローブ (`DebugFloatingInputRangeProbe.cs` / `DebugMessageLengthProbe.cs`) は削除済み。`SystemVerilogLanguageServer/server/` は .gitignore 対象のためコミット対象外
+
 - **VS Code 拡張で module instance の instance 名 / port 名が着色されない + moduleInstance snippet の port に変数名が出る** → 修正完了 (ビルド 0 errors、テスト 167 + sv-tests 1028 合格、publish 更新)
   - ユーザ報告 2 点: (1) `module instanceを置いたときに、instance name, port nameの色がrtleditor時には着色されているけど、vscode extensionでは着色されていません` (2) `vscode extensionでmodule名のsnippetを起動したとき、module instanceのひな型が出力されますが、このときportに変数が出力されます。ただしくはブランクで出力して`
   - **(1) 着色されない原因 = `identifier` トークン型が `ColorType.Normal` (グレー) にマップされていた**:

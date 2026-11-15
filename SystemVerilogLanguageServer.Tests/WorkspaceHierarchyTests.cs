@@ -2139,6 +2139,80 @@ public class WorkspaceHierarchyTests : IDisposable
         Assert.Contains(Path.GetFileName(_root), folders);
     }
 
+    /// <summary>
+    /// A diagnostic must cover the same span the editor marks for the message,
+    /// not just the first token at the message offset.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The editor draws a message mark with
+    /// <c>CodeDocument.Marks.SetMarkAt(index, length, severity)</c>, using the
+    /// <c>Index</c>/<c>Length</c> the plugin passed to
+    /// <c>ParsedDocument.AddWarning</c>. Some messages intentionally cover more
+    /// than one token: <c>floating input</c> is reported for the whole empty
+    /// port connection <c>(  )</c>.
+    /// </para>
+    /// <para>
+    /// The LSP side used to re-scan the identifier at <c>Message.Index</c> and
+    /// throw <c>Message.Length</c> away, so VS Code underlined only the opening
+    /// parenthesis of an empty port connection while RtlEditor marked
+    /// <c>(  )</c>. Measured over the sv_tests corpus, 5075 of 5175 messages
+    /// have a length equal to the token width; the remaining 100 are wider
+    /// spans (empty connections, whole assignment expressions, ...), so the
+    /// plugin's length must be kept.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Diagnostics_CoverTheSpanTheEditorMarks()
+    {
+        const string text =
+            "module child (input wire DATA_I, input wire CLK_I);\n" +
+            "endmodule\n" +
+            "module top;\n" +
+            "  child u_child (\n" +
+            "    .DATA_I (  ),\n" +
+            "    .CLK_I (  )\n" +
+            "  );\n" +
+            "endmodule\n";
+        string uri = "mem://floating_input_span.sv";
+
+        InMemorySystemVerilogCore core = new();
+        LspHandler handler = CreateInitializedHandler(core);
+        var pushed = new System.Collections.Generic.List<string>();
+        handler.NotificationSender = message => pushed.Add(JsonSerializer.Serialize(message));
+
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri, languageId = "systemverilog", version = 1, text },
+        });
+
+        // the empty port connection "(  )" starts right after ".DATA_I "
+        int emptyConnection = text.IndexOf("(  )", StringComparison.Ordinal);
+        Assert.True(emptyConnection > 0);
+
+        bool found = false;
+        foreach (string json in pushed)
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("params", out JsonElement prm)) continue;
+            if (!prm.TryGetProperty("diagnostics", out JsonElement items)) continue;
+            foreach (JsonElement it in items.EnumerateArray())
+            {
+                if (!string.Equals(it.GetProperty("message").GetString(), "floating input", StringComparison.Ordinal)) continue;
+                JsonElement range = it.GetProperty("range");
+                int startLine = range.GetProperty("start").GetProperty("line").GetInt32();
+                int startChar = range.GetProperty("start").GetProperty("character").GetInt32();
+                int endLine = range.GetProperty("end").GetProperty("line").GetInt32();
+                int endChar = range.GetProperty("end").GetProperty("character").GetInt32();
+
+                Assert.Equal(startLine, endLine);           // single line underline
+                Assert.Equal(4, endChar - startChar);       // "(  )" = 4 characters
+                found = true;
+            }
+        }
+        Assert.True(found, "expected a 'floating input' diagnostic");
+    }
+
     private static void SendNotification(LspHandler handler, string method, object parameters)
     {
         using JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(parameters));
