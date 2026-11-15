@@ -3,6 +3,23 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張の起動に失敗する (同梱サーバ `server/` の肥大化が再発)** → 修復完了 (publish 再作成 + prune、`--selftest` 正常)
+  - ユーザ報告: `vscode extensionの起動に失敗しました。logを確認して原因を調べて`
+  - **一次情報 (`%APPDATA%\Code\logs` を `FileShare.ReadWrite` で読む一時ツール、削除済み)**:
+    - `main.log`: `2026-11-16 05:54:59 Extension host with pid 20688 exited with code: 134` / `crashed with code 134 and reason 'crashed'`
+    - `window10`: **`exthost=NO`** (拡張 JS が 1 行も走っていない) + `renderer.log` に `Loading development extension at ...\RtlEditorVscodeExtension` の直後で停止。マニフェスト不正 (`property 'id'` / `property 'icon'`) は**出ていない**
+    - → 手順書の「`exthost` 無し + code 134 + マニフェストエラー無し = **`server/` の肥大化**」に完全一致
+  - **実測 (`server/` のサイズ)**: **322 ファイル / 734.9 MB** (手順書の閾値は 150 ファイル / 150 MB)
+    - 内訳: `.playwright` 102.7 MB (117 files) / `runtimes` 587 MB (63 files、全プラットフォーム) / `*.pdb` 14 個
+    - 最大: `.playwright/node/win32_x64/node.exe` 89.6 MB、`runtimes/win-*/native/libSkiaSharp.pdb` 87/84/81 MB
+  - **根本原因**: 手動の `dotnet publish -o RtlEditorVscodeExtension/server` が `bundle-server.js` の prune を通らないため。**さらに重要な実測**: `server/` を**完全に空にしてから** publish しても 314 ファイル / 733.9 MB になる (`.pdb` 6 + `.playwright` 付き) → `CopyOutputSymbolsToPublishDirectory=false` は**この依存グラフでは効かず**、prune が必須
+  - 修復: `server/` を空にしてから `dotnet publish ... -p:CopyOutputSymbolsToPublishDirectory=false` → prune (`.playwright/` / `*.pdb` / 非ホスト `runtimes/`) → **147 ファイル / 100.7 MB**。`*.pdb: 0` / `.playwright: absent` / `runtimes: win-arm64, win-x64, win-x86`
+  - 検証: `dotnet RtlEditorVscodeExtension/server/SystemVerilogLanguageServer.dll --selftest` 正常 (capabilities / definition / documentSymbol 応答、legend に `reference` / `annotation` を含む最新バイナリ)
+  - **試して撤回した対策**: `SystemVerilogLanguageServer.csproj` に `AfterTargets="Publish"` の `PrunePublishFolder` ターゲットを追加し、素の `dotnet publish` でも自動 prune しようとした。**動作しなかった**: `dotnet publish -o <相対パス>` では item の glob が**プロジェクトディレクトリ基準**で解決されるため (`SystemVerilogLanguageServer/<dir>/runtimes` を見に行く)、`_PublishRuntimeDir` が常に空になり 1 つも削除されなかった (絶対パス指定でも同様)。`%(Filename)` 条件・`Exclude` ワイルドカードも試したが publish 経路では発火せず。**誤削除リスクを避けるため csproj は元に戻した** (`git checkout`)
+  - ドキュメント更新 (`memory/vscode_extension_debugging.md`): 「server/ の肥大化」節を実測で書き直し、**空にしてから publish しても 734 MB になる**こと、`CopyOutputSymbolsToPublishDirectory=false` は効かないこと、MSBuild ターゲット案が失敗したこと、正しい手順 (空にする → publish → prune、目安 147 files / 100.7 MB) を明記
+  - Next: VS Code を再起動し、(1) 拡張が起動して `exthost` フォルダが作られること (2) RTL Hierarchy / hover / 補完が動くこと を確認。**今後 `server/` を更新するときは必ず `npm run vsix` (= bundle-server.js) か、空にする + prune の手順を使う**
+  - メモ: 検証用の一時ツール (`_tmp_logdump` / `_tmp_prune`) と実験用 publish フォルダは削除済み。`server/` は .gitignore 対象のためコミット対象外
+
 - **ChatControl の tool call ヘッダが引数 JSON をそのまま出している** → 修正完了 (ビルド 0 errors、テスト 196 + sv-tests 1028 合格)
   - ユーザ要求: `BuildToolCallHeader` で返す内容は invocation をそのまま返すのではなく、実装されているなら tool ごとにカスタマイズした返答であってほしい。例えば replace_in_file の tool call は json encode した結果ではなく、引数の path と diff の値が分かるように表示してほしい
   - **修正前**: `BuildToolCallHeader(toolName, invocation)` が `**Tool call: <name>**` + ` ```json <引数 JSON 整形> ``` ` を出すだけだった。`replace_in_file` は `{"path": "...", "diff": "..."}` がそのまま並び、diff の本文が読みにくかった

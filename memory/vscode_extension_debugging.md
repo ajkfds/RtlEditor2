@@ -178,16 +178,39 @@ dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c
 
 **再発防止 (2026-11 追加)**: 手で `dotnet publish -o vscode-extension/server` を実行すると
 `bundle-server.js` のクリーン処理を通らないため、この肥大化が再発した (実測で 314 ファイル /
-733.9 MB に戻っていた)。対策として `SystemVerilogLanguageServer.csproj` に
-`<CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>` を
-設定したので、**素の `dotnet publish` でもシンボルはコピーされない**。ただし
-`dotnet publish -o` は出力先を空にしないため、**古い `.playwright` / 非ホスト `runtimes/` は
-残る**。手で publish したあとは必ず次を実行するか、`npm run vsix` (= bundle-server.js) を使う:
+733.9 MB に戻っていた)。
+
+**重要な実測 (2026-11、再調査)**: `server/` を**完全に空にしてから** publish しても
+**314 ファイル / 733.9 MB になる** (`.pdb` 6 個 + `.playwright/` 付き)。つまり
+
+- `<CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>` は
+  **この依存グラフでは効かない** (参照パッケージのシンボルが publish 先にコピーされる)
+- `dotnet publish -o` は出力先を空にしないので、**空にしても巨大なまま**になる
+
+→ **`bundle-server.js` の prune 処理 (`.playwright/` / `*.pdb` / 非ホスト `runtimes/<rid>` の削除)
+が必須**。MSBuild ターゲットで自動化する案は試して**失敗している**: `dotnet publish -o <相対パス>`
+では item の glob がプロジェクトディレクトリ基準で解決され、ターゲットが何もマッチせず
+runtimes が 1 つも消えなかった (実測)。
+
+**正しい手順 (これ以外で publish しない)**:
 
 ```
-# 残骸の確認と削除 (server/ を丸ごと消してから publish し直すのが確実)
-rm -rf vscode-extension/server && dotnet publish ... -o vscode-extension/server
+# 1) 必ず空にしてから publish する
+rm -rf RtlEditorVscodeExtension/server
+dotnet publish SystemVerilogLanguageServer/SystemVerilogLanguageServer.csproj -c Release \
+  -o RtlEditorVscodeExtension/server -p:DebugType=None -p:DebugSymbols=false \
+  -p:CopyOutputSymbolsToPublishDirectory=false
+
+# 2) prune する (bundle-server.js と同じ処理)。削除対象:
+#      .playwright/            (~100 MB, サーバは使わない)
+#      **/*.pdb                (~250 MB)
+#      runtimes/<非ホスト rid>  (win 以外)
+#    目安: 147 ファイル / 100.7 MB になる
 ```
+
+`npm run vsix` (= `bundle-server.js`) は 1) と 2) を両方行うので、**通常はこちらを使う**。
+手で publish した場合は必ず 2) を実行し、`*.pdb: 0` / `.playwright: absent` /
+`runtimes: win-arm64, win-x64, win-x86` になっていることを確認する。
 
 ### 参考: `View container '...' does not exist` は起動失敗ではない (実害はペインだけ)
 
