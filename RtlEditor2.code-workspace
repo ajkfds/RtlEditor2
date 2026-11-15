@@ -16,9 +16,9 @@
 	//     under the C# debugger (breakpoints in the server work)
 	// They talk over TCP on 127.0.0.1:9250 instead of stdio: the extension
 	// reads SVLSP_SERVER_PORT and connects to the already-running server
-	// instead of spawning it (see vscode-extension/extension.js).
+	// instead of spawning it (see RtlEditorVscodeExtension/extension.js).
 	//
-	// The same configurations also live in vscode-extension/.vscode/launch.json
+	// The same configurations also live in RtlEditorVscodeExtension/.vscode/launch.json
 	// so opening that folder directly still works.
 	"launch": {
 		"version": "0.2.0",
@@ -28,20 +28,20 @@
 				"type": "extensionHost",
 				"request": "launch",
 				"args": [
-					"--extensionDevelopmentPath=${workspaceFolder:RtlEditor2}/vscode-extension"
+					"--extensionDevelopmentPath=${workspaceFolder:RtlEditor2}/RtlEditorVscodeExtension"
 				],
 				"env": {
 					"SVLSP_SERVER_PORT": "9250"
 				},
 				"outFiles": [
-					"${workspaceFolder:RtlEditor2}/vscode-extension/*.js"
+					"${workspaceFolder:RtlEditor2}/RtlEditorVscodeExtension/*.js"
 				],
 				"sourceMaps": false,
 				"resolveSourceMapLocations": [
-					"${workspaceFolder:RtlEditor2}/vscode-extension/*.js"
+					"${workspaceFolder:RtlEditor2}/RtlEditorVscodeExtension/*.js"
 				],
 				"skipFiles": [
-					"${workspaceFolder:RtlEditor2}/vscode-extension/server/**"
+					"${workspaceFolder:RtlEditor2}/RtlEditorVscodeExtension/server/**"
 				],
 				"internalConsoleOptions": "openOnSessionStart"
 			},
