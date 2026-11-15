@@ -3,6 +3,33 @@
 
 ## 進行中タスク (最新)
 
+- **同梱サーバ更新用のバッチファイルを `RtlEditorVscodeExtension` 配下に追加** → 実装完了 (静的検証 OK)
+  - ユーザ要求: `server更新バッチファイルを RtlEditorVscodeExtension の下に作って`
+  - 新規 `RtlEditorVscodeExtension/update-server.bat`。`server/` を更新する 3 ステップを 1 コマンドにまとめた (この 3 つは必ずセットで必要):
+    1. **`server/` を空にする** (`dotnet publish -o` は追加・上書きのみで削除しない)
+    2. **`dotnet publish`** (`-c Release -p:CopyOutputSymbolsToPublishDirectory=false`)
+    3. **prune** (`.playwright/` / `**/*.pdb` / 非ホスト `runtimes/<rid>` を削除)
+    - 最後にファイル数と `--selftest` の結果を表示
+  - オプション: `--check` (現状のサイズだけ表示) / `--no-publish` (再ビルドせず prune のみ) / `-h` `--help`
+  - **なぜバッチか (README にも明記)**: `server/` が大きいと VS Code の拡張開発ホストが `Loading development extension` の約 1 秒後に **exit code 134** で落ち、`exthost` も crash log も作られない (=「拡張の起動失敗」に見える)。実測 322 ファイル / 734.9 MB で発生、健全値は約 147 ファイル / 100 MB。**`CopyOutputSymbolsToPublishDirectory=false` だけでは防げない** (空フォルダから publish しても 314 ファイル / 733.9 MB、`.pdb` 6 個 + `.playwright` 付き)。MSBuild の `AfterTargets="Publish"` ターゲットでは自動化できない (`-o <相対パス>` で item glob がプロジェクトディレクトリ基準になる) ため、スクリプトにした
+  - 実装上の配慮:
+    - パスは `%~dp0` から解決するのでどこから実行してもよい (`REPO_ROOT` は 1 つ上)
+    - `dotnet` が PATH に無ければ最初に検出して明示エラー
+    - `rd /s /q` 後に存在チェックし、**ロックされていたら「VS Code を全部閉じて」と案内して失敗**
+    - `rd` の対象は必ず `%SERVER_DIR%` 配下 (またはそのサブディレクトリ) に限定
+    - prune 後に `.playwright` / `linux-x64` / `osx-arm64` の残存を検査し、残っていれば**エラー終了** (prune 漏れ = 再発)
+    - `--check` は `dir` のサマリ行を解析しない (ロケール依存で `N 個のファイル` / `N File(s)` と桁が変わるため)。ファイル数のみ数え、200 超で `TOO BIG - the extension host will crash (exit code 134)` と表示
+    - **CRLF で保存** (LF のみだと cmd のラベル解決が壊れることがある)
+  - 検証 (`cmd` はコマンド許可リスト外のため実行できず、**静的検証ツールを一時作成** → 削除済み):
+    - ラベル参照: 宣言 12 / 参照 (`goto` + `call`) すべて解決 → **OK** (`goto :prune` のラベル欠落を検出して修正、`:do_prune` を追加)
+    - 括弧バランス: EOF で 0 → OK
+    - `goto :eof` が `call` されるサブルーチン内のみに存在 → OK
+    - `rd` の対象がすべて `SERVER_DIR` 配下 → OK (誤削除なし)
+    - 改行: `CRLF=272 / bare-LF=0` → OK (当初 LF のみだったのを修正)
+  - ドキュメント更新 (`RtlEditorVscodeExtension/README.md`): 「Updating the bundled server」節を新設 (3 ステップ / オプション / **なぜ prune が必須か** の実測値 / `npm run vsix` との関係)
+  - Next: `update-server.bat` を実際に実行して (1) `147 files` 前後になること (2) `[ok] the server answers LSP requests` が出ること を確認。VS Code を Reload Window して拡張が起動することも確認
+  - メモ: 検証用プローブ (`DebugBatCheckProbe.cs` / `DebugBatCrlfProbe.cs`) は削除済み。`cmd` / `powershell` は許可リスト外のためバッチの実行テストは不可 (ユーザ環境で実行して確認)
+
 - **VS Code 拡張の起動に失敗する (同梱サーバ `server/` の肥大化が再発)** → 修復完了 (publish 再作成 + prune、`--selftest` 正常)
   - ユーザ報告: `vscode extensionの起動に失敗しました。logを確認して原因を調べて`
   - **一次情報 (`%APPDATA%\Code\logs` を `FileShare.ReadWrite` で読む一時ツール、削除済み)**:
