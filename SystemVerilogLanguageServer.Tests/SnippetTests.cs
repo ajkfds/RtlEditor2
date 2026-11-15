@@ -170,6 +170,15 @@ public class SnippetTests : IDisposable
         Assert.Contains(".b", snippetText);
         // the instance name is a tab stop so the user can rename it
         Assert.Contains("${1:", snippetText);
+
+        // The port connections must be BLANK tab stops: the editor's
+        // ModuleInstanceSnippet emits `.port(  )` and never guesses a signal,
+        // so a placeholder default (`${2:a}`) must not come back. The instance
+        // name is tab stop 1, so the ports start at 2.
+        Assert.Contains("( ${2} )", snippetText);
+        Assert.Contains("( ${3} )", snippetText);
+        Assert.DoesNotContain("${2:a}", snippetText);
+        Assert.DoesNotContain("${3:b}", snippetText);
     }
 
     /// <summary>

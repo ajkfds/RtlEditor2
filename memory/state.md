@@ -3,6 +3,30 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張で module instance の instance 名 / port 名が着色されない + moduleInstance snippet の port に変数名が出る** → 修正完了 (ビルド 0 errors、テスト 167 + sv-tests 1028 合格、publish 更新)
+  - ユーザ報告 2 点: (1) `module instanceを置いたときに、instance name, port nameの色がrtleditor時には着色されているけど、vscode extensionでは着色されていません` (2) `vscode extensionでmodule名のsnippetを起動したとき、module instanceのひな型が出力されますが、このときportに変数が出力されます。ただしくはブランクで出力して`
+  - **(1) 着色されない原因 = `identifier` トークン型が `ColorType.Normal` (グレー) にマップされていた**:
+    - 実測 (一時プローブ、削除済み): `child u_child(.clk(clk), .data_o(data_o));` のトークンは `u_child` / `clk`(ラベル) / `data_o`(ラベル) が **`identifier`**、参照側の `clk` / `data_o` は **`property`** (= Net)
+    - `LspHandler.Theme.cs` の `TokenColorMap` は以前「参照が全部 teal になった」経緯で `("identifier", ColorType.Normal)` になっていた。しかし `ColorType.Identifier` はパーサでは **宣言名専用** (instance 名 / port ラベル / function 名) で、参照はデータ型トークン (property / variable / register / parameter) として出るため、`identifier` を Normal にすると**宣言名だけがグレー**になっていた (editor は teal)
+    - 修正1 (`LspHandler.Theme.cs`): `("identifier", ColorType.Identifier)` に戻す (= `#4EC9B0` teal)
+    - 修正2 (同): 汎用フォールバック用に **`reference` トークン型を新設** (`ColorType.Normal`)。LightweightParser (シンボル表を持たない軽量スキャナ) は分類できない単語を `Identifier` で出していたため、`identifier` を teal にすると**フォールバック時に全単語が teal** になる。`LightweightParser` の generic 出力を `TokenTypes.Reference` に変更し、`ColorTypeToTokenType` の既定も `Reference` に、`TokenTypePriority` に `Identifier = 11 / reference = 12` を追加
+    - 修正3 (`LightweightParser.cs`): `TokenTypes` enum に `Reference = 12` を追加し `Annotation = 13` に繰り下げ (legend の並びと一致させる)。宣言シンボルと重なる generic トークンの除去条件も `Identifier` → `Reference` に修正
+    - 修正4 (`RtlEditorVscodeExtension/extension.js`): 旧パレット (`identifier: #D4D4D4`) を stale として置換する判定を `#D4D4D4` のみに整理し、**`reference` ルールが無い旧パレットも書き換え対象**に追加 (`missingReferenceRule`)。これが無いと、ユーザ設定に残った旧パレットのままで参照側が teal になる
+    - 修正5 (`RtlEditorVscodeExtension/package.json`): `configurationDefaults` を `identifier: #4EC9B0` / `reference: #D4D4D4` に更新
+  - **(2) snippet の port に変数名が出る原因 = `DefaultConnectionName` がプレースホルダ既定値を埋めていた**:
+    - デスクトップ版 `ModuleInstanceSnippet.getReplaceText` は全ポートを `.port(  )` (空) で出力し、**信号名を推測しない**。一方 `SnippetAdapter.BuildInstantiationText` は `${n:DefaultConnectionName(port)}` を出力しており、accept すると存在しない可能性のある信号が勝手に接続されていた
+    - 修正6 (`SnippetAdapter.cs`): 未接続ポートを **空のタブストップ `${n}`** に変更し、`DefaultConnectionName` を削除
+    - 修正7 (同): インスタンス名をデスクトップ版と同じ **タブストップ 1 (既定値つき `${1:instanceName}`)** にし、ポートのタブストップを 2 から開始 (従来はインスタンス名が素のテキストでポートが 1 から始まっていた)
+    - 実測 (一時プローブ、削除済み): `leaf leaf_0 (\n\t.clk\t( ${1:clk} ),\n\t.data_o\t( ${2:data} )\n);` → **`leaf ${1:leaf_0} (\n\t.clk\t( ${2} ),\n\t.data_o\t( ${3} )\n);`**
+    - 注意: `portConnectionCreate` (`Fill Port Connections`) は「ポート名から信号を導出して埋める」のが役割なので**変更しない** (デスクトップ版 `PortConnectionCreateSnippet` も同じ)
+  - 検証:
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → **0 errors**
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile&FullyQualifiedName!~Debug"` → **167 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` → **1028 合格 / 0 失敗**
+    - 回帰テスト追加 2 件: `SnippetTests.Snippet_ModuleInstance_WithArgument_EmitsPortConnections` に「ポートが `${2}` / `${3}` の空タブストップ」「`${2:a}` が出ない」を追加 / `StandardLspFeatureTests.SemanticTokens_InstanceNameAndPortLabelsUseTheIdentifierTokenType` 新設 (instance 名 char 8 / ラベル char 17・28 が `identifier`、`rtl/theme` の `identifier` = `#4EC9B0` / `reference` = `#D4D4D4`)
+    - publish 更新 + `--selftest` で legend に `reference` が入り `identifier` が teal になっていることを確認
+  - Next: VS Code で Reload Window 後、(1) instance 名と `.port` ラベルが teal で表示されること (2) 信号参照は従来どおり (property / variable / register / parameter) であること (3) `Insert Module Instance` で port が空のタブストップで出力されること (4) ログに `has no "reference" rule; rewriting the palette` が出て旧パレットが置換されること を確認
+  - メモ: 検証用プローブ (`DebugInstanceTokenProbe.cs` / `DebugSnippetTextProbe.cs`) は削除済み
+
 - **VS Code 拡張の autoConnect フォームを RtlEditor の `AutoConnectWindow` と同じ操作モデルに変更 (combobox 廃止)** → 実装完了 (ビルド 0 errors、AutoConnectTests 5 合格)
   - ユーザ要求: `vscodeのautoConnect snippetに関して。comboboxではなく、現状の接続 & 接続候補表示して結果をボタンでacceptするrtl editor側と似た実装にしてほしい。カーソル上下、左右、enterだけで操作して決定できるようにして。`
   - 変更前 (`RtlEditorVscodeExtension/autoConnectView.js`): 1 行 1 個の `<select>` (ドロップダウン) で候補を選び、**Apply ボタンでしか確定できない**。デスクトップ版 `AutoConnectWindow` の「行ごとに accept / reject して最後に Enter」という操作が再現できていなかった

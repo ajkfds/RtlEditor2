@@ -515,6 +515,86 @@ public class StandardLspFeatureTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// The module name, the instance name and the named port labels of a
+    /// module instantiation must be reported as the <c>identifier</c> token
+    /// type, which the palette paints teal - the editor colours them the same
+    /// way (<c>ColorType.Identifier</c>).
+    ///
+    /// <para>
+    /// Mapping the token type onto <c>ColorType.Normal</c> (done when plain
+    /// references used to land on it) made them grey in VS Code while the
+    /// editor shows them coloured, which is the reported symptom.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void SemanticTokens_InstanceNameAndPortLabelsUseTheIdentifierTokenType()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        const string text =
+            "module child(input clk, output [7:0] data_o);\n" +
+            "endmodule\n" +
+            "module top;\n" +
+            "  wire clk;\n" +
+            "  wire [7:0] data_o;\n" +
+            "  child u_child(.clk(clk), .data_o(data_o));\n" +
+            "endmodule\n";
+        string uri = WriteFile("instance_tokens.sv", text);
+        DidOpen(handler, uri, text);
+
+        // legend order (the client must use the same one)
+        string initialize = JsonSerializer.Serialize(new { processId = 1, capabilities = new { } });
+        using JsonDocument initDoc = JsonDocument.Parse(initialize);
+        handler.TryHandleRequest("initialize", initDoc.RootElement, default, out object? initResult);
+        List<string> legend = new();
+        foreach (JsonElement t in JsonDocument.Parse(JsonSerializer.Serialize(initResult)).RootElement
+                     .GetProperty("capabilities").GetProperty("semanticTokensProvider")
+                     .GetProperty("legend").GetProperty("tokenTypes").EnumerateArray())
+        {
+            legend.Add(t.GetString() ?? "");
+        }
+        int identifierIndex = legend.IndexOf("identifier");
+        int referenceIndex = legend.IndexOf("reference");
+        Assert.True(identifierIndex >= 0, "the legend must advertise the 'identifier' token type");
+        Assert.True(referenceIndex >= 0, "the legend must advertise the 'reference' token type");
+
+        JsonElement tokens = Request(handler, "textDocument/semanticTokens/full",
+            new { textDocument = new { uri } });
+        JsonElement data = tokens.GetProperty("data");
+
+        List<(int Line, int Char, int Len, int Type)> decoded = new();
+        int line = 0, character = 0;
+        for (int i = 0; i + 4 < data.GetArrayLength(); i += 5)
+        {
+            int deltaLine = data[i].GetInt32();
+            int deltaChar = data[i + 1].GetInt32();
+            if (deltaLine == 0) character += deltaChar;
+            else { line += deltaLine; character = deltaChar; }
+            decoded.Add((line, character, data[i + 2].GetInt32(), data[i + 3].GetInt32()));
+        }
+
+        // line 5 is "  child u_child(.clk(clk), .data_o(data_o));"
+        //   char 2  "child"   -> identifier (the instantiated module name)
+        //   char 8  "u_child" -> identifier (the instance name)
+        //   char 17 "clk"     -> identifier (the named port label)
+        //   char 28 "data_o"  -> identifier
+        List<(int Line, int Char, int Len, int Type)> instantiationLine =
+            decoded.FindAll(t => t.Line == 5);
+        // (char 2 is "child" itself: the parser paints the instantiated module
+        // name as a keyword, so only the instance name and the port labels are
+        // identifier tokens here.)
+        Assert.Contains(instantiationLine, t => t.Char == 8 && t.Type == identifierIndex);
+        Assert.Contains(instantiationLine, t => t.Char == 17 && t.Type == identifierIndex);
+        Assert.Contains(instantiationLine, t => t.Char == 28 && t.Type == identifierIndex);
+
+        // the palette must paint "identifier" teal and keep the generic
+        // "reference" fallback at the default foreground
+        JsonElement theme = Request(handler, "rtl/theme", new { });
+        JsonElement rules = theme.GetProperty("rules");
+        Assert.Equal("#4EC9B0", rules.GetProperty("identifier").GetString());
+        Assert.Equal("#D4D4D4", rules.GetProperty("reference").GetString());
+    }
+
     [Fact]
     public void Theme_LegendMatchesInitializeCapability()
     {
