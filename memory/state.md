@@ -3,6 +3,49 @@
 
 ## 進行中タスク (最新)
 
+- **代入の 3 つのチェック漏れ (array へのスカラー代入 / 左辺の function / 複数 always の同一変数) → 実装完了** (ビルド 0 errors、テスト 1242 合格 / 0 失敗、sv-tests 1028 合格)
+  - ユーザ要求: `arrayに数値を代入してもエラーになりません` / `左辺にfunctionがあってもエラーになりません` / `複数のalwaysで同じ変数に代入したときにはwarningを出したい`
+  - **実測 (プローブ 3 種、削除済み) で確認した修正前の状態**:
+    | ケース | 修正前 |
+    |---|---|
+    | `logic [7:0] arr [3:0]; initial arr = 8'hFF;` | **`bit width mismatch 32 <- 8` の Warning のみ** (flatten した 32bit と比較されるため Error にならない) |
+    | `assign arr = 8'hFF;` | `Assignment bitwidth mismatch...` の Warning のみ |
+    | `always @(posedge clk) arr <= 8'hFF;` | `bit width mismatch` の Warning のみ |
+    | `initial get_value = 10;` (function 名を左辺) | **診断なし** (function 名が `Function` として解決され、代入が素通り) |
+    | `assign get_value = 10;` / `initial get_value <= 10;` | 診断なし |
+    | `get_value() = 10;` | `illegal task name` + `; required` + `illegal statement` (メッセージが原因を指さない) |
+    | `always @(posedge clk) a <= 1; always @(posedge clk) a <= 0;` | **診断なし** |
+    | `always @(posedge clk) a <= 1; initial a = 0;` | 診断なし |
+    | `always_ff @(posedge clk) a <= b; always_comb a = b;` | 診断なし |
+  - **修正1 (array へのスカラー代入 → Error)**: `Items/ContinuousAssign.checkWholeUnpackedArrayAssignment(lExpression, rExpression)` を新設し、blocking / non-blocking / continuous assign の 3 経路から呼ぶ
+    - `DataObjectReference` 側ではなく **両辺が揃う代入経路** に置いた。LHS 解析時点では RHS が不明で、`arr = '{...}` (assignment pattern) が**合法な全体代入**であることを判定できないため (LHS 側に置いた初版は `'{1,2,3,4}` を誤検出した)
+    - 除外条件: RHS が `DataObjects.AssignmentPattern` / LHS に `RangesFromOriginal` がある (bit/part select) / RHS が同じ次元数の配列 (配列間コピー) / `UnpackedArrays` が空 / `Size == null` (動的配列)
+    - メッセージ: `'<name>' is an unpacked array and cannot be assigned a scalar value; assign its elements, use an assignment pattern ('{...}) or assign from an array of the same type`
+  - **修正2 (左辺の function → Error)**: `Expressions/Primary.parseCreate` に `lValue && element is Function` の分岐を追加し `a function name cannot be assigned from outside of the function` を報告 (IEEE 1800-2017 13.4.1)
+    - function 名は**戻り値変数**を指し、本体の中でのみ代入できる。本体内では `Function.Parse` が `function.NamedElements` に戻り値 `DataObject` を登録するため、この分岐に到達しない (誤検出しない)
+    - `Expressions/References.cs` の `TaskReference.parseCreate` の `illegal task name` に、`f() = value` 形式 (function 名は lvalue になれない) もこの経路で捕まる旨のコメントを追加
+  - **修正3 (複数 always の同一変数 → Warning)**: `WordScanner` に `CurrentProceduralBlockId` / `EnterProceduralBlock()` を新設し、`AlwaysConstruct` / `InitialConstruct` / `FinalConstruct` の本体 parse を `try/finally` で囲んで**ブロック識別子を割り当てる**
+    - `Items/ContinuousAssign.checkProceduralAssignmentConflict(word, lExpression)` を新設し、`DataObject.ProceduralAssignBlockId` と比較して**異なるブロックなら Warning**、同じブロック (if/else の両分岐 / 同一ブロック内の複数代入) なら報告しない
+    - 既存の「continuous と procedural の混在」Error もこの helper に集約し、`BlockingAssignment` / `NonBlockingAssignment` の重複実装 (`markProceduralAssignment`) を削除
+    - `WordScanner.Clone` で `CurrentProceduralBlockId` / `proceduralBlockCount` を引き継ぐ (部分 parse の整合)
+    - **task / function 本体はブロックにしない** (宣言位置 = module level で parse されるため、識別子を復元しないと直前の always の識別子を引き継ぎ誤検出する)。`try/finally` で必ず復元
+    - メッセージ: `'<name>' is assigned from multiple procedural blocks`
+    - Error ではなく **Warning** にした理由: 言語仕様上は合法 (実行順序依存になるのが設計上の問題)
+  - **回帰テスト新設 (`SystemVerilogLanguageServer.Tests/AssignmentCheckTests.cs`, 18 件)**:
+    - 報告する側 9 件: array (blocking / non-blocking / continuous) / function 名 (initial / assign / non-blocking) / 複数ブロック (two always / always+initial / always_ff+always_comb)
+    - **誤検出しないこと**の 9 件: array の assignment pattern / 要素代入 / 同一形状配列コピー / packed vector / function 本体内の戻り値代入 / RHS の function call / 1 ブロック内の if-else 2 代入 / 異なる変数への 2 always / function 本体がブロック扱いされないこと
+    - **修正を stash で戻すと「報告する側 9 件がすべて失敗」し、「誤検出しない側 9 件はすべて合格」**することを実証 (テストが本物の回帰テストであることの確認)
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet test SystemVerilogLanguageServer.Tests.csproj` (全体) → **1242 合格 / 0 失敗**
+    - `--filter FullyQualifiedName~ParseSvTestFile` → **1028 合格 / 0 失敗** (regression なし)
+    - sv_tests_report.txt に新規メッセージ (`assigned from multiple procedural blocks` / `unpacked array and cannot be assigned` / `function name cannot be assigned`) が **1 件も出ていない** ことを確認 (既存コーパスへの影響なし)
+  - 既知の残課題 (本タスク外):
+    - `arr[1:0] = '{a, b};` (part-select への assignment pattern) が `assignment pattern element count (2) does not match the array size (4)` を出す → **修正前から存在**する別件 (stash で実証済み)。`AssignmentPattern.CheckPattern` が part-select を考慮していない
+    - `get_value() = 10;` は引き続き `illegal task name` (+ 後続の `; required` / `illegal statement`)。原因を指すメッセージにはなったが、`f() = value` 専用メッセージ化は別途
+  - メモ: 検証用プローブ (`DebugArrayAssignProbe.cs` / `DebugArrayAssignProbe2.cs` / `DebugArrayAssignProbe3.cs`) は削除済み。`git clean` が新規テストファイルも消したため再作成した (今後 `git clean` を使うときは未追跡の成果物に注意)
+
 - **同梱サーバ更新用のバッチファイルを `RtlEditorVscodeExtension` 配下に追加** → 実装完了 (静的検証 OK)
   - ユーザ要求: `server更新バッチファイルを RtlEditorVscodeExtension の下に作って`
   - 新規 `RtlEditorVscodeExtension/update-server.bat`。`server/` を更新する 3 ステップを 1 コマンドにまとめた (この 3 つは必ずセットで必要):
