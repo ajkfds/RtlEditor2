@@ -3,6 +3,40 @@
 
 ## 進行中タスク (最新)
 
+- **RuleSet を `.rule` ファイル (YAML) に出力/ロードし、配置ディレクトリ以下のパースに適用** → 実装完了 (ビルド 0 errors、テスト 218 + sv-tests 1028 合格、コミット済み)
+  - ユーザ要求: `RuleSet.cs` の RuleSet を yaml 形式で Name/Severity のセットを `.rule` ファイルに出力/ロードできるようにする。FileType に `.rule` を追加して parse 対象にする。配置ファイルパス以下のパース結果に適用される。`ProjectProperty` にファイルパス + RuleSet の Dictionary をおき、parse 時に該当ファイルパスのファイルに対して適用する
+  - **実装1 (`RuleSet.cs`)**: `Rule` の一覧をリフレクションで列挙 (`GetRules()` / `GetRule(name)`)。`ToYaml()` / `ParseYaml(text, out errorMessage)` / `LoadFile(path)` / `SaveFile(path)` を新設。YAML 形式は `rules: - name: <RuleName> / severity: <Error|Warning|Notice>` (YamlDotNet の CamelCaseNamingConvention、`IgnoreUnmatchedProperties`)
+    - **部分指定を許容**: ロード結果は組み込み既定から始まり、ファイルに書かれた severity だけを上書きする (ルールを 1 つだけ書きたいケースに対応)
+    - 未知のルール名 / 不正な severity は `errorMessage` に集約して報告し、残りの有効なエントリは適用する (1 つの typo で全設定が無効にならない)
+    - `Rule` は `init` 専用プロパティなので、severity の上書きはフィールド差し替え (`new Rule { ... Severity = ... }`) で行う
+  - **実装2 (`ProjectProperty.cs`)**: `Dictionary<string, RuleSet> ruleSets` (キー = ディレクトリのプロジェクト相対パス、`""` = プロジェクトルート) を新設
+    - `GetRuleSet(relativePath)`: **最も深いディレクトリの `.rule` が勝つ** (親ディレクトリを順に遡る)。該当が無ければ既定の `RuleSet` (組み込み既定)
+    - `SetRuleSet(ruleFilePath, ruleSet)`: `.rule` の**配置ディレクトリ**をキーに登録 (ファイル自身のパスではない)
+    - `EnsureRuleSetsLoaded()` / `RefreshRuleSets()`: 初回参照時にワークスペースを走査して `*.rule` を読み込む。`obj`/`bin`/`publish`/`node_modules`/`.git`/`.svn`/`.hg` は除外。**スキャン完了まで他スレッドを待たせる** (`ruleScanLock` + `scannedRootPath` を走査完了後に設定) — パースは並列に走るため、先にフラグを立てると別スレッドが組み込み既定のままパースしてしまう
+    - `NormalizeRuleSetPath` で `\` / `/` 両対応、先頭/末尾セパレータを除去
+  - **実装3 (`Data/RuleFile.cs` / `FileTypes/RuleFile.cs` / `Parser/RuleFileParser.cs`)**: `.rule` を FileType として登録 (`Plugin.Register()`)
+    - `Data.RuleFile`: `AcceptParsedDocumentAsync` で**編集中バッファのテキスト**から rule set を作り `SetRuleSet` する (保存前でも反映される)
+    - `Parser.RuleFileParser`: YAML の `key:` 見出しと severity 値の色付け、YAML 自体が壊れている場合はファイル全体にマーク + メッセージ
+    - `FileTypes.RuleFile.CreateNewFile`: 組み込み既定を YAML で書き出す (新規作成時のテンプレート)
+  - **実装4 (パース時の適用)**: `WordScanner.RuleSet` / `WordReference.RuleSet` を新設し、**パース中ファイルのパスから解決**する。既存の呼び出し 7 箇所を `word.ProjectProperty.RuleSet` → `word.RuleSet` / `reference.RuleSet` に置換
+    - `ModPort` (ImplicitModportDirection ×2) / `VariableAssignment` (AssignmentBitwidthMismatch) / `Primary` (ImplicitNetDeclaration) / `ModuleInstantiation` (NotAllPortConnected... / ImplicitModportInterfaceConnectionToInstance) / `ProgramInstantiation` (NotAllPortConnected...)
+    - `ProjectProperty` が無い/別型のときは組み込み既定にフォールバック (従来は `throw`)
+  - **回帰テスト新設 (`SystemVerilogLanguageServer.Tests/RuleSetTests.cs`, 4 件)**:
+    - `RuleFile_AppliesToTheFilesBelowItsDirectory`: 同一ソースを `strict/.rule` (Error) 配下と直下に置き、LSP の push 診断 severity が **1 (Error) / 2 (Warning)** に分かれることを assert
+    - `ParseYaml_OverridesOnlyTheListedRules`: 部分指定 / 未知ルール名 / 不正 severity の扱い
+    - `SaveFile_RoundTrips`: 出力した `.rule` を読み戻して全ルールの severity が一致
+    - `GetRuleSet_DeepestDirectoryWins`: `src/.rule` (Error) と `src/rtl/.rule` (Notice) で深い方が勝ち、`src/` 外は既定
+    - **適用側の呼び出し (WordScanner / WordReference / 各パーサ) を stash で戻すと 1 件失敗 (`Expected: 1 / Actual: 2`)** することを実証
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` → **218 合格 / 0 失敗**
+    - `dotnet test --filter "FullyQualifiedName~ParseSvTestFile"` → **1028 合格 / 0 失敗**
+  - コミット: CodeEditor2VerilogPlugin `e5265b3`、メイン `901b036` (submodule pointer + RuleSetTests.cs)
+  - Next: エディタ / VS Code で (1) `.rule` を置いたディレクトリ配下のファイルだけ severity が変わること (2) `.rule` を編集すると保存前でも反映されること (3) 不正な YAML でファイルにマークが出ること を確認
+  - メモ: LSP の `ScanWorkspaceFiles` は `.sv/.svh/.v/.vh` のみ走査するが、rule set は `ProjectProperty.RefreshRuleSets` が独立してディスクを走査するため LSP でも `.rule` は効く (テストで実証)
+  - 既知の制限: `.rule` はディレクトリ単位 (ファイル個別の指定は無し) / ファイル削除時に `ruleSets` のエントリは残る (次回 `RefreshRuleSets` まで)
+
 - **代入の 3 つのチェック漏れ (array へのスカラー代入 / 左辺の function / 複数 always の同一変数) → 実装完了** (ビルド 0 errors、テスト 1242 合格 / 0 失敗、sv-tests 1028 合格)
   - ユーザ要求: `arrayに数値を代入してもエラーになりません` / `左辺にfunctionがあってもエラーになりません` / `複数のalwaysで同じ変数に代入したときにはwarningを出したい`
   - **実測 (プローブ 3 種、削除済み) で確認した修正前の状態**:
