@@ -3,6 +3,33 @@
 
 ## 進行中タスク (最新)
 
+- **`SnippetAdapter.cs` の `Build*` メソッドを Snippet 本体 (`Verilog/Snippets/`) へ移動** → 実装完了 (ビルド 0 errors、テスト 220 + sv-tests 1028 合格)
+  - ユーザ要求: `SnippetAdapter.cs` 内の `Build*` メソッドは Snippet 本体の実装なので、`CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Snippets` 内の Snippet 内に移動させる
+  - **変更前**: `CoreBridge/SnippetAdapter.cs` が 828 行で、`BuildAlwaysFF` / `BuildAutoFormat` / `BuildModPort` / `BuildModuleInstance` / `BuildPortConnectionCreate` / `BuildPortInvert` と、その補助 (`GetIndent` / `ResolveModule` / `MakeUniqueInstanceName` / `BuildInstantiationTemplate` / `FindInstantiationAt` / `LastIndex` / `InvertPortLine` / `PortPattern`) をすべて抱えていた。つまり adapter (配管) が snippet 実装そのものを持っていた
+  - **移動先 = 各 Snippet クラスの `public static Build(...)`** (デスクトップのツール一覧のエントリと同じクラスに実装を置く):
+    | 移動前 (SnippetAdapter) | 移動後 |
+    |---|---|
+    | `BuildAlwaysFF` | `AlwaysFFSnippet.Build` |
+    | `BuildAutoFormat` | `AutoFormatSnippet.Build` |
+    | `BuildModPort` | `ModPortSnippet.Build` |
+    | `BuildModuleInstance` | `ModuleInstanceSnippet.Build` |
+    | `BuildPortConnectionCreate` | `PortConnectionCreateSnippet.Build` (`PortNetCreateSnippet.cs`) |
+    | `BuildPortInvert` | `PortInvertSnippet.Build` |
+  - **新規 `Verilog/Snippets/SnippetBuilder.cs`**: 複数の snippet が共有する UI フリー helper のみを集約 (`GetIndent` / `HasModuleInstantiationAt` / `FindInstantiationAt` / `LastIndex` / `ResolveModule` / `MakeUniqueInstanceName` / `BuildInstantiationTemplate` / `InvertPortLine` / `PortPattern`)
+    - `BuildInstantiationTemplate` を共有にした理由: `ModuleInstanceSnippet` (新規インスタンス) と `PortConnectionCreateSnippet` (既存の書き換え) が同じ整形規則を使うため。片方だけ直すとドリフトする
+  - **`SnippetAdapter.cs` は薄いディスパッチャに**: `SnippetResult` / `SnippetEntry` / `SnippetKind` / `SnippetName` (LSP の wire shape) と、`name` → 各 `Build` の `switch` のみ。`HasModuleInstantiationAt` は `SnippetBuilder` へ委譲 (`ToolMenuAdapter` の呼び出しは不変)。828 行 → 約 200 行
+  - **`Build` を `public static` にした理由**: LSP サーバ / `ToolMenuAdapter` / `CompletionAdapter` から呼ぶため。`InteractiveSnippet` のインスタンスメソッドのままだと Avalonia 依存 (Controller / popup / key) が付いてくる
+  - 呼び出し元は無変更 (シグネチャ互換): `SnippetAdapter.GetSnippets` / `SnippetAdapter.HasModuleInstantiationAt` / `SnippetAdapter.SnippetEntry` を使う `CompletionAdapter` / `ToolMenuAdapter` / `SnippetRunner` / `InMemorySystemVerilogCore.GetSnippets` / `LspHandler.Snippet` はそのまま
+  - ドキュメント更新: 各 Snippet の XML コメントを「テキストは `SnippetAdapter` が作る」→「`Build` が作る」に修正。`SnippetRunner` は「snippet 実装はこのフォルダの各クラスの `Build`」に修正。`ModuleInstanceMenuSnippet` は `ModuleInstanceSnippet.Build` を参照
+  - **`SnippetTemplate` / `SnippetField` は `CoreBridge` に残置**: これは snippet 実装ではなく、`SnippetEntry.Fields` (LSP へ渡す wire shape) と共有する描画ヘルパで、`SnippetAdapter` の DTO が直接参照するため (移動すると DTO が Snippets 名前空間に依存する)
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` → **220 合格 / 0 失敗** (`~SnippetTests` 10 合格を含む)
+    - `dotnet test --filter "FullyQualifiedName~ParseSvTestFile"` → **1028 合格 / 0 失敗**
+  - Next: エディタ / VS Code で (1) 各 snippet (alwaysFF / autoFormat / moduleInstance / portConnectionCreate / portInvert / modport) が従来どおり動くこと (2) tool menu の可否判定が従来どおりであること を確認。**C# を変更したので publish 更新が必要**
+  - メモ: `SnippetBuilder` は `Verilog.Snippets` 名前空間に置いたため、`SnippetTemplate` は `CoreBridge.SnippetTemplate` と完全修飾で参照している
+
 - **`update-server.bat` の Linux 版 (`update-server.sh`) を追加 (linux-x64 / self-contained、Windows 上でクロス publish)** → 実装完了 (ビルド 0 errors、全経路を実機実行で検証)
   - ユーザ要求: `update-server.bat` の linux 版を作る。linux-x64、自己完結形式でコンパイル。コンパイル自体は Windows 上で行う
   - **新規 `RtlEditorVscodeExtension/update-server.sh`**: `.bat` と同じ 3 ステップ (空にする → publish → prune) + `--check` / `--no-publish` / `-h`
