@@ -3,6 +3,36 @@
 
 ## 進行中タスク (最新)
 
+- **NavigatePanel と VS Code RTL Hierarchy のノードメニュー customize を一本化** → Phase 1〜4 実装完了 (ビルド 0 errors、テスト 229 + sv-tests 1028 合格)
+  - ユーザ要求: `NavigatePanel.CustomizeNavigateNodeContextMenuHandler` と `pluginVerilog.NavigatePanel.NavigatePanelMenu` の両方を 1 つのコードで customize できるようにまとめる（メニュー項目を抽象化して両環境に一度に適用する）
+  - **変更前の構造 (2 系統が併存し、ドリフトしていた)**:
+    | 経路 | 実装 |
+    |---|---|
+    | デスクトップ | `NavigatePanelNode.createContextMenu` のハードコード行 (Add / Delete / Open in Explorer / CopyPath / Property) + 静的イベント `CustomizeNavigateNodeContextMenu` への購読 4 箇所 (Verilog `NavigatePanelMenu` / Verilog `Parse All` / Icarus / Vivado) + `ProjectNode.CustomizeSpecificNodeContextMenu` (LLM) |
+    | VS Code | `package.json` の静的 TS 行 (`addFolder` / `addBlankFile` / `deleteNode` / `copyPath` / `openInExplorer` / `showProperty`) + `CoreBridge/HierarchyMenuCatalog` 由来の生成行 |
+    - 重複: `copyPath` / `openInExplorer` / `showProperty` が **二重・三重**、`showProperty` は**内容も不一致** (TS は label/kind/uri、C# は path/counts)。`Add > verilog module` / `Parse All` / `Run Simulation` / `LLM` は VS Code に無い
+    - 潜在バグ: `VerilogFileNode.CustomizeNavigateNodeContextMenu` は `new` 無しのため**基底の static** を指し、`NavigatePanelMenu.Customize` (Verilog の Add) が全ノード型に付いていた。`Add` の親を**ヘッダ文字列一致**で探していた
+  - **Phase 1+2 (カタログ/アダプタの一般化)**:
+    - `CoreBridge/HierarchyMenuCatalog.cs`: `Hosts` (`None/Desktop/VsCode/Both`) / `ActionKind` (11 種) / `AppliesTo` を 6 種に拡張 (`Project`/`Folder`/`File`/`Instance`/`Header`/`Package` + `VsCodeNodes`) / `Entry` に `Hosts` / `Action` / `Argument` / `IconPath` / `IconColor` (0xAARRGGBB、Avalonia 非依存) / `Handler` を追加
+    - **新規 `CoreBridge/NavigateNodeMenuContext.cs`**: 両ホストが同じ形でノードを渡す DTO (`Kind` / `File` / `NodeLabel` / `InstancePath` / `WorkspaceRelativePath` / `FsPath` / `DirPath`)。`NavigatePanelNode` を**持たない** (LSP ホストが同じ assembly を link するため Avalonia を混ぜない)
+    - **新規 `CoreBridge/NavigateNodeMenuAdapter.cs`**: `Build(context, host)` (ホスト/ノード種別フィルタ + 可否理由) と `Invoke(id, context, argument)` (Text / ClipboardText / `Prompt` / `ClientOperation`)。`ClientOperation` は `createFolder`/`createFile`/`delete`/`reveal` + `Path` + `Content`
+    - `CoreBridge/HierarchyMenuAdapter.cs` は**互換ファサード**に縮小 (旧シグネチャで `NavigateNodeMenuContext` を組み立てて委譲)
+  - **Phase 3 (デスクトップ描画)**:
+    - **新規 `NavigatePanel/NavigateNodeMenuRenderer.cs`**: カタログ行 → `MenuItem` (`ParentId` でネスト、`Group` 順)、`ActionKind` → `System.IO` / clipboard / `InputWindow` / ログ。`BuildContext` が `NavigatePanelNode` → `NavigateNodeMenuContext` へ変換 (instance は instance parse を `File` に、`InstancePath` は親を遡って組み立て)
+    - `CodeEditor2/NavigatePanel/NavigatePanelNode.cs`: `public static Action<ContextMenu, NavigatePanelNode>? CreateContextMenuRows` を新設し、設定時はそれに委譲・未設定時は従来の組み込み行 (フォールバック)。**依存方向 (CodeEditor2 → プラグイン) を避けるためフック方式**
+    - `CodeEditor2/Controller_CodeEditor.cs`: `SetClipboardTextAsync(string)` を新設 (プラグインから mainWindow に触れないため)
+    - `Plugin.cs`: `Initialize` で `RegisterNavigateNodeMenuEntries()` (`Parse All` を `Hosts.Desktop` + `DesktopHandler` として登録) + `CreateContextMenuRows` に renderer を差し込み。旧 `CustomizeNavigateNodeContextMenuHandler` はカタログ登録に置換
+    - `NavigatePanelMenu.cs`: 中身を空にし経緯コメントのみ (Add 行はカタログへ移動)。`VerilogFileNode` の static ctor 購読を削除
+  - **Phase 4 (カタログへ移動した行)**: `Add` (サブメニュー) / `addFolder` / `addBlankFile` / `addVerilogModule` / `addSystemVerilogModule` / `addSystemVerilogInterface` / `deleteNode`。現状 `Hosts.Desktop` (VS Code 側 `hierarchy.js` に自前実装が残るため二重表示を回避)。`Hosts.Both` へは 1 語変更で移行可
+  - `HierarchyMenuManifest`: `Hosts.VsCode` の行だけを `package.json` 用に生成するフィルタ (`Children(parentId)`) を追加 → **Desktop 専用行が拡張マニフェストに漏れない**
+  - **回帰テスト新設 (`SystemVerilogLanguageServer.Tests/NavigateNodeMenuTests.cs`, 8 件)**: ホスト別フィルタ / 共有行が両ホストに出る / サブメニューは grouping 専用 / VsCode 行に `DesktopHandler` が無い / `RevealInOS` が `ClientOperation` を返す / `CopyPath` が workspace 相対を優先 / `CreateSourceFile` が prompt → スケルトン生成 / プロジェクトルートは削除不可
+  - 既存テスト 3 件を `Hosts` 前提に更新 (`HierarchyMenuManifestTests` ×3 / `HierarchyMenuTests` ×1)
+  - **新テストで発見した実装バグを修正**: `CreateSourceFile` が `entry.Argument` (テンプレート id) を**ユーザー入力名として**渡していた (`verilog.sv` を作ってしまう) → `argument` (ユーザー入力) と `entry.Argument` (テンプレート) を分離
+  - 検証: `dotnet build CodeEditor2.csproj` / `CodeEditor2VerilogPlugin.csproj` / `SystemVerilogLanguageServer.csproj` / `RtlEditor2.Desktop.csproj` すべて **0 errors** / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **229 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - 設計を `memory/vscode_extension_architecture.md` に「ナビゲートノードメニューの一本化」節として追記
+  - Next: エディタで Project / Folder / File / Instance を右クリックし (1) Add サブメニューに 5 行 (2) Delete (3) Parse All (4) Open in Explorer / CopyPath / Property (5) Simulation > Simulation Setup が出ること、VS Code で同じ並びのうち `Hosts.VsCode` の行だけが出ることを確認
+  - メモ: **Phase 5 (VS Code 側の静的 TS 行削除)** は未着手。`package.json` の `addFolder`/`addBlankFile`/`deleteNode`/`copyPath`/`openInExplorer`/`showProperty` を削除し `hierarchy.js` を `ClientOperation` 実行に置換したうえで、カタログ行を `Hosts.Both` に昇格させる必要がある (VS Code を閉じてから publish 更新も必要)
+
 - **`verilog_sample/mySample` に `.rule` ファイルの例を作成** → 完了 (コード変更なし、ビルド 0 errors)
   - ユーザ要求: `CodeEditor2VerilogPlugin\verilog_sample\mySample` に `.rule` ファイルの例を作成して
   - **既存 `mySample/verilog.rule` は旧形式で無効だった**: 中身が

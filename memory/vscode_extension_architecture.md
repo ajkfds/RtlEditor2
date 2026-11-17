@@ -181,6 +181,29 @@
 | snippet | トリガ登録 / `insertSnippet` 実行 / タブストップ操作 | 挿入テキスト生成・port 列挙・接続生成などのロジック（`rtl/snippet`） |
 | 右クリックメニュー | `contributes.menus` の定義 / `when` / ラベル / fs 実行 | `contextValue`（出し分け材料）/ `fsPath`・`dirPath`（パス解決）/ 操作可否の判断 |
 
+### ナビゲートノードメニューの一本化（デスクトップと VS Code）
+
+デスクトップの NavigatePanel 右クリックメニューと VS Code の RTL Hierarchy ノードメニューは**同じカタログ**から描画する。以前は
+- デスクトップ: `NavigatePanelNode.createContextMenu` のハードコード行 + `CustomizeNavigateNodeContextMenu` への静的イベント購読（Verilog / Icarus / Vivado / LLM）
+- VS Code: `package.json` の静的 TS 行 + `HierarchyMenuCatalog`
+
+の 2 系統があり、`copyPath` / `openInExplorer` / `showProperty` が二重・三重に定義され、ラベルも内容もずれていた。
+
+| 層 | 置き場所 | 内容 |
+|---|---|---|
+| ① カタログ（単一情報源） | `CoreBridge/HierarchyMenuCatalog.cs` | `Id` / `Label` / `Targets` / **`Hosts`** / `Group` / `ParentId` / `IsSubmenu` / **`Action`** / `Argument` / `IconPath` / `IconColor` / `Handler` |
+| ② 判断（UI フリー） | `CoreBridge/NavigateNodeMenuAdapter.cs` | `Build(context, host)` → 行 + 可否理由 / `Invoke(id, context, arg)` → `Text` / `ClipboardText` / `Prompt` / `ClientOperation` |
+| ③a デスクトップ描画 | `NavigatePanel/NavigateNodeMenuRenderer.cs` | `MenuItem` 生成・`System.IO` 実行・`InputWindow` / `ItemPropertyForm` |
+| ③b VS Code 描画 | `RtlEditorVscodeExtension/hierarchy.js` | `ClientOperation` を `vscode.workspace.fs` 等で実行 |
+
+- **`Hosts`** (`Desktop` / `VsCode` / `Both`) が「どちらの環境に出すか」を持つ。`Parse All` / `Run Simulation` / `LLM Agent` は `Hosts.Desktop`（エディタ固有のウィンドウが必要）、`Reveal in Editor` 等は `Hosts.VsCode`。**他方のホストはその行を一切受け取らない**ので、`desktopOnly` フラグを各所で分岐する必要がない。
+- **`ActionKind`** が「何をするか」を持つ（`CopyPath` / `CopyInstancePath` / `RevealInOS` / `ShowProperty` / `ShowText` / `CreateFolder` / `CreateFile` / `CreateSourceFile` / `DeleteNode` / `DesktopHandler`）。文字列 id の switch を両ホストで複製しない。
+- **`ClientOperation`** が「ホストが実行する操作」を返す（`createFolder` / `createFile` / `delete` / `reveal` + `Path` + `Content`）。**判断と確定パスは C#**、fs I/O だけホスト（remote / 仮想 FS を迂回しないため）。
+- **`Prompt`** がユーザー入力（フォルダ名 / ファイル名 / モジュール名）を要求し、ホストが入力後に `Invoke(id, context, 入力値)` を再要求する（snippet の 2 段階と同じ）。
+- 依存方向の都合で `CodeEditor2` はプラグインを参照できないため、`NavigatePanelNode.CreateContextMenuRows`（`Action<ContextMenu, NavigatePanelNode>`）に**プラグインがレンダラを 1 回だけ差し込む**。未設定時は従来の組み込み行にフォールバックする。
+- ドリフト防止: `HierarchyMenuManifest` は `Hosts.VsCode` の行だけを `package.json` 用に生成し、`NavigateNodeMenuTests` がホストフィルタ / アクション写像 / スケルトン生成を、`HierarchyMenuManifestTests` が三者一致を検証する。
+- 現状の `addFolder` / `addBlankFile` / `deleteNode` は `Hosts.Desktop` 宣言（VS Code 側は `hierarchy.js` に自前実装が残っているため二重表示を避ける）。拡張が `ClientOperation` を実行するようになった時点で `Hosts.Both` に変えるだけ。
+
 ## 独自拡張（`rtl/*`）の一覧
 
 標準 LSP で足りない機能は、標準を汚さず `rtl/*` 拡張として C# 側に実装する。

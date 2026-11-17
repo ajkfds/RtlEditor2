@@ -92,6 +92,8 @@ public class HierarchyMenuTests : IDisposable
                  in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
         {
             if ((entry.Targets & pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo.Instance) == 0) continue;
+            // Rows declared for the desktop editor only are not served to VS Code
+            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
             // A submenu only groups rows. The native VS Code menu renders it as
             // a flyout; a QuickPick cannot nest, so rtl/hierarchyMenu lists its
             // children (prefixed with the submenu label) instead of the

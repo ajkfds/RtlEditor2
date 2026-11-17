@@ -39,6 +39,9 @@ public class HierarchyMenuManifestTests
         foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
                  in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
         {
+            // desktop-only rows are not part of the extension manifest
+            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
+
             if (entry.IsSubmenu)
             {
                 string expected = pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(entry.Id);
@@ -68,6 +71,11 @@ public class HierarchyMenuManifestTests
         foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
                  in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
         {
+            // A row declared for the desktop editor only is deliberately absent
+            // from package.json (the extension cannot run it), so it must not be
+            // expected here either.
+            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
+
             string target = entry.IsSubmenu
                 ? pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(entry.Id)
                 : pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId(entry.Id);
@@ -128,6 +136,8 @@ public class HierarchyMenuManifestTests
                  in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
         {
             if (entry.IsSubmenu) continue;
+            // only the rows VS Code actually offers get a generated command
+            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
             expected.Add(entry.Id);
         }
         expected.Sort(StringComparer.Ordinal);
