@@ -3,6 +3,28 @@
 
 ## 進行中タスク (最新)
 
+- **snippet 実装を C# に一本化 (RtlEditor / VS Code 共通)** → 実装完了 (ビルド 0 errors、テスト 220 + sv-tests 1028 合格)
+  - ユーザ要求: `alwaysFFは案Aで直す。snippet実装をvscode extension側で一本化する。そうできるようにRtlEditor Snippetの実装を修正する。Snippetは全てC#側で実装すること`
+  - **変更前の構造 (3 層 + 二重実装)**: デスクトップ用 `Verilog/Snippets/*` (InteractiveSnippet / ToolItem 派生、`{0}` プレースホルダ + highlight リスト + キー操作) と、LSP 用 `CoreBridge/SnippetAdapter` (`${n}` タブストップ文字列) が**別々のテキスト生成器**を持っていた。portInvert の正規表現・moduleInstance のインスタンス化テキスト・autoConnect の候補照合規則が二重管理で、片方だけ直すとドリフトした
+  - **新規 `CoreBridge/SnippetTemplate.cs`**: テンプレートを 1 回だけ書き、2 通りに描画する
+    - `ToVscodeSnippet()` … `${1:name}` / `${1|a,b|}` (選択肢) / `${n}` (ミラー)。リテラルは `\\$` `\\}` `\\\\` をエスケープ
+    - `ToPlainText(fields)` … 既定値をインライン化した本文 + 各フィールドの `Start` / `Length` / `MirrorOf`。デスクトップはこれを挿入して highlight を張る
+    - `AddField(name, default, candidates)` は候補が 2 件以上なら自動で選択肢 (VS Code は `${n|a,b|}`、デスクトップはポップアップ)、`AddMirror(index)` は VS Code の連動タブストップ / デスクトップのコピー
+  - **`SnippetAdapter` を全 snippet でテンプレート化**: `SnippetEntry` に `PlainText` / `Fields` / `HasFields` を追加。alwaysFF / modport / moduleInstance / portConnectionCreate が template 経由。autoFormat / portInvert はタブストップ無しのリテラルなので `PlainText = SnippetText`
+    - **alwaysFF (案A)**: クロック / リセットが**実タブストップ**になり、複数候補があれば選択肢になる。`if(~reset)` は `AddMirror(resetField)` でリセットのミラー → 編集が自動追従 (デスクトップがバックグラウンドタスクでやっていたコピーが宣言的になり、VS Code でも可能になった)
+    - `GetSnippets` の第1引数を `Data.VerilogFile` → `Data.IVerilogRelatedFile` に緩和 (`file.ProjectProperty` を使う)
+  - **新規 `Verilog/Snippets/SnippetRunner.cs`**: デスクトップ側の**ホストのみ**。`SnippetAdapter` の結果を `PlainText` として挿入し、`Fields` を highlight に変換して順に回る。候補が複数あるフィールドは `ForceOpenCustomSelection` でポップアップ、ミラーは元フィールド確定時にコピー。キーは従来どおり Enter/Down=確定・Escape/Up=中断・行移動で中断。candidates だけ返ったときは選択後に再要求 (VS Code の QuickPick と同じ 2 段階)
+  - **デスクトップ snippet を薄いホストに置換** (`AlwaysFFSnippet` / `ModPortSnippet` / `AutoFormatSnippet` / `PortNetCreateSnippet` / `PortInvertSnippet` / `ModuleInstanceSnippet` / `ModuleInstanceMenuSnippet` は `new SnippetRunner(kind).ApplyAsync()` を呼ぶだけ。`ModuleInstanceMenuSnippet` も runner に委譲し候補列挙の重複を削除)。`AutoConnectSnippet` はウィンドウ表示のみ担当
+  - **autoConnect の候補照合を一本化**: `AutoConnectAdapter.GetCandidates` を `public` 化し、`AutoConnectWindow.ConnectionItem.GetCantidates` がそれを呼ぶよう変更 (二重実装を削除)。`memory/state.md` の「未解決課題: AutoConnect の計算ロジックが二重管理」を解消
+  - **サーバ / 拡張側**: `RtlSnippet.cs` に `plainText` / `fields` (`SnippetFieldDto`) を追加し `LspHandler.Snippet.cs` で転送。`extension.js` の `applyOneSnippet` は **fields があるときだけ `insertSnippet`**、無いときは `editor.edit` で**リテラル挿入** (生成コード中の `$` / `}` をスニペット構文として解釈させない)。拡張側にスニペット知識はゼロ
+  - 回帰テスト追加 (`SnippetTests`, 2 件):
+    - `Snippet_PlainText_MatchesTheTabStopRendering`: `snippetText` からタブストップ記号を除去すると `plainText` と一致する (= 単一テンプレート契約)
+    - `Snippet_WithoutFields_IsLiteral`: autoFormat は fields 0 件で `plainText == snippetText`、`{sig_a, sig_b}` が保持される
+    - 既存 `Snippet_AlwaysFF_UsesClockAndResetPorts` を新仕様に更新 (`${1:clk}` / `${2:rst_n}` / `if(~${2}` / plainText / fields 5 件)
+  - 検証: `dotnet build RtlEditor2.sln -clp:ErrorsOnly` 0 errors / `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` **220 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - **未完了**: 同梱サーバの publish が稼働中サーバ (PID 7208) の DLL ロックで失敗 (MSB3027/MSB3021)。**VS Code を完全に終了してから** `RtlEditorVscodeExtension/update-server.bat` を実行する
+  - Next: VS Code で Reload Window 後、(1) alwaysFF でクロック / リセットがタブストップになり、複数候補時に選択リストが出ること (2) `if(~reset)` がリセット編集に追従すること (3) portInvert / autoFormat がリテラル挿入され `$` や `}` が壊れないこと を確認。デスクトップで (4) 各 snippet が従来どおり動くこと (5) autoConnect の候補が VS Code 版と同じであること を確認
+
 - **`RtlEditorVscodeExtension/update-server.bat` が `and の使い方が誤っています。` で即終了する** → 修正完了 (実サーバ再 publish + prune 済み、`--selftest` 正常、ビルド 0 errors)
   - ユーザ報告: `update-server.bat` を実行すると、ヘッダ表示直後に `and の使い方が誤っています。` が出て何も起きない
   - **根本原因 (`echo` 内のエスケープされていない `)` がブロックを閉じていた)**: cmd.exe は `if (...)` / `for ... do (...)` の**ブロック全体を先に構文解析**するため、ブロック内の `echo` に含まれるリテラル `)` がブロック終端と解釈される。`if exist "%SERVER_DIR%" ( ... echo Close VS Code (all windows) and try again. ... )` の `(all windows)` の `)` でブロックが閉じ、残った `and try again.` が独立したコマンドとして実行されて `and は予期されていません` になっていた。**この行に到達するのは「`rd /s /q server` が失敗したとき」だけ** (VS Code の LSP サーバが `server\*.dll` をロックしているときに必ず起きる) ため、ユーザ環境では毎回ここで落ちていた

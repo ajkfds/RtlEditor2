@@ -70,8 +70,15 @@ public class SnippetTests : IDisposable
 
     /// <summary>
     /// alwaysFF: the clock / reset come from the ports the parser marked as
-    /// clock / reset (via the <c>// @sync: clock</c> annotation), and the body
-    /// is emitted as tab stops.
+    /// clock / reset (via the <c>// @sync: clock</c> annotation).
+    ///
+    /// <para>
+    /// The clock and reset are real tab stops (prefilled with the resolved
+    /// port) so the user can change them, and the <c>if(~reset)</c> is a
+    /// <b>mirror</b> of the reset tab stop. That is the same interaction the
+    /// desktop editor offers (a popup when several candidates exist) and it is
+    /// expressed declaratively, so both hosts get it from one template.
+    /// </para>
     /// </summary>
     [Fact]
     public void Snippet_AlwaysFF_UsesClockAndResetPorts()
@@ -97,9 +104,28 @@ public class SnippetTests : IDisposable
         JsonElement snippets = result.GetProperty("snippets");
         Assert.Equal(1, snippets.GetArrayLength());
         string snippetText = snippets[0].GetProperty("snippetText").GetString() ?? "";
-        Assert.Contains("always @(posedge clk or negedge rst_n)", snippetText);
-        // the body is a tab stop, not a fixed string
-        Assert.Contains("${1", snippetText);
+
+        // clock / reset are prefilled tab stops holding the resolved ports
+        Assert.Contains("${1:clk}", snippetText);
+        Assert.Contains("${2:rst_n}", snippetText);
+        // ...and the if(~reset) repeats tab stop 2 (a mirror, not a copy)
+        Assert.Contains("if(~${2}", snippetText);
+
+        // the plain rendering has the same text with the defaults inlined, so
+        // the desktop editor inserts exactly what this test reads here
+        string plainText = snippets[0].GetProperty("plainText").GetString() ?? "";
+        Assert.Contains("always @(posedge clk or negedge rst_n)", plainText);
+        Assert.Contains("if(~rst_n)", plainText);
+
+        // the fields tell a host which values were suggested. Five entries:
+        // clock, reset, the if(~reset) mirror of reset, and the two branches.
+        JsonElement fields = snippets[0].GetProperty("fields");
+        Assert.Equal(5, fields.GetArrayLength());
+        Assert.Equal("clock", fields[0].GetProperty("name").GetString());
+        Assert.Equal("clk", fields[0].GetProperty("default").GetString());
+        Assert.Equal("reset", fields[1].GetProperty("name").GetString());
+        Assert.Equal("rst_n", fields[1].GetProperty("default").GetString());
+        Assert.Equal(2, fields[2].GetProperty("index").GetInt32());
         Assert.Equal("insert", snippets[0].GetProperty("kind").GetString());
     }
 
@@ -283,6 +309,82 @@ public class SnippetTests : IDisposable
         Assert.Contains("data_O", snippetText);
         Assert.Contains("input", snippetText);
         Assert.Contains("data_I", snippetText);
+    }
+
+    /// <summary>
+    /// The plain rendering and the tab-stop rendering must agree, because the
+    /// desktop editor inserts <c>plainText</c> while the VS Code extension
+    /// inserts <c>snippetText</c>. This pins the single-template contract: with
+    /// every field left at its default, stripping the tab stop markers from
+    /// <c>snippetText</c> has to give <c>plainText</c>.
+    /// </summary>
+    [Fact]
+    public void Snippet_PlainText_MatchesTheTabStopRendering()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        const string text =
+            "module leaf(input logic a, output logic b);\n" +
+            "  assign b = a;\n" +
+            "endmodule\n" +
+            "module top();\n" +
+            "endmodule\n";
+        string uri = WriteFile("top.sv", text);
+        DidOpen(handler, uri, text);
+
+        JsonElement result = Request(handler, "rtl/snippet", new
+        {
+            textDocument = new { uri },
+            position = new { line = 4, character = 0 },
+            kind = "moduleInstance",
+            argument = "leaf",
+        });
+
+        JsonElement snippet = result.GetProperty("snippets")[0];
+        string snippetText = snippet.GetProperty("snippetText").GetString() ?? "";
+        string plainText = snippet.GetProperty("plainText").GetString() ?? "";
+
+        // Rebuild the literal text from the tab stops: ${n:default} keeps the
+        // default, ${n} and ${n|...|} keep nothing (a blank field).
+        string stripped = System.Text.RegularExpressions.Regex.Replace(
+            snippetText,
+            @"\$\{(\d+)(?::([^}]*))?\}",
+            m => m.Groups[2].Success ? m.Groups[2].Value : "");
+        Assert.Equal(plainText, stripped);
+        Assert.Contains("leaf_0", plainText);
+    }
+
+    /// <summary>
+    /// A snippet without tab stops is literal, so the extension inserts
+    /// <c>plainText</c> and a stray <c>$</c> / <c>}</c> in the code is not read
+    /// as snippet syntax.
+    /// </summary>
+    [Fact]
+    public void Snippet_WithoutFields_IsLiteral()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        const string text =
+            "module leaf(input logic a, output logic b);\n" +
+            "  assign b = a;\n" +
+            "endmodule\n" +
+            "module top();\n" +
+            "  leaf u_leaf(.a({sig_a, sig_b}), .b(out_sig));\n" +
+            "endmodule\n";
+        string uri = WriteFile("top.sv", text);
+        DidOpen(handler, uri, text);
+
+        JsonElement result = Request(handler, "rtl/snippet", new
+        {
+            textDocument = new { uri },
+            position = new { line = 4, character = 6 },
+            kind = "autoFormat",
+        });
+
+        JsonElement snippet = result.GetProperty("snippets")[0];
+        Assert.Equal(0, snippet.GetProperty("fields").GetArrayLength());
+        string plainText = snippet.GetProperty("plainText").GetString() ?? "";
+        // the concatenation survives (it used to be dropped by CreateString)
+        Assert.Contains("{sig_a, sig_b}", plainText);
+        Assert.Equal(plainText, snippet.GetProperty("snippetText").GetString());
     }
 
     /// <summary>
