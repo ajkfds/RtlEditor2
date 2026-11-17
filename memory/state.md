@@ -3,6 +3,32 @@
 
 ## 進行中タスク (最新)
 
+- **`RtlEditorVscodeExtension/update-server.bat` が `and の使い方が誤っています。` で即終了する** → 修正完了 (実サーバ再 publish + prune 済み、`--selftest` 正常、ビルド 0 errors)
+  - ユーザ報告: `update-server.bat` を実行すると、ヘッダ表示直後に `and の使い方が誤っています。` が出て何も起きない
+  - **根本原因 (`echo` 内のエスケープされていない `)` がブロックを閉じていた)**: cmd.exe は `if (...)` / `for ... do (...)` の**ブロック全体を先に構文解析**するため、ブロック内の `echo` に含まれるリテラル `)` がブロック終端と解釈される。`if exist "%SERVER_DIR%" ( ... echo Close VS Code (all windows) and try again. ... )` の `(all windows)` の `)` でブロックが閉じ、残った `and try again.` が独立したコマンドとして実行されて `and は予期されていません` になっていた。**この行に到達するのは「`rd /s /q server` が失敗したとき」だけ** (VS Code の LSP サーバが `server\*.dll` をロックしているときに必ず起きる) ため、ユーザ環境では毎回ここで落ちていた
+  - **再現と切り分け (一時プローブ `_tmp_batcheck`、削除済み)**: `cmd.exe /c` で実ファイルを実行して再現。最小化した結果
+    | ケース | 結果 |
+    |---|---|
+    | `if exist ... ( echo Close VS Code (all windows) and try again. )` | **`and was unexpected at this time.` (exit 255)** |
+    | 同 (括弧を外した文) | 正常 |
+    | 同 (`(all windows)` のみ括弧) | **同じエラー** |
+    | `echo and try again.` 単体 | 正常 |
+    | `--check` / `--no-publish` 以外の他ブロック | 正常 |
+  - 修正1 (`update-server.bat`): ブロック内の `echo` の括弧を `^(` / `^)` にエスケープ (`Close VS Code ^(all windows^) and try again.`)。`usage` の `^(no argument^)` と `[2/3] dotnet publish ^(Release^)` も将来の編集でブロック終端にならないよう統一
+  - 修正2 (同、ヘッダ): **この罠を再発させないための NOTE** を先頭コメントに追加 (cmd.exe がブロックを先に解析すること、`^(` `^)` で逃がすこと、実際に出たメッセージ)
+  - **副次的に見つけた 2 つのバグも修正** (どちらも「実行が必ず失敗する」もの):
+    - **`--no-publish` が原理的に必ず失敗していた**: ステップ1 (server を空にする) が無条件で走るため、その後の「prune するものが無い」判定に必ず引っかかっていた。`if "%DO_PUBLISH%"=="0"` の分岐をステップ1 の**前**に移し、`--no-publish` ではフォルダを消さずに `:do_prune` へ直行するよう変更
+    - **`prune_runtimes` と `verify` の判定が矛盾していた**: prune は `win` / `osx` / `linux` を残すのに、verify は `linux-x64` / `osx-arm64` が残っているとエラーにしていた。つまり **成功しても必ず exit 1** になり、しかも osx/linux が残ってサイズが減らない (734 MB の主因)。prune を「ホスト (Windows) の `win*` のみ残す」に統一し、verify は `runtimes\*` を走査して `win*` 以外があればエラー + **`*.pdb` の残存も検査**するよう変更 (prune_pdb と整合)
+  - 検証 (実ファイルで全経路):
+    - `--help` / `--check` → exit 0、`(no argument)` が括弧のまま表示されること
+    - **`server\` をロックした状態でのデフォルト実行** (修正前はここで落ちていた) → `[ERROR] could not remove the server folder.` + `Close VS Code (all windows) and try again.` を表示して exit 1。`was unexpected at this time` は **出ない**
+    - `--no-publish` (偽リポジトリで `.playwright` / `*.pdb` / win・linux・osx・browser・maccatalyst を配置) → exit 0。`.playwright` / `*.pdb` / win 以外の runtimes がすべて削除され、`win-x64` / `win-x86` は残存
+    - **実リポジトリで本実行**: `dotnet publish` 成功 → prune → **148 files / 0 pdb / `.playwright: absent` / runtimes: win-arm64, win-x64, win-x86**、`--selftest` 正常 (修正前は 322 files / 14 pdb / `.playwright: PRESENT` / 全プラットフォームの runtimes)
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+  - コミット: RtlEditorVscodeExtension / メイン (submodule pointer + state.md)
+  - Next: VS Code を **完全に終了してから** `update-server.bat` を実行し、(1) ロックで落ちずに `Close VS Code (all windows)` の案内が出ること (2) VS Code を閉じた状態では publish + prune が通り **148 files 前後**になること (3) `--selftest` が `[ok]` になること を確認 → Reload Window して拡張が起動すること
+  - メモ: 検証用プローブ (`_tmp_batcheck/*.cs`) は削除済み。`cmd` / `powershell` はコマンド許可リスト外のため、バッチ実行は C# プローブ (`Process.Start("cmd.exe", ...)`) 経由で行った。`RtlEditorVscodeExtension/server/` は .gitignore 対象のためコミット対象外
+
 - **RuleSet を `.rule` ファイル (YAML) に出力/ロードし、配置ディレクトリ以下のパースに適用** → 実装完了 (ビルド 0 errors、テスト 218 + sv-tests 1028 合格、コミット済み)
   - ユーザ要求: `RuleSet.cs` の RuleSet を yaml 形式で Name/Severity のセットを `.rule` ファイルに出力/ロードできるようにする。FileType に `.rule` を追加して parse 対象にする。配置ファイルパス以下のパース結果に適用される。`ProjectProperty` にファイルパス + RuleSet の Dictionary をおき、parse 時に該当ファイルパスのファイルに対して適用する
   - **実装1 (`RuleSet.cs`)**: `Rule` の一覧をリフレクションで列挙 (`GetRules()` / `GetRule(name)`)。`ToYaml()` / `ParseYaml(text, out errorMessage)` / `LoadFile(path)` / `SaveFile(path)` を新設。YAML 形式は `rules: - name: <RuleName> / severity: <Error|Warning|Notice>` (YamlDotNet の CamelCaseNamingConvention、`IgnoreUnmatchedProperties`)
