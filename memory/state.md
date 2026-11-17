@@ -3,6 +3,45 @@
 
 ## 進行中タスク (最新)
 
+- **`verilog_sample/mySample` に `.rule` ファイルの例を作成** → 完了 (コード変更なし、ビルド 0 errors)
+  - ユーザ要求: `CodeEditor2VerilogPlugin\verilog_sample\mySample` に `.rule` ファイルの例を作成して
+  - **既存 `mySample/verilog.rule` は旧形式で無効だった**: 中身が
+    `ImplicitNetDeclaretion :` / `Severity:Error` (コロン区切りの独自形式) で、
+    `RuleSet.ParseYaml` が読む `rules: - name: ... / severity: ...` 形式ではなかった。
+    `IgnoreUnmatchedProperties` のため**エラーにもならず黙って既定値のまま**適用されていた
+    (ルール名も `ImplicitNetDeclaretion` と typo)
+  - **正しい YAML 形式で書き直した** (`RuleSet.ToYaml()` / `RuleSetTests` と同一形式):
+    ```yaml
+    rules:
+      - name: ImplicitNetDeclaration
+        severity: Error
+      - name: AssignmentBitwidthMismatch
+        severity: Error
+      - name: ImplicitModportDirection
+        severity: Notice
+      - name: ImplicitModportInterfaceConnectionToInstance
+        severity: Notice
+      - name: NotAllPortConnectedWithWildcardNamedPortConnections
+        severity: Warning
+    ```
+  - 例として使えるよう、ファイル冒頭に**コメントで仕様を明記**: 配置ディレクトリ以下のファイルに適用されること /
+    `Error` / `Warning` / `Notice` の 3 値 / 部分指定が可能 (書いた分だけ上書き、省略すれば既定に戻る) /
+    未知のルール名・不正な severity はこのファイルにメッセージが出て残りは適用される /
+    編集は保存前でも反映される (編集中バッファのテキストが使われる) / `#` はコメント /
+    **利用可能なルール名 5 つと組み込み既定値の一覧** (`RuleSet.GetRules()` の宣言順)
+  - **検証**: 一時プローブ (`SystemVerilogLanguageServer.Tests/DebugRuleExampleProbe.cs`、検証後に削除) で
+    実ファイルを `RuleSet.ParseYaml` に通し、`errorMessage == null` かつ 5 ルールの severity が
+    意図どおり (Error / Error / Notice / Notice / Warning) になることを assert → 合格
+  - ビルド: `dotnet build RtlEditor2.Desktop/RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+  - **コミット対象外**: `CodeEditor2VerilogPlugin/.gitignore` の 1 行目が `verilog_sample/` のため
+    `mySample/verilog.rule` は git 管理外 (`git ls-files verilog_sample` が空)。サンプル一式は意図的に
+    未追跡のままなので、この例はコミットされない (必要なら `.gitignore` に例外を追加する判断が必要)
+  - メモ: `.rule` の適用はディレクトリ単位 (`ProjectProperty.GetRuleSet` が深い方を優先)。
+    `verilog_sample` は `scr1` / `sv_tests` も含むため、`mySample` 直下に置くと **mySample 配下だけ**に効く
+  - Next: エディタ / VS Code で `mySample/mod2.v` 等を開き、(1) `ImplicitNetDeclaration` が
+    Error (赤) になること (2) modport 系が Notice (青) になること (3) `.rule` 自体に
+    メッセージが出ないこと を確認
+
 - **alwaysFF snippet: セレクタ確定後に Enter を 2 回押さないと進まない / highlight 開始位置に caret があると Enter が効かない** → 修正完了 (ビルド 0 errors、テスト 221 + sv-tests 1028 合格)
   - ユーザ報告 2 点: (1) alwaysFF snippet で selector (クロック選択) したあと、もう一度 Enter を押さないと次に進まない (2) highlight 範囲の開始位置に caret があるとき、Enter を押しても次に進まない
   - **原因1 (セレクタ確定で止まる)**: `SnippetRunner.RunAsync` は候補を選んだ後も `fieldDone` で **もう一度 Enter を待って**いた。旧 `AlwaysFFSnippet` (SnippetRunner 導入前) は `AutocompleteItem` を候補に使い、確定時に `Controller.CodeEditor.AutoCompleteHandled()` → `InteractiveSnippet.AfterAutoCompleteHandled` が呼ばれて `moveNext` が自動的に入っていた。しかし現行の汎用 `CandidateToolItem` は `ToolItem.ApplyAsync` を呼ぶだけでそのフックを出さないため、**ポップアップでの確定が「フィールドの確定」として扱われていなかった**
