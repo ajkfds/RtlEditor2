@@ -30,8 +30,17 @@
   - **新テストで発見した実装バグを修正**: `CreateSourceFile` が `entry.Argument` (テンプレート id) を**ユーザー入力名として**渡していた (`verilog.sv` を作ってしまう) → `argument` (ユーザー入力) と `entry.Argument` (テンプレート) を分離
   - 検証: `dotnet build CodeEditor2.csproj` / `CodeEditor2VerilogPlugin.csproj` / `SystemVerilogLanguageServer.csproj` / `RtlEditor2.Desktop.csproj` すべて **0 errors** / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **229 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
   - 設計を `memory/vscode_extension_architecture.md` に「ナビゲートノードメニューの一本化」節として追記
-  - Next: エディタで Project / Folder / File / Instance を右クリックし (1) Add サブメニューに 5 行 (2) Delete (3) Parse All (4) Open in Explorer / CopyPath / Property (5) Simulation > Simulation Setup が出ること、VS Code で同じ並びのうち `Hosts.VsCode` の行だけが出ることを確認
-  - メモ: **Phase 5 (VS Code 側の静的 TS 行削除)** は未着手。`package.json` の `addFolder`/`addBlankFile`/`deleteNode`/`copyPath`/`openInExplorer`/`showProperty` を削除し `hierarchy.js` を `ClientOperation` 実行に置換したうえで、カタログ行を `Hosts.Both` に昇格させる必要がある (VS Code を閉じてから publish 更新も必要)
+  - **Phase 5 (VS Code 側の一本化) も完了**:
+    - カタログの Add 系 / Delete を `Hosts.Both` に昇格 (既定値なので `Hosts = Hosts.Desktop` を削除)。`Parse All` だけが `Hosts.Desktop` で残る
+    - `--hierarchy-menu-manifest` を再生成して `package.json` を更新: `commands` 11 件 (addBlankFile / addFolder / addSystemVerilogInterface / addSystemVerilogModule / addVerilogModule / simulationSetup / deleteNode / openInExplorer / copyInstancePath / copyPath / showProperty) / `submenus` 2 件 (Add, Simulation) / `view/item/context` 34 行
+    - `package.json` の**手書き TS 行を全削除** (`systemverilogLsp.addFolder` / `addBlankFile` / `deleteNode` / `copyPath` / `openInExplorer` / `showProperty` の commands と `view/item/context` 行)
+    - `hierarchy.js`: `resolveFsPath` / `resolveDirPath` と 6 コマンド実装を削除し、**`executeClientOperation(operation)` 1 個**に集約 (`createFolder` / `createFile` / `delete` / `reveal` を `vscode.workspace.fs` / `revealFileInOS` で実行)
+    - `hierarchy.js`: `runNodeMenuEntry` を `invokeNodeMenuEntry(node, id, argument)` ヘルパに分離し、`prompt` → `showInputBox` → 再要求、`operation` → 実行 (`delete` の前に確認ダイアログ) の流れに
+    - `GENERATED_HIERARCHY_MENU_IDS` を新カタログ (11 件) に更新
+    - サーバ: `HierarchyMenuInvokeResultDto` に `prompt` / `operation` を追加 (`HierarchyMenuOperationDto` 新設)、`HandleHierarchyMenuInvoke` が `argument` を受け取り `NavigateNodeMenuAdapter.Invoke` に渡すよう変更
+  - 検証 (Phase 5): `dotnet build` 全プロジェクト 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **230 合格** / `~ParseSvTestFile` **1028 合格** / 一時プローブで `package.json` を機械検証 → **strict JSON OK / commands 28 / submenus 2 / rows 37 / 重複コマンド 0 / dangling 0 / 重複行 0 / 旧 TS コマンド 6 件すべて削除済み**
+  - Next: VS Code で Reload Window 後、ノード右クリックで (1) `Add ›` サブメニューに 5 行 (2) `Delete` (3) `Simulation › Simulation Setup (files)` (4) `Open in Explorer` / `Copy Path` / `Copy Instance Path` / `Property` が出ること、(5) `Add › verilog module` で名前入力後にスケルトン付きファイルが作られて開くこと、(6) `Delete` で確認後に削除されることを確認。**publish 更新が必要** (`update-server.bat`、VS Code を閉じてから)
+  - メモ: `Parse All` は `Hosts.Desktop` のまま (エディタの階層 parse を起動するため VS Code では意味がない)。VS Code 側に独自の行を足したい場合は `Hosts.VsCode` でカタログに登録する
 
 - **`verilog_sample/mySample` に `.rule` ファイルの例を作成** → 完了 (コード変更なし、ビルド 0 errors)
   - ユーザ要求: `CodeEditor2VerilogPlugin\verilog_sample\mySample` に `.rule` ファイルの例を作成して

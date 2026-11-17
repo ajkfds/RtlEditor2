@@ -194,7 +194,7 @@
 | ① カタログ（単一情報源） | `CoreBridge/HierarchyMenuCatalog.cs` | `Id` / `Label` / `Targets` / **`Hosts`** / `Group` / `ParentId` / `IsSubmenu` / **`Action`** / `Argument` / `IconPath` / `IconColor` / `Handler` |
 | ② 判断（UI フリー） | `CoreBridge/NavigateNodeMenuAdapter.cs` | `Build(context, host)` → 行 + 可否理由 / `Invoke(id, context, arg)` → `Text` / `ClipboardText` / `Prompt` / `ClientOperation` |
 | ③a デスクトップ描画 | `NavigatePanel/NavigateNodeMenuRenderer.cs` | `MenuItem` 生成・`System.IO` 実行・`InputWindow` / `ItemPropertyForm` |
-| ③b VS Code 描画 | `RtlEditorVscodeExtension/hierarchy.js` | `ClientOperation` を `vscode.workspace.fs` 等で実行 |
+| ③b VS Code 描画 | `RtlEditorVscodeExtension/hierarchy.js` (`executeClientOperation`) | `ClientOperation` を `vscode.workspace.fs` / `revealFileInOS` で実行 |
 
 - **`Hosts`** (`Desktop` / `VsCode` / `Both`) が「どちらの環境に出すか」を持つ。`Parse All` / `Run Simulation` / `LLM Agent` は `Hosts.Desktop`（エディタ固有のウィンドウが必要）、`Reveal in Editor` 等は `Hosts.VsCode`。**他方のホストはその行を一切受け取らない**ので、`desktopOnly` フラグを各所で分岐する必要がない。
 - **`ActionKind`** が「何をするか」を持つ（`CopyPath` / `CopyInstancePath` / `RevealInOS` / `ShowProperty` / `ShowText` / `CreateFolder` / `CreateFile` / `CreateSourceFile` / `DeleteNode` / `DesktopHandler`）。文字列 id の switch を両ホストで複製しない。
@@ -202,7 +202,8 @@
 - **`Prompt`** がユーザー入力（フォルダ名 / ファイル名 / モジュール名）を要求し、ホストが入力後に `Invoke(id, context, 入力値)` を再要求する（snippet の 2 段階と同じ）。
 - 依存方向の都合で `CodeEditor2` はプラグインを参照できないため、`NavigatePanelNode.CreateContextMenuRows`（`Action<ContextMenu, NavigatePanelNode>`）に**プラグインがレンダラを 1 回だけ差し込む**。未設定時は従来の組み込み行にフォールバックする。
 - ドリフト防止: `HierarchyMenuManifest` は `Hosts.VsCode` の行だけを `package.json` 用に生成し、`NavigateNodeMenuTests` がホストフィルタ / アクション写像 / スケルトン生成を、`HierarchyMenuManifestTests` が三者一致を検証する。
-- 現状の `addFolder` / `addBlankFile` / `deleteNode` は `Hosts.Desktop` 宣言（VS Code 側は `hierarchy.js` に自前実装が残っているため二重表示を避ける）。拡張が `ClientOperation` を実行するようになった時点で `Hosts.Both` に変えるだけ。
+- **`addFolder` / `addBlankFile` / `addVerilogModule` / `addSystemVerilogModule` / `addSystemVerilogInterface` / `deleteNode` は `Hosts.Both`**（Phase 5 で拡張側の自前実装を削除済み）。`package.json` の手書き行は 1 つも残っておらず、`hierarchy.js` は `ClientOperation` を実行するだけ。
+- `hierarchy.js` の `runNodeMenuEntry` は `prompt` → `showInputBox` → `argument` 付き再要求、`operation` → `executeClientOperation`（`delete` の前に確認ダイアログ）という流れ。**メニュー動作を `hierarchy.js` に実装してはいけない**（カタログに足す）。
 
 ## 独自拡張（`rtl/*`）の一覧
 
