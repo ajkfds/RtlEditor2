@@ -3,6 +3,30 @@
 
 ## 進行中タスク (最新)
 
+- **`update-server.bat` の Linux 版 (`update-server.sh`) を追加 (linux-x64 / self-contained、Windows 上でクロス publish)** → 実装完了 (ビルド 0 errors、全経路を実機実行で検証)
+  - ユーザ要求: `update-server.bat` の linux 版を作る。linux-x64、自己完結形式でコンパイル。コンパイル自体は Windows 上で行う
+  - **新規 `RtlEditorVscodeExtension/update-server.sh`**: `.bat` と同じ 3 ステップ (空にする → publish → prune) + `--check` / `--no-publish` / `-h`
+    - publish は `dotnet publish ... -c Release -r linux-x64 --self-contained true -o RtlEditorVscodeExtension/server-linux-x64 -p:DebugType=None -p:DebugSymbols=false -p:CopyOutputSymbolsToPublishDirectory=false`
+    - **出力先を `server/` と分けた理由**: publish は RID に縛られる (managed DLL / `.deps.json` / native lib が platform ごとに違う) ため、Windows 版と同居できない。`server/` = Windows、`server-linux-x64/` = Linux
+    - ホスト判定 (`uname -s` が MINGW/MSYS/CYGWIN) で「Windows 上でのクロスビルド」を検出し、`cygpath -w` で dotnet に Windows パスを渡す
+    - **Windows 上では `--selftest` を実行できない** (ELF は起動不可) → 代わりに apphost の先頭 4 バイトを `od` で読み、`7f454c46` = ELF を検証。PE (`4d5a`) なら「これは linux-x64 の publish ではない」とエラー。Linux ホスト上では実際に `--selftest` を実行
+    - prune は `.playwright/` / `**/*.pdb` / `runtimes/<rid>` (linux/unix 以外)。verify が prune と厳密に一致しないと exit 1 (`.bat` で「prune と verify の判定が矛盾して必ず失敗」した既知バグの再発防止)
+    - サイズ判定は **サイズ基準**に変更: self-contained は .NET ランタイム同梱のため健全でも **322 files / 139.3 MB** (実測)。`.bat` の「200 ファイル超で TOO BIG」をそのまま使うと正常なビルドを異常と誤判定する
+    - 改行は LF (`loneCR=0` を機械検証)。実行ビットは git (Windows) で付けられないため、先頭コメントに `git update-index --chmod=+x` の案内を記載
+  - **`extension.js`**: `resolveServerCommand` が `process.platform === 'linux'` なら `server-linux-x64/` を先に、他 platform なら `server/` を先に探し、もう一方をフォールバックに残す (Windows バンドルしか無いチェックアウトでも起動する)
+    - `ensureServerExecutable(command)` を新設: 非 Windows で spawn 前に `chmod +x`。**RID 指定 publish の apphost は native launcher だが、実行ビットは POSIX 属性で Windows のクロス publish では付かず、zip / .vsix でも保存されない** → 無いと `spawn EACCES` になり「サーバが無い」ように見える
+    - サーバ未検出時のメッセージを Windows / Linux 両方のバンドルと各スクリプト名に更新
+  - `.gitignore`: `server-linux-x64/` を追加 (ビルド成果物)
+  - `.vscodeignore`: `server-linux-x64/**/*.pdb` / `.playwright` / `*.xml` を除外し、**バンドル自体は同梱**する方針を明記 (同梱しないと同じ .vsix が Linux で動かない)。`update-server.bat` / `update-server.sh` は開発ツールとして除外
+  - `README.md`: 「Linux bundle (`server-linux-x64/`)」節を新設 (コマンド / publish 引数 / Windows でクロスコンパイルする理由 / 実行ビット / サイズは 322 files 139 MB が正常でファイル数は判定に使えないこと)
+  - 検証 (実機実行、検証用プローブは削除済み):
+    - Git Bash 経由で `--help` / 既定実行 / `--check` / `--no-publish` / 不正引数 / `--check --no-publish` の全経路を実行 → 既定実行は `apphost: ELF (linux executable)` / `removed .playwright/` / `files: 322 (ok)` / `size: 139.3 MB` / `*.pdb: 0` で exit 0、不正引数は exit 1
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+    - JS 4 ファイルの括弧バランス (`{}=0 ()=0 []=0`) と `update-server.sh` の `if/fi` (22/22) / `case/esac` (4/4) / `for,while/done` (5/5) / `loneCR=0` を機械検証 → ALL OK
+  - コミット: RtlEditorVscodeExtension (update-server.sh + extension.js + .gitignore + .vscodeignore + README)、メイン (submodule pointer + state.md)
+  - Next: Linux 実機で (1) `server-linux-x64/` を拡張フォルダに置いて Reload Window → LSP が起動すること (2) `./SystemVerilogLanguageServer --selftest` が通ること (3) `.vsix` を Linux で作る場合は先に `update-server.sh` を実行してバンドルを含めること を確認
+  - メモ: `npm run package` / `scripts/bundle-server.js` は **Windows バンドル専用** (bundle 先が `server/` 固定)。Linux 版は `update-server.sh` を使う
+
 - **snippet 実装を C# に一本化 (RtlEditor / VS Code 共通)** → 実装完了 (ビルド 0 errors、テスト 220 + sv-tests 1028 合格)
   - ユーザ要求: `alwaysFFは案Aで直す。snippet実装をvscode extension側で一本化する。そうできるようにRtlEditor Snippetの実装を修正する。Snippetは全てC#側で実装すること`
   - **変更前の構造 (3 層 + 二重実装)**: デスクトップ用 `Verilog/Snippets/*` (InteractiveSnippet / ToolItem 派生、`{0}` プレースホルダ + highlight リスト + キー操作) と、LSP 用 `CoreBridge/SnippetAdapter` (`${n}` タブストップ文字列) が**別々のテキスト生成器**を持っていた。portInvert の正規表現・moduleInstance のインスタンス化テキスト・autoConnect の候補照合規則が二重管理で、片方だけ直すとドリフトした
