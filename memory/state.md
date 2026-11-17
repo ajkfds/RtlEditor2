@@ -17,15 +17,24 @@
     - `ensureServerExecutable(command)` を新設: 非 Windows で spawn 前に `chmod +x`。**RID 指定 publish の apphost は native launcher だが、実行ビットは POSIX 属性で Windows のクロス publish では付かず、zip / .vsix でも保存されない** → 無いと `spawn EACCES` になり「サーバが無い」ように見える
     - サーバ未検出時のメッセージを Windows / Linux 両方のバンドルと各スクリプト名に更新
   - `.gitignore`: `server-linux-x64/` を追加 (ビルド成果物)
-  - `.vscodeignore`: `server-linux-x64/**/*.pdb` / `.playwright` / `*.xml` を除外し、**バンドル自体は同梱**する方針を明記 (同梱しないと同じ .vsix が Linux で動かない)。`update-server.bat` / `update-server.sh` は開発ツールとして除外
+  - `.vscodeignore`: `server-linux-x64/**/*.pdb` / `.playwright` / `*.xml` を除外し、**バンドル自体は同梱**する方針を明記 (同梱しないと同じ .vsix が Linux で動かない)。`update-server.bat` / `update-server.sh` / `update-server-linux.cmd` は開発ツールとして除外
+  - **新規 `update-server-linux.cmd` (Windows からの起動ラッパー)**: 実測で `.sh` は Windows から直接動かせないと判明したため追加
+    | 起動方法 | 実測結果 |
+    |---|---|
+    | `cmd /c update-server.sh --help` | **exit 0 で何も出力されない** (`.sh` は `git-bash.exe --no-cd` に関連付けられ、切り離された Git Bash ウィンドウが開くだけ。exit code はランチャのもの) |
+    | `bash update-server.sh` (PATH 上の bash は WSL の `C:\windows\system32\bash.exe`) | 起動はするが WSL の `dotnet --version` は **8.0.100** で net10.0 をビルドできない |
+    | `bash update-server.sh` (**Git for Windows** `C:\Program Files\Git\bin\bash.exe`) | 正常動作 |
+    - ラッパーは `where bash` を使わず Git for Windows の bash.exe を明示探索 (`%ProgramFiles%\Git\bin` → `%ProgramFiles(x86)%` → `%LOCALAPPDATA%\Programs\Git` → PATH 上の `git.exe` から `<Git>\bin\bash.exe` を逆算)、同一コンソールで実行して exit code を伝播。見つからない場合は WSL の bash では不十分な理由付きでエラー
+    - 検証: `cmd /c update-server-linux.cmd --help` / `--check` / `--bogus`(exit 1) / PowerShell 経由 / **既定実行 (publish + prune + verify)** を実測 → すべて期待どおり (`apphost: ELF` / `files: 322 (ok)` / `139.3 MB` / exit 0)
   - `README.md`: 「Linux bundle (`server-linux-x64/`)」節を新設 (コマンド / publish 引数 / Windows でクロスコンパイルする理由 / 実行ビット / サイズは 322 files 139 MB が正常でファイル数は判定に使えないこと)
   - 検証 (実機実行、検証用プローブは削除済み):
     - Git Bash 経由で `--help` / 既定実行 / `--check` / `--no-publish` / 不正引数 / `--check --no-publish` の全経路を実行 → 既定実行は `apphost: ELF (linux executable)` / `removed .playwright/` / `files: 322 (ok)` / `size: 139.3 MB` / `*.pdb: 0` で exit 0、不正引数は exit 1
     - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
     - JS 4 ファイルの括弧バランス (`{}=0 ()=0 []=0`) と `update-server.sh` の `if/fi` (22/22) / `case/esac` (4/4) / `for,while/done` (5/5) / `loneCR=0` を機械検証 → ALL OK
-  - コミット: RtlEditorVscodeExtension (update-server.sh + extension.js + .gitignore + .vscodeignore + README)、メイン (submodule pointer + state.md)
+  - コミット: RtlEditorVscodeExtension (update-server.sh + update-server-linux.cmd + extension.js + .gitignore + .vscodeignore + README)、メイン (submodule pointer + state.md)
   - Next: Linux 実機で (1) `server-linux-x64/` を拡張フォルダに置いて Reload Window → LSP が起動すること (2) `./SystemVerilogLanguageServer --selftest` が通ること (3) `.vsix` を Linux で作る場合は先に `update-server.sh` を実行してバンドルを含めること を確認
-  - メモ: `npm run package` / `scripts/bundle-server.js` は **Windows バンドル専用** (bundle 先が `server/` 固定)。Linux 版は `update-server.sh` を使う
+  - メモ: `npm run package` / `scripts/bundle-server.js` は **Windows バンドル専用** (bundle 先が `server/` 固定)。Linux 版は `update-server.sh` (Windows からは `update-server-linux.cmd`) を使う
+  - メモ: Windows 向け `server/` は本タスクで一切触っていない (実測 148 files / 101.7 MB / `--selftest` exit 0)。出力先を `server-linux-x64/` に分けたため
 
 - **snippet 実装を C# に一本化 (RtlEditor / VS Code 共通)** → 実装完了 (ビルド 0 errors、テスト 220 + sv-tests 1028 合格)
   - ユーザ要求: `alwaysFFは案Aで直す。snippet実装をvscode extension側で一本化する。そうできるようにRtlEditor Snippetの実装を修正する。Snippetは全てC#側で実装すること`
