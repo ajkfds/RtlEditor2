@@ -12,7 +12,7 @@
     - **Windows 上では `--selftest` を実行できない** (ELF は起動不可) → 代わりに apphost の先頭 4 バイトを `od` で読み、`7f454c46` = ELF を検証。PE (`4d5a`) なら「これは linux-x64 の publish ではない」とエラー。Linux ホスト上では実際に `--selftest` を実行
     - prune は `.playwright/` / `**/*.pdb` / `runtimes/<rid>` (linux/unix 以外)。verify が prune と厳密に一致しないと exit 1 (`.bat` で「prune と verify の判定が矛盾して必ず失敗」した既知バグの再発防止)
     - サイズ判定は **サイズ基準**に変更: self-contained は .NET ランタイム同梱のため健全でも **322 files / 139.3 MB** (実測)。`.bat` の「200 ファイル超で TOO BIG」をそのまま使うと正常なビルドを異常と誤判定する
-    - 改行は LF (`loneCR=0` を機械検証)。実行ビットは git (Windows) で付けられないため、先頭コメントに `git update-index --chmod=+x` の案内を記載
+    - 改行は LF (`loneCR=0` を機械検証)。実行ビットは `git update-index --chmod=+x` で index に設定済み (`100755` でコミット) だが、Windows のチェックアウトでは落ちるため先頭コメントに再設定手順と `bash update-server.sh` の代替も記載
   - **`extension.js`**: `resolveServerCommand` が `process.platform === 'linux'` なら `server-linux-x64/` を先に、他 platform なら `server/` を先に探し、もう一方をフォールバックに残す (Windows バンドルしか無いチェックアウトでも起動する)
     - `ensureServerExecutable(command)` を新設: 非 Windows で spawn 前に `chmod +x`。**RID 指定 publish の apphost は native launcher だが、実行ビットは POSIX 属性で Windows のクロス publish では付かず、zip / .vsix でも保存されない** → 無いと `spawn EACCES` になり「サーバが無い」ように見える
     - サーバ未検出時のメッセージを Windows / Linux 両方のバンドルと各スクリプト名に更新
