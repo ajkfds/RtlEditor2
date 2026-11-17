@@ -3,6 +3,25 @@
 
 ## 進行中タスク (最新)
 
+- **alwaysFF snippet: セレクタ確定後に Enter を 2 回押さないと進まない / highlight 開始位置に caret があると Enter が効かない** → 修正完了 (ビルド 0 errors、テスト 221 + sv-tests 1028 合格)
+  - ユーザ報告 2 点: (1) alwaysFF snippet で selector (クロック選択) したあと、もう一度 Enter を押さないと次に進まない (2) highlight 範囲の開始位置に caret があるとき、Enter を押しても次に進まない
+  - **原因1 (セレクタ確定で止まる)**: `SnippetRunner.RunAsync` は候補を選んだ後も `fieldDone` で **もう一度 Enter を待って**いた。旧 `AlwaysFFSnippet` (SnippetRunner 導入前) は `AutocompleteItem` を候補に使い、確定時に `Controller.CodeEditor.AutoCompleteHandled()` → `InteractiveSnippet.AfterAutoCompleteHandled` が呼ばれて `moveNext` が自動的に入っていた。しかし現行の汎用 `CandidateToolItem` は `ToolItem.ApplyAsync` を呼ぶだけでそのフックを出さないため、**ポップアップでの確定が「フィールドの確定」として扱われていなかった**
+    - 修正: 候補を選んだ時点でそのフィールドは確定済みとみなし、`SyncMirrorsAsync()` を実行して次のフィールドへ `continue` する。キャンセル (Escape) は従来どおり snippet 終了
+  - **原因2 (highlight 開始位置で Enter が効かない)**: `KeyDown` は `fieldDone` があるときだけ `moveNext` を入れていたが、`fieldDone` は **`SelectHighlight` の後**に作られる。caret が highlight 開始位置にあると `SelectHighlight` が `SetCaretPosition` で何も変えないため、`Caret_PositionChanged` の行比較は通過するが、**Enter が `fieldDone == null` の瞬間に届くと捨てられていた**
+    - 修正1 (`confirmPending` ラッチ + `RequestMoveNext`): 待ち受けがまだ無いときの Enter を記憶し、`WaitForFieldAsync` 開始時に消費する。`Key.Enter` (テンキー) も `Key.Return` と同様に受理
+    - 修正2 (`WaitForFieldAsync(fieldIndex)`): `checkLine` を `document.SelectionStart` から求めていたのを **highlight の開始位置**から求めるよう変更。空の highlight (alwaysFF の分岐など) は `Selection.Create` が `EmptySelection` を返して `CodeDocument._selectionStart` が更新されず、**前のフィールドのオフセットが残る**ため誤判定の原因になっていた。`GetHighlightPosition` は UI スレッド必須なので `Dispatcher.UIThread.InvokeAsync` で取得
+    - 修正3 (`Caret_PositionChanged`): 現在のフィールド範囲 (`currentFieldStart` / `currentFieldLast`) の**内側 (開始位置〜終端+1) は移動とみなさない**ようにした。snippet 自身が caret を highlight 開始位置へ置くため、これを「ユーザが別の場所へ行った」と誤判定していた
+    - `AfterAutoCompleteHandled` は **待機中のときだけ** `moveNext` を入れる (`RequestMoveNext` にすると通常のコード補完でも発火し、編集中のフィールドを勝手にスキップする)
+  - **副次的に発見したテスト側の問題**: `SnippetTests.DidOpen` が `languageId = "systemverilog"` 固定だったため、`.v` ファイルでも SystemVerilog 扱いになっていた。`languageId` を引数化 (既定 `systemverilog`)
+  - **未コミットだったユーザ変更を確定**: `AlwaysFFSnippet.Build` が `parsedDocument.SystemVerilog` で `always_ff` / `always` を出し分ける変更 (作業ツリーに残っていたもの)。テスト `Snippet_AlwaysFF_UsesClockAndResetPorts` の期待値を `always_ff` に更新し、`.v` で `always` になることを固定する `Snippet_AlwaysFF_UsesAlwaysInVerilog` を追加
+  - 検証:
+    - `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` → 0 errors
+    - `dotnet test --filter "FullyQualifiedName!~ParseSvTestFile"` → **221 合格 / 0 失敗** (`~SnippetTests` 11 合格)
+    - `dotnet test --filter "FullyQualifiedName~ParseSvTestFile"` → **1028 合格 / 0 失敗**
+  - Next: エディタで (1) alwaysFF でクロック候補が複数あるとき、セレクタで選んだ直後に次のフィールドへ進むこと (2) クロック候補が 1 つのとき Enter 1 回で次へ進むこと (3) caret を highlight の開始位置に置いて Enter を押しても次へ進むこと (4) Escape で中断できること (5) リセットのミラー (`if(~reset)`) が追従すること を確認
+  - メモ: `confirmPending` は `Aborted()` と `WaitForFieldAsync` の両方でクリアする。ループ先頭でクリアすると「挿入直後に押した Enter」まで捨ててしまう
+
 - **`SnippetAdapter.cs` の `Build*` メソッドを Snippet 本体 (`Verilog/Snippets/`) へ移動** → 実装完了 (ビルド 0 errors、テスト 220 + sv-tests 1028 合格)
   - ユーザ要求: `SnippetAdapter.cs` 内の `Build*` メソッドは Snippet 本体の実装なので、`CodeEditor2VerilogPlugin/CodeEditor2VerilogPlugin/Verilog/Snippets` 内の Snippet 内に移動させる
   - **変更前**: `CoreBridge/SnippetAdapter.cs` が 828 行で、`BuildAlwaysFF` / `BuildAutoFormat` / `BuildModPort` / `BuildModuleInstance` / `BuildPortConnectionCreate` / `BuildPortInvert` と、その補助 (`GetIndent` / `ResolveModule` / `MakeUniqueInstanceName` / `BuildInstantiationTemplate` / `FindInstantiationAt` / `LastIndex` / `InvertPortLine` / `PortPattern`) をすべて抱えていた。つまり adapter (配管) が snippet 実装そのものを持っていた

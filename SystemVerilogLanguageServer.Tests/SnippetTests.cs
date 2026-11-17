@@ -49,11 +49,11 @@ public class SnippetTests : IDisposable
         return new Uri(path).AbsoluteUri;
     }
 
-    private void DidOpen(LspHandler handler, string uri, string text)
+    private void DidOpen(LspHandler handler, string uri, string text, string languageId = "systemverilog")
     {
         string json = JsonSerializer.Serialize(new
         {
-            textDocument = new { uri, languageId = "systemverilog", version = 1, text },
+            textDocument = new { uri, languageId, version = 1, text },
         });
         using JsonDocument doc = JsonDocument.Parse(json);
         handler.TryHandleNotification("textDocument/didOpen", doc.RootElement, default);
@@ -112,9 +112,10 @@ public class SnippetTests : IDisposable
         Assert.Contains("if(~${2}", snippetText);
 
         // the plain rendering has the same text with the defaults inlined, so
-        // the desktop editor inserts exactly what this test reads here
+        // the desktop editor inserts exactly what this test reads here.
+        // A .sv file gets always_ff (SystemVerilog); a .v file gets always.
         string plainText = snippets[0].GetProperty("plainText").GetString() ?? "";
-        Assert.Contains("always @(posedge clk or negedge rst_n)", plainText);
+        Assert.Contains("always_ff @(posedge clk or negedge rst_n)", plainText);
         Assert.Contains("if(~rst_n)", plainText);
 
         // the fields tell a host which values were suggested. Five entries:
@@ -127,6 +128,38 @@ public class SnippetTests : IDisposable
         Assert.Equal("rst_n", fields[1].GetProperty("default").GetString());
         Assert.Equal(2, fields[2].GetProperty("index").GetInt32());
         Assert.Equal("insert", snippets[0].GetProperty("kind").GetString());
+    }
+
+    /// <summary>
+    /// alwaysFF in a Verilog (.v) file: the block keyword is <c>always</c>
+    /// rather than SystemVerilog's <c>always_ff</c>. The snippet picks it from
+    /// the parse result's language, so both extensions get the right keyword
+    /// without the caller telling it.
+    /// </summary>
+    [Fact]
+    public void Snippet_AlwaysFF_UsesAlwaysInVerilog()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        const string text =
+            "module top(\n" +
+            "  input clk,   // @sync: clock\n" +
+            "  input rst_n, // @sync: reset\n" +
+            "  output q\n" +
+            ");\n" +
+            "endmodule\n";
+        string uri = WriteFile("top.v", text);
+        DidOpen(handler, uri, text, languageId: "verilog");
+
+        JsonElement result = Request(handler, "rtl/snippet", new
+        {
+            textDocument = new { uri },
+            position = new { line = 4, character = 2 },
+            kind = "alwaysFF",
+        });
+
+        string plainText = result.GetProperty("snippets")[0].GetProperty("plainText").GetString() ?? "";
+        Assert.Contains("always @(posedge clk or negedge rst_n)", plainText);
+        Assert.DoesNotContain("always_ff", plainText);
     }
 
     /// <summary>
