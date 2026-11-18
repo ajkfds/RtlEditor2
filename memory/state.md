@@ -3,6 +3,23 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code で Add 系メニューが階層にならず flat に展開される** → 修正完了 (ビルド 0 errors、テスト 233 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: VS Code で実行したとき `Add` 系のメニューがメニュー階層にならずフラットに展開されてしまう
+  - **原因 (`HierarchyMenuManifest` が子行を `view/item/context` に出していた)**: VS Code は**サブメニューの内容を `contributes.menus["<submenu id>"]` から読む**。`view/item/context` はツリー自身の context menu なので、そこに子コマンドを置くと「`Add` フライアウトの隣に `Folder` / `Blank File` … が普通の行として並ぶ」= 報告どおりのフラット表示になっていた (`Simulation` も同様)
+    - 生成側は `AddSubmenu` が子を全部 `manifest.Menus` (= `view/item/context` 固定) に積んでいた。**フライアウトを開く行**だけが `view/item/context` に属する
+  - **修正1 (`HierarchyMenuManifest`)**: `Manifest.Menus` を `List` → `SortedDictionary<string, List<ManifestMenuRow>>` (キー = メニュー名) に変更し `AddMenuRow(menu, row)` を新設。`AddSubmenu(manifest, submenu, parentMenu)` に親メニュー名を渡し、開く行は `parentMenu`、子は `SubmenuId(submenu.Id)` に入れる (ネストは再帰で無制限)。`ToJson` は `menus` をそのまま map として出力
+    - 子行の `when` (`view == ... && viewItem == ...`) は維持。**サブメニューは開いた行の context を継承しない**ため、子側で再指定が必要
+  - **修正2 (`RtlEditorVscodeExtension/package.json`)**: `view/item/context` から Add 系 15 行 + `simulationSetup` 2 行を削除し、`menus["systemverilogLsp.hierarchySubmenu.add"]` (15 行) と `menus["systemverilogLsp.hierarchySubmenu.simulation"]` (2 行) を新設。`view/item/context` に残るのは「フライアウトを開く 5 行」+ 拡張独自行 + Delete / Open in Explorer / Copy Path / Copy Instance Path / Property
+  - 回帰テスト:
+    - `HierarchyMenuManifestTests.PackageJson_ShowsEveryEntryForTheNodeKindsItAppliesTo` を**メニュー名で判定**するよう書き換え (親無し = `view/item/context`、親あり = `SubmenuId(parent)`)
+    - `HierarchyMenuManifestTests.PackageJson_DoesNotFlattenSubmenuChildren` を新設 (親を持つ行が `view/item/context` の `command` として出ていないこと)
+    - **新規 `HierarchyMenuManifestSyncTests`** (2 件): `ToJson()` の出力と `package.json` の生成行が**メニュー名ごとに完全一致**すること (`command|submenu|when|group` の署名で比較、拡張独自行は `CommandPrefix` / `SubmenuPrefix` で除外) / 生成マニュフェストがサブメニュー子を `view/item/context` に置かないこと
+    - **修正前の `package.json` に戻すと新テスト 2 件が失敗**することを stash で実証
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **233 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格** / `--hierarchy-menu-manifest` の出力を目視確認 (`menus` が 3 キー: `...Submenu.add` / `...Submenu.simulation` / `view/item/context`)
+  - コミット: CodeEditor2VerilogPlugin `e042922` / RtlEditorVscodeExtension `8c33142`、メイン `11fedc3` (テスト) + `83c29a0` (submodule pointer)
+  - Next: VS Code で **Reload Window** 後、RTL Hierarchy のノードを右クリックして (1) `Add ›` を開くと `Folder` / `Blank File` / `verilog module` / `SystemVerilog module` / `SystemVerilog interface` が**フライアウト内**に出ること (2) `Simulation ›` の中に `Simulation Setup (files)` が出ること (3) それらが context menu 直下に**重複して並ばない**こと を確認。拡張側 (`package.json`) のみの変更なので **publish 不要**
+  - メモ: `dotnet test --filter "FullyQualifiedName~MenuTests"` では `HierarchyMenuManifestTests` が拾われない (クラス名が `...ManifestTests` のため)。マニフェスト検証は `~HierarchyMenuManifest` で実行すること
+
 - **NavigatePanel の context menu: `CustomizeNavigateNodeContextMenu` の内容が反映されない / Add 内が `Add >` 表記になる** → 修正完了 (ビルド 0 errors、テスト 230 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: (1) `CustomizeNavigateNodeContextMenu` の内容がメニューに反映されていない (2) Add 内のメニューが `Add >` という表記になっている
   - **原因1 (`createContextMenu` の早期 return)**: `NavigatePanelNode.createContextMenu` は `CreateContextMenuRows` が設定されていると `rows(contextMenu, this); return;` で抜けていた。カタログは「エディタが元々インラインで作っていた行」しか持たないため、静的イベントで追加しているプラグインの行が**全部消えていた**:
