@@ -57,16 +57,30 @@ public class HierarchyMenuManifestTests
     }
 
     /// <summary>
-    /// The generated rows must be in <c>view/item/context</c> for every node
-    /// kind the entry applies to, so a C#-defined entry appears in exactly the
-    /// places a hand-written one would.
+    /// Every row must be declared in the menu VS Code actually reads it from,
+    /// for every node kind the entry applies to.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The menu depends on nesting: a top-level row belongs to
+    /// <c>view/item/context</c>, but the child of a submenu belongs to
+    /// <c>menus["&lt;submenu id&gt;"]</c> - that is where VS Code takes the
+    /// flyout's contents from. Putting a submenu's children in
+    /// <c>view/item/context</c> (what this file used to do) renders them as
+    /// ordinary rows of the tree's context menu, i.e. the Add rows appeared
+    /// flat next to the "Add" flyout instead of inside it.
+    /// </para>
+    /// <para>
+    /// A submenu also does not inherit its opening row's context, so each child
+    /// re-states the <c>viewItem</c> check; that is asserted here too.
+    /// </para>
+    /// </remarks>
     [Fact]
     public void PackageJson_ShowsEveryEntryForTheNodeKindsItAppliesTo()
     {
         JsonObject contributes = ReadContributes();
-        JsonArray rows = contributes["menus"]?["view/item/context"]?.AsArray()
-            ?? throw new Xunit.Sdk.XunitException("package.json has no menus.view/item/context");
+        JsonObject menus = contributes["menus"]?.AsObject()
+            ?? throw new Xunit.Sdk.XunitException("package.json has no menus object");
 
         foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
                  in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
@@ -81,11 +95,21 @@ public class HierarchyMenuManifestTests
                 : pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId(entry.Id);
             string property = entry.IsSubmenu ? "submenu" : "command";
 
+            // A submenu's children live in the menu named after the submenu;
+            // everything else lives in the tree's context menu.
+            string menuName = string.IsNullOrEmpty(entry.ParentId)
+                ? pluginVerilog.CoreBridge.HierarchyMenuManifest.ViewItemContextMenu
+                : pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(entry.ParentId!);
+
+            JsonArray? rows = menus[menuName]?.AsArray();
+            Assert.True(rows != null,
+                $"package.json has no menus[\"{menuName}\"] for '{entry.Id}'");
+
             foreach ((string contextValue, pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo applies) in NodeKinds)
             {
                 bool shouldAppear = (entry.Targets & applies) != 0;
                 bool appears = false;
-                foreach (JsonNode? row in rows)
+                foreach (JsonNode? row in rows!)
                 {
                     if (row is not JsonObject obj) continue;
                     if (obj[property]?.GetValue<string>() != target) continue;
@@ -93,7 +117,38 @@ public class HierarchyMenuManifestTests
                     if (when.Contains("viewItem == " + contextValue, StringComparison.Ordinal)) appears = true;
                 }
                 Assert.True(shouldAppear == appears,
-                    $"'{entry.Id}' ({(shouldAppear ? "should" : "should not")} appear for {contextValue})");
+                    $"'{entry.Id}' ({(shouldAppear ? "should" : "should not")} appear for {contextValue} in '{menuName}')");
+            }
+        }
+    }
+
+    /// <summary>
+    /// A submenu's children must NOT also be listed in <c>view/item/context</c>:
+    /// VS Code would then show them twice - once inside the flyout and once as
+    /// a flat row of the tree's context menu, which is the reported symptom.
+    /// </summary>
+    [Fact]
+    public void PackageJson_DoesNotFlattenSubmenuChildren()
+    {
+        JsonObject contributes = ReadContributes();
+        JsonArray rows = contributes["menus"]?[pluginVerilog.CoreBridge.HierarchyMenuManifest.ViewItemContextMenu]?.AsArray()
+            ?? throw new Xunit.Sdk.XunitException("package.json has no menus.view/item/context");
+
+        foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
+                 in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
+        {
+            if (string.IsNullOrEmpty(entry.ParentId)) continue;
+            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
+            // a nested submenu opens its own flyout, so it is a row of the
+            // parent menu - but it must still be a `submenu`, never a command
+            string target = entry.IsSubmenu
+                ? pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(entry.Id)
+                : pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId(entry.Id);
+
+            foreach (JsonNode? row in rows)
+            {
+                if (row is not JsonObject obj) continue;
+                Assert.NotEqual(target, obj["command"]?.GetValue<string>());
             }
         }
     }
