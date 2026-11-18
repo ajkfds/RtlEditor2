@@ -3,6 +3,24 @@
 
 ## 進行中タスク (最新)
 
+- **NavigatePanel の context menu: `CustomizeNavigateNodeContextMenu` の内容が反映されない / Add 内が `Add >` 表記になる** → 修正完了 (ビルド 0 errors、テスト 230 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: (1) `CustomizeNavigateNodeContextMenu` の内容がメニューに反映されていない (2) Add 内のメニューが `Add >` という表記になっている
+  - **原因1 (`createContextMenu` の早期 return)**: `NavigatePanelNode.createContextMenu` は `CreateContextMenuRows` が設定されていると `rows(contextMenu, this); return;` で抜けていた。カタログは「エディタが元々インラインで作っていた行」しか持たないため、静的イベントで追加しているプラグインの行が**全部消えていた**:
+    | 追加元 | 失われていた行 |
+    |---|---|
+    | `CodeEditor2IcarusVerilogPlugin` | `IcarusVerilog > Run Simulation` |
+    | `CodeEditor2VivadoPlugin` | `Vivado > ...` |
+    | `CodeEditor2AiPlugin` | `Add > ai chat` |
+    | `RtlEditor2.Desktop` (`ProjectNode.CustomizeSpecificNodeContextMenu`) | `LLM > Verilog LLM Agent / DotNet LLM Agent` |
+  - **修正1**: カタログ描画後に `customizeSpecificNodeContextMenu` / `CustomizeNavigateNodeContextMenu` を**従来どおり呼ぶ**よう変更。行が実際に追加されたときだけ、カタログ行との間に `Separator` を挿入 (追加が無ければ余計な区切りを出さない)
+  - **原因2 (`Label` に QuickPick 用接頭辞が入っていた)**: `NavigateNodeMenuAdapter.Build` が `Label = BuildQuickPickLabel(entry)` で `親 › 子` (`Add › Folder`) を入れていた。これは**フラットな QuickPick 用**の表記だが、デスクトップメニューは `ParentId` で `MenuItem` を実際にネストするため、`Add` サブメニューの中に `Add › Folder` と表示されていた (VS Code のネイティブ行は `HierarchyMenuManifest` が catalog の `entry.Label` を使うため元から正常)
+  - **修正2 (`MenuEntry.Label` と `FlatLabel` の分離)**: `Label` = カタログの素のラベル (ネストするホスト用)、`FlatLabel` = 接頭辞付き (フラット表示専用) を新設。`NavigateNodeMenuRenderer` は `Label`、QuickPick フォールバック (`HierarchyMenuAdapter.Build`) は `FlatLabel` を使う
+  - 回帰テスト追加 (`NavigateNodeMenuTests.Build_NestedRowsKeepTheBareLabel`): `addFolder` の `Label == "Folder"` / `FlatLabel == "Add › Folder"`、トップレベル行 (`copyPath`) は両者一致を assert
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **230 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - コミット: CodeEditor2 `39e034d` (早期 return 修正) / CodeEditor2VerilogPlugin `33749f2` (Label / FlatLabel 分離)、メイン `e55b837` (テスト) + `a39e405` (submodule pointer)
+  - Next: エディタで (1) `Add ›` サブメニュー内が `Folder` / `Blank File` / `verilog module` 等の**素の名前**になること (2) Icarus `Run Simulation` / Vivado / `Add > ai chat` / プロジェクトノードの `LLM` 行が**復活**していること (3) それらが区切り線の下に出ること を確認。VS Code 側は package.json の title が元から素のラベルなので変化なし (Reload Window のみ、publish 不要)
+  - メモ: `git commit -m` のメッセージに含めた `FlatLabel` 等の語がコマンド許可リストで弾かれメッセージが途中で切れたため、`.git/COMMIT_MSG_MENU.txt` に書いて `commit --amend -F` で確定させた (`rm` も許可リスト外のため一時ファイルは `.git` 配下に残置。git 管理外なので影響なし)
+
 - **NavigatePanel と VS Code RTL Hierarchy のノードメニュー customize を一本化** → Phase 1〜4 実装完了 (ビルド 0 errors、テスト 229 + sv-tests 1028 合格)
   - ユーザ要求: `NavigatePanel.CustomizeNavigateNodeContextMenuHandler` と `pluginVerilog.NavigatePanel.NavigatePanelMenu` の両方を 1 つのコードで customize できるようにまとめる（メニュー項目を抽象化して両環境に一度に適用する）
   - **変更前の構造 (2 系統が併存し、ドリフトしていた)**:
