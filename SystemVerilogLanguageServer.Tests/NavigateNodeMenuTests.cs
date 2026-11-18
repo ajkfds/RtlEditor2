@@ -203,6 +203,35 @@ public class NavigateNodeMenuTests
     }
 
     /// <summary>
+    /// A nested row's label must be the bare catalog label, because the desktop
+    /// menu already nests it inside its parent MenuItem and VS Code renders it
+    /// as a flyout. Prefixing the parent in <c>Label</c> made the editor show
+    /// "Add › Folder" inside a submenu literally named "Add".
+    /// </summary>
+    [Fact]
+    public void Build_NestedRowsKeepTheBareLabel()
+    {
+        NavigateNodeMenuContext context = FileContext();
+
+        NavigateNodeMenuAdapter.MenuResult result =
+            NavigateNodeMenuAdapter.Build(context, HierarchyMenuCatalog.Hosts.Desktop);
+
+        NavigateNodeMenuAdapter.MenuEntry? folder =
+            result.Entries.FirstOrDefault(e => e.Id == HierarchyMenuCatalog.MenuId.AddFolder);
+        Assert.NotNull(folder);
+        Assert.Equal("Folder", folder!.Label);
+
+        // the flat rendering still needs the parent context
+        Assert.Equal("Add › Folder", folder.FlatLabel);
+
+        // a top-level row has no parent, so both labels agree
+        NavigateNodeMenuAdapter.MenuEntry? copyPath =
+            result.Entries.FirstOrDefault(e => e.Id == HierarchyMenuCatalog.MenuId.CopyPath);
+        Assert.NotNull(copyPath);
+        Assert.Equal(copyPath!.Label, copyPath.FlatLabel);
+    }
+
+    /// <summary>
     /// The project root cannot be deleted, and the row says why instead of
     /// silently doing nothing.
     /// </summary>
