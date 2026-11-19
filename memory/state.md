@@ -3,6 +3,35 @@
 
 ## 進行中タスク (最新)
 
+- **メニューカタログを「id + フラグ」から木構造へ (案2: 可読性向上)** → 実装完了 (ビルド 0 errors、テスト 238 + sv-tests 1028 合格、コミット済み)
+  - ユーザ要求: 可読性を上げたい → 案2 (ツリー構造化) で実装
+  - **変更前の問題**: `Entry` が `ParentId` (文字列) と `IsSubmenu` (bool) を持ち、メニューの木を **id 照合で 3 箇所** が再構築していた (エディタのレンダラ = 親辞書 / VS Code マニフェスト = `Children(parentId)` 探索 / QuickPick = 接頭辞付け)。つまり「ネスト」が**木の形ではなく主張**になっており、木とフラグが食い違い得た。子を誤ったメニューに出すバグ (= Add 系フラット表示) を**構造的に**防げなかった
+  - **変更後 (`Entry`)**:
+    | 変更前 | 変更後 |
+    |---|---|
+    | `string? ParentId` | **削除**。`List<Entry> Children` が子を直接保持 |
+    | `bool IsSubmenu` (手書き) | **導出プロパティ** `IsSubmenu => Children.Count > 0` (木と食い違えない) |
+  - **宣言リテラルがメニューの形そのままに**:
+    ```csharp
+    new Entry { Id = MenuId.Add, Label = "Add", Children = {
+        new Entry { Id = MenuId.AddFolder,    Label = "Folder",     Action = ActionKind.CreateFolder },
+        new Entry { Id = MenuId.AddVerilogModule, Label = "verilog module", ... },
+    }},
+    ```
+  - **公開 API を木向けに整理**: `Root` (トップ行) / `Children(Entry)` / `All` (深さ優先の平坦化、QuickPick 用) / `ParentOf(id)` (平坦表示の接頭辞 + グループ行の実行拒否用) / `Find(id)` / `Register(entry, parentId)` / `Unregister(id)`
+  - **`HierarchyMenuManifest`**: `Build()` は `AddRows(manifest, Root, ViewItemContextMenu)` の 1 呼び出し。`AddRows` が**再帰**するため、サブメニューの子は**構造的に** `menus["<submenu id>"]` に入る (id 照合ではない)。旧 `Children(string?)` ヘルパは削除し `OffersToVsCode` に置換
+  - **`NavigateNodeMenuAdapter`**: `ParentId` は `ParentOf(entry.Id)?.Id` で供給 (デスクトップの `ContextMenu` は毎回作り直すため、平坦リストに親情報が要る)。`FlatLabel` も `ParentOf` 経由
+  - **`NavigateNodeMenuRenderer`**: 親辞書への登録 + `AddTo` を廃止し、1 パスで「親が居れば親の `Items`、居なければトップ」に振り分け。グループ行はクリックハンドラを付けない (従来どおり)
+  - **`Register(entry, parentId)`**: プラグインが**サブメニュー名を指定して**行を追加できる (木の形を知らなくてよい)。同一 id は木のどこにあってもその場で置換
+  - **挙動は不変**: 生成される `package.json` は**バイト単位で同一** (`--check-hierarchy-menu-manifest` が `[ok]`)。リファクタリングとして等価
+  - 回帰テスト追加 (`NavigateNodeMenuTests`, 2 件):
+    - `Catalog_NestingIsTheShapeOfTheTree` — `Add` の子が `Children(Add)` から取れ、`IsSubmenu` が導出であること、トップ行は `ParentOf == null` かつ `Root` に含まれること
+    - `Register_PlacesTheRowInsideTheNamedParent` — `Register(entry, MenuId.Add)` でサブメニュー内に入り、adapter が `ParentId = add` / `Label = "Plugin row"` / `FlatLabel = "Add › Plugin row"` を返すこと
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **238 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格** / `--check-hierarchy-menu-manifest` → `[ok]`
+  - コミット: CodeEditor2VerilogPlugin `992c95c`、メイン `456a798` (テスト) + `c6da64b` (submodule pointer)
+  - Next: エディタで (1) `Add ›` / `Simulation ›` が従来どおりネスト表示されること (2) 各項目が動作すること、VS Code で Reload Window 後に同じであること を確認 (生成物は不変なので publish 不要)
+  - メモ: 案1 (`Available` 述語によるプラグインロード状況の反映) は**未実装**。`Hosts.Desktop` の固定値で「VS Code には出さない」運用は継続している
+
 - **メニューマニフェストを `package.json` へ直接書き出す (案B)** → 実装完了 (ビルド 0 errors、テスト 236 + sv-tests 1028 合格、コミット済み)
   - 背景: VS Code は `contributes` を**拡張ロード時に 1 回だけ**読み、実行時に行を追加する API を持たない。したがって C# のカタログ変更は `package.json` に書かれていなければ**メニューに一切現れない**。従来は `--hierarchy-menu-manifest` の出力を**人手でコピー**しており、コピー漏れは「サーバは最新なのにメニューは古いまま」という**ログにも出ない**状態になっていた (Add 系のフラット表示 / `Add > Folder` 表記がこれで生き延びた)
   - **実装1 (`HierarchyMenuManifest.WriteToPackageJson(path, write)`)**: `package.json` を**その場で書き換える**。所有するブロックだけを差し替える:
