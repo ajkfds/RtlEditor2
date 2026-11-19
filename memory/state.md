@@ -3,6 +3,28 @@
 
 ## 進行中タスク (最新)
 
+- **メニュー行が「意味を持つ条件」を宣言できるように (案1: `Available` 述語)** → 実装完了 (ビルド 0 errors、テスト 240 + sv-tests 1028 合格、コミット済み)
+  - ユーザ要求: 案2 に続けて実装
+  - **変更前の問題**: アクションがプラグインに依存する行 (Icarus / Vivado の `Run Simulation`) は次のどちらかだった
+    | 方法 | 問題 |
+    |---|---|
+    | カタログに常設 | プラグイン未ロードでも行が出て、押すと失敗する |
+    | `CustomizeNavigateNodeContextMenu` 購読で追加 | **エディタと VS Code が乖離する**原因そのもの |
+  - **実装1 (`Entry.Available`)**: `Func<bool>?` の述語。メニュー構築時に評価する。`Hosts` (どのホストが**原理的に**実行できるか) とは役割が別で、`Available` は**実行時の条件**を絞り込む
+  - **実装2 (`Entry.IsAvailable()`)**: `Available == null` なら常に true。**述語が例外を投げたら false**(行を隠す) — 状態が未整ったプラグインのプローブで右クリックメニュー全体が壊れないようにする
+  - **実装3 (`NavigateNodeMenuAdapter.IsOffered`)**: `Hosts` / `Targets` / `Available` の 3 条件。**グループ行は子から継承**し、実行可能な子が 1 つも無ければ**サブメニューごと隠す**(空のフライアウトは出さない)。子は親より狭い `Targets` を持ち得るため、子側で 3 条件を再評価する
+  - **実装4 (`HierarchyMenuManifest`)**: `OffersToVsCode` が `IsAvailable()` も見る。`HasOfferedChild` で空のサブメニューを生成しない。**恒久的に利用不可の行は `package.json` に書かない**(利用不可と分かっている行は無い方がまし)
+  - **実装5 (Icarus / Vivado をカタログへ移行)**: `CustomizeNavigateNodeContextMenu` の購読を廃止し、`IcarusVerilog > Run Simulation` / `Vivado > Run Simulation` をカタログ行に。`Hosts.Desktop` (シミュレーションタブはエディタ専用)、`Available = () => Global.Plugins.ContainsKey(StaticID)`、`Handler = RunSimulation` (context 経由なので選択状態に依存しない)
+  - **生成物は不変**: `--check-hierarchy-menu-manifest` が `[ok]` (両行とも `Hosts.Desktop` なので `package.json` には出ない)
+  - 回帰テスト追加 (`NavigateNodeMenuTests`, 2 件):
+    - `Build_HidesRowsThatAreNotAvailable` — 述語 false で子もグループ行も出ない → true にすると両方出る
+    - `Build_SurvivesAThrowingAvailabilityPredicate` — 述語が throw してもメニューは壊れず、その行だけ消える
+    - **`IsOffered` を stash で戻すと 1 件目が失敗**(`Collection: [..., "testUnavailableGroup", "testUnavailableChild"]`)することを実証
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors (Icarus / Vivado 単体も 0 errors) / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **240 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格** / `--check-hierarchy-menu-manifest` → `[ok]`
+  - コミット: CodeEditor2VerilogPlugin `d115d9f` / CodeEditor2IcarusVerilogPlugin `c47b645` / CodeEditor2VivadoPlugin `e49dd21`、メイン `f1f2c22` (テスト) + `6f645db` (submodule pointer)
+  - Next: エディタで (1) Icarus / Vivado プラグインがある状態で `IcarusVerilog > Run Simulation` が出て動作すること (2) プラグインを外すと**その行ごと消える**こと (3) 他の行に影響が無いこと を確認
+  - メモ: 案1 と案2 で「差異のうち改善可能なもの」(プラグインロード状況 / ネスト構造の誤り) は解消済み。残る差異は **VS Code の `contributes` が静的であることによる反映タイミング**のみで、これは原理的に解消できない (`--write-hierarchy-menu-manifest` + Reload で運用)
+
 - **メニューカタログを「id + フラグ」から木構造へ (案2: 可読性向上)** → 実装完了 (ビルド 0 errors、テスト 238 + sv-tests 1028 合格、コミット済み)
   - ユーザ要求: 可読性を上げたい → 案2 (ツリー構造化) で実装
   - **変更前の問題**: `Entry` が `ParentId` (文字列) と `IsSubmenu` (bool) を持ち、メニューの木を **id 照合で 3 箇所** が再構築していた (エディタのレンダラ = 親辞書 / VS Code マニフェスト = `Children(parentId)` 探索 / QuickPick = 接頭辞付け)。つまり「ネスト」が**木の形ではなく主張**になっており、木とフラグが食い違い得た。子を誤ったメニューに出すバグ (= Add 系フラット表示) を**構造的に**防げなかった
