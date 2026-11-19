@@ -3,6 +3,24 @@
 
 ## 進行中タスク (最新)
 
+- **メニュー行のアイコンが VS Code 拡張で表示されない** → 実装完了 (ビルド 0 errors、テスト 244 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: メニューに使用されているアイコンが VS Code 拡張で表示されていない
+  - **原因1 (マニフェストがアイコンを出力していなかった)**: `HierarchyMenuCatalog.Entry.IconPath` は**デスクトップ用**のリポジトリ相対パス (`CodeEditor2VerilogPlugin/Assets/Icons/verilogDocument.svg`) で、VS Code の拡張フォルダには存在しない。`HierarchyMenuManifest.AddCommand` は `command` / `title` / `category` しか出しておらず、`contributes.commands[].icon` が**まったく生成されていなかった**
+  - **原因2 (VS Code の仕様)**: **`view/item/context` メニューはアイコンを描画しない**。スキーマに icon プロパティが無く、右クリックメニューはテキストのみ。これは VS Code の制約で、宣言漏れではない
+  - **実装1 (`Entry.VsCodeIcon` 新設)**: VS Code 側のアイコンを明示的に持たせる。2 形式:
+    | 形式 | 例 | 展開 |
+    |---|---|---|
+    | アイコン名 | `"verilog-document"` | `icons/{name}.svg` + `icons/{name}-dark.svg` の light/dark ペア |
+    | codicon | `"$(trash)"` | そのまま |
+  - **実装2 (各エントリに設定)**: `addVerilogModule` / `addSystemVerilogModule` / `addSystemVerilogInterface` → document アイコン、`addFolder` → `folder`、`addBlankFile` → `$(new-file)`、`deleteNode` → `$(trash)`、`openInExplorer` → `$(folder-opened)`、`copyPath` / `copyInstancePath` → `$(clippy)`、`showProperty` → `$(gear)`。併せて**デスクトップ側の `IconPath` / `IconColor` も補完** (Folder / Blank File / Open in Explorer / CopyPath / Property は従来アイコン無しだった)
+  - **実装3 (`ManifestIcon` + コンバータ)**: `contributes.commands[].icon` は**文字列 (codicon) か `{light, dark}` オブジェクト**の両形式を取るため、`ManifestIconConverter` で出し分け
+  - **実装4 (QuickPick にアイコン)**: ネイティブメニューに出せない以上、拡張が**アイコンを描ける唯一の場所**が `Show Menu...` の QuickPick。`NavigateNodeMenuAdapter.MenuEntry.VsCodeIcon` → `HierarchyMenuAdapter.MenuEntry` → `HierarchyMenuEntryDto.Icon` と通し、`hierarchy.js` の `resolveMenuIcon` で解決 (SVG ペア / codicon / 未知名はフォールバック codicon で「何も描かない」を回避)
+  - 回帰テスト追加 (`NavigateNodeMenuTests.Build_ForwardsTheClientIcon`): `addVerilogModule` の `VsCodeIcon == "verilog-document"`、codicon は `$(` 始まり、**アイコン名を名乗る行は必ず `icons/{name}.svg` と `-dark.svg` が実在**すること (欠落すると VS Code でアイコンが出ない)
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **244 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格** / `--check-hierarchy-menu-manifest` → `[ok]` (package.json + icons) / 生成された `package.json` に `icon` が 10 行入ることを diff で確認
+  - コミット: CodeEditor2VerilogPlugin `f370503` / SystemVerilogLanguageServer `13639c1` / RtlEditorVscodeExtension `90734f8`、メイン `b76b732` (テスト) + `84be68e` (submodule pointer)
+  - Next: VS Code で Reload Window 後、(1) `Show Menu...` の QuickPick にアイコンが出ること (2) コマンドパレット (`RTL Hierarchy: ...`) にアイコンが出ること を確認。**右クリックメニューにアイコンは出ない** (VS Code の仕様)
+  - メモ: `ExpandBeforeBackgroundParseFinishes_ShowsInstances` が全体実行時に 1 度だけ失敗したが、単体では合格。250 ファイルのバックグラウンド parse を伴う**タイミング依存のフレーク**で本変更とは無関係 (再実行で 244 件全合格)
+
 - **`--write-hierarchy-menu-manifest` でバッジアイコンも生成する** → 実装完了 (ビルド 0 errors、テスト 243 + sv-tests 1028 合格、コミット済み)
   - ユーザ要求: `--write-hierarchy-menu-manifest` の事前準備にアイコン生成機構も入れられるか
   - **背景**: ツリーのエラー / 警告 / dirty バッジは **SVG アセットに焼き込む**必要がある (`TreeItem.iconPath` は 1 アイコン + 1 テーマ色しか持てず、オーバーレイを描けない)。従来は `scripts/generate-badge-icons.js` が生成していたが、**C# のマニフェスト生成から呼べない**ため「新しいベースアイコンを足したら別コマンドも実行する」という**忘れやすい 2 手目**があった
