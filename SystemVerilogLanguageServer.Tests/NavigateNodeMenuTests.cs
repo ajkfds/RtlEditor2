@@ -185,6 +185,97 @@ public class NavigateNodeMenuTests
     }
 
     /// <summary>
+    /// A row whose <c>Available</c> predicate says no must not be listed, and a
+    /// grouping row whose children are all unavailable must not be listed either
+    /// (an empty submenu is worse than no submenu).
+    /// </summary>
+    [Fact]
+    public void Build_HidesRowsThatAreNotAvailable()
+    {
+        const string groupId = "testUnavailableGroup";
+        const string childId = "testUnavailableChild";
+        bool available = false;
+
+        HierarchyMenuCatalog.Register(new HierarchyMenuCatalog.Entry
+        {
+            Id = groupId,
+            Label = "Simulation tools",
+            Detail = "test group",
+            Targets = HierarchyMenuCatalog.AppliesTo.File,
+            Hosts = HierarchyMenuCatalog.Hosts.Both,
+            Group = 97,
+            Children =
+            {
+                new HierarchyMenuCatalog.Entry
+                {
+                    Id = childId,
+                    Label = "Run",
+                    Detail = "test row",
+                    Targets = HierarchyMenuCatalog.AppliesTo.File,
+                    Hosts = HierarchyMenuCatalog.Hosts.Both,
+                    Action = HierarchyMenuCatalog.ActionKind.CopyPath,
+                    Group = 97,
+                    Available = () => available,
+                },
+            },
+        });
+
+        try
+        {
+            NavigateNodeMenuContext context = FileContext();
+
+            List<string> hidden = Ids(NavigateNodeMenuAdapter.Build(
+                context, HierarchyMenuCatalog.Hosts.Desktop));
+            Assert.DoesNotContain(childId, hidden);
+            Assert.DoesNotContain(groupId, hidden);
+
+            // the row appears as soon as its condition becomes true
+            available = true;
+            List<string> shown = Ids(NavigateNodeMenuAdapter.Build(
+                context, HierarchyMenuCatalog.Hosts.Desktop));
+            Assert.Contains(childId, shown);
+            Assert.Contains(groupId, shown);
+        }
+        finally
+        {
+            HierarchyMenuCatalog.Unregister(groupId);
+        }
+    }
+
+    /// <summary>
+    /// A predicate that throws must hide its row, not take the menu down: a
+    /// plugin probing a state that is not ready yet should never break the
+    /// right-click menu.
+    /// </summary>
+    [Fact]
+    public void Build_SurvivesAThrowingAvailabilityPredicate()
+    {
+        const string id = "testThrowingAvailability";
+        HierarchyMenuCatalog.Register(new HierarchyMenuCatalog.Entry
+        {
+            Id = id,
+            Label = "Broken row",
+            Detail = "test row",
+            Targets = HierarchyMenuCatalog.AppliesTo.File,
+            Hosts = HierarchyMenuCatalog.Hosts.Both,
+            Action = HierarchyMenuCatalog.ActionKind.CopyPath,
+            Group = 97,
+            Available = () => throw new InvalidOperationException("boom"),
+        });
+
+        try
+        {
+            List<string> ids = Ids(NavigateNodeMenuAdapter.Build(
+                FileContext(), HierarchyMenuCatalog.Hosts.Desktop));
+            Assert.DoesNotContain(id, ids);
+        }
+        finally
+        {
+            HierarchyMenuCatalog.Unregister(id);
+        }
+    }
+
+    /// <summary>
     /// Every catalog action that the two hosts share must be reachable without a
     /// desktop handler, otherwise VS Code would offer a row it can never run.
     /// </summary>
