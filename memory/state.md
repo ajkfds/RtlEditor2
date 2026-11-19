@@ -3,6 +3,25 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張で `.rule.yaml` が動くか実測・回帰テスト化** → 確認完了 (動作する。ビルド 0 errors、テスト 248 + sv-tests 1028 合格、コミット済み)
+  - ユーザ質問: VS Code 拡張でも `.rule.yaml` は動作する？
+  - **結論: 動作する**。ただし**既存テストでは検証できていなかった**ため、実測して恒久テストにした
+  - **調査結果**:
+    - 経路: `WordScanner.RuleSet` / `WordReference.RuleSet` → `ProjectProperty.GetRuleSet(relativePath)` → `EnsureRuleSetsLoaded` → `RefreshRuleSets` (`IsRuleFilePath` で `.rule.yaml` / `.rule` を受理)。**LSP ホストも同じ plugin コードを通る**
+    - `ProjectProperty.project.RootPath` は LSP でも設定される (`LspHandler` の `SetPluginRootPath` 呼び出し 4 箇所: `LoadWorkspaceFiles` / `didChangeWorkspaceFolders` / `EnsureWorkspaceRootFromFile` / `EnsureWorkspaceRootFromKnownFiles`)。これが無いと走査が走らない
+  - **既存テストの穴**: `RuleSetTests` はすべて `new Uri(path).AbsoluteUri` で URI を作っており、これは **`file:///D:/dir/x.sv`** を生成する。VS Code が実際に送るのは **`file:///d%3A/dir/x.sv`** (ドライブレター小文字 + `%3A` エスケープ)。この差異は過去に何度もパス解決バグを起こしている (`state.md` に複数記録)
+  - **実測1 (一時プローブ、削除済み)**: VS Code 形式 URI で `initialize` → `didOpen` → `bit width mismatch` の severity が **1 (Error)** = `.rule.yaml` が適用された。合格
+  - **実測2 (一時プローブ、削除済み)**: 同梱 `server/CodeEditor2VerilogPlugin.dll` に `.rule.yaml` リテラルが含まれることを UTF-16 (`#US` ヒープ、偶数/奇数オフセット両方) 走査で確認 → **含まれていた** (publish 済み)
+  - **回帰テスト新設 (`RuleYamlVsCodeUriTests`, 2 件)**:
+    - `RuleYaml_Applies_WithVsCodeStyleUri` — `file:///d%3A/...` 形式で `.rule.yaml` が severity 1 になること
+    - `LegacyRule_Applies_WithVsCodeStyleUri` — 旧 `.rule` でも同様
+    - **失敗モードが無音**なのが重要: パースは成功し診断も出るので、**severity だけが既定値になる**。ログにも何も出ない
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **248 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - コミット: メイン `8c86c61` (テスト)
+  - 補足: 同梱サーバは本タスク中に `dotnet publish` で更新済み (`RtlEditorVscodeExtension/server/`、`.gitignore` 対象のためコミット対象外)
+  - Next: VS Code で Reload Window 後、(1) `.rule.yaml` を置いたディレクトリ配下だけ severity が変わること (2) 旧 `.rule` も効くこと (3) `.rule.yaml` が YAML として色付けされること を確認
+  - メモ: 検証用プローブ (`DebugRuleYamlVsCodeUriProbe.cs` / `DebugBundledRuleYamlProbe.cs`) は削除済み。`git clean` は**未追跡の新規テストも消す**ため、先に `git add` してからプローブだけ `git clean -f <path>` で消した
+
 - **`.rule` ファイルの拡張子を `.rule.yaml` に変更** → 実装完了 (ビルド 0 errors、テスト 246 + sv-tests 1028 合格、コミット済み)
   - ユーザ要求: pluginVerilog の `.rule` ファイルの拡張子を `.rule.yaml` に変えて
   - **理由**: 中身は YAML なのに `.rule` だけではエディタが YAML と認識せず、プレーンテキスト扱いになる。二重拡張子で「何であるか (rule set)」と「中身が何か (YAML)」の両方を示せる
