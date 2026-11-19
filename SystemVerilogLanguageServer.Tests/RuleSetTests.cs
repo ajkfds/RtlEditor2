@@ -97,7 +97,7 @@ public class RuleSetTests : IDisposable
 
         string strictDirectory = Path.Combine(_root, "strict");
         Directory.CreateDirectory(strictDirectory);
-        File.WriteAllText(Path.Combine(strictDirectory, ".rule"),
+        File.WriteAllText(Path.Combine(strictDirectory, ".rule.yaml"),
             "rules:\n" +
             "  - name: AssignmentBitwidthMismatch\n" +
             "    severity: Error\n");
@@ -141,7 +141,7 @@ public class RuleSetTests : IDisposable
         int rootSeverity = rootDiagnostics
             .First(d => d.Message.Contains("bit width mismatch 4 <- 8", StringComparison.Ordinal)).Severity;
 
-        Assert.Equal(1, strictSeverity); // Error (raised by strict/.rule)
+        Assert.Equal(1, strictSeverity); // Error (raised by strict/.rule.yaml)
         Assert.Equal(2, rootSeverity);   // Warning (built-in default)
     }
 
@@ -186,7 +186,7 @@ public class RuleSetTests : IDisposable
     [Fact]
     public void SaveFile_RoundTrips()
     {
-        string path = Path.Combine(_root, "roundtrip.rule");
+        string path = Path.Combine(_root, "roundtrip.rule.yaml");
         pluginVerilog.RuleSet original = new();
         original.SaveFile(path);
 
@@ -213,11 +213,11 @@ public class RuleSetTests : IDisposable
     public void GetRuleSet_DeepestDirectoryWins()
     {
         Directory.CreateDirectory(Path.Combine(_root, "src", "rtl"));
-        File.WriteAllText(Path.Combine(_root, "src", ".rule"),
+        File.WriteAllText(Path.Combine(_root, "src", ".rule.yaml"),
             "rules:\n" +
             "  - name: AssignmentBitwidthMismatch\n" +
             "    severity: Error\n");
-        File.WriteAllText(Path.Combine(_root, "src", "rtl", ".rule"),
+        File.WriteAllText(Path.Combine(_root, "src", "rtl", ".rule.yaml"),
             "rules:\n" +
             "  - name: AssignmentBitwidthMismatch\n" +
             "    severity: Notice\n");
@@ -233,8 +233,48 @@ public class RuleSetTests : IDisposable
             property.GetRuleSet("src/top.sv").AssignmentBitwidthMismatch.Severity);
         Assert.Equal(pluginVerilog.Rule.SeverityEnum.Notice,
             property.GetRuleSet("src/rtl/leaf.sv").AssignmentBitwidthMismatch.Severity);
-        // outside src/ there is no .rule file -> built-in default
+        // outside src/ there is no .rule.yaml file -> built-in default
         Assert.Equal(pluginVerilog.Rule.SeverityEnum.Warning,
             property.GetRuleSet("top.sv").AssignmentBitwidthMismatch.Severity);
+    }
+
+    /// <summary>
+    /// The older <c>.rule</c> spelling keeps working. A workspace that already
+    /// has one must not silently lose its severities because the extension
+    /// changed - that would look like the parser ignoring the file.
+    /// </summary>
+    [Fact]
+    public void LegacyRuleExtension_IsStillApplied()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "legacy"));
+        File.WriteAllText(Path.Combine(_root, "legacy", ".rule"),
+            "rules:\n" +
+            "  - name: AssignmentBitwidthMismatch\n" +
+            "    severity: Error\n");
+
+        InMemorySystemVerilogCore core = new();
+        CreateInitializedHandler(core);
+
+        InMemoryProject project = core.GetOrCreateProject("default");
+        pluginVerilog.ProjectProperty property =
+            (pluginVerilog.ProjectProperty)project.PluginProject.ProjectProperties[pluginVerilog.Plugin.StaticID];
+
+        Assert.Equal(pluginVerilog.Rule.SeverityEnum.Error,
+            property.GetRuleSet("legacy/leaf.sv").AssignmentBitwidthMismatch.Severity);
+    }
+
+    /// <summary>
+    /// A rule file is recognised by either spelling, and nothing else is.
+    /// </summary>
+    [Fact]
+    public void IsRuleFilePath_AcceptsBothSpellings()
+    {
+        Assert.True(pluginVerilog.ProjectProperty.IsRuleFilePath("a/.rule.yaml"));
+        Assert.True(pluginVerilog.ProjectProperty.IsRuleFilePath("a/.rule"));
+        Assert.True(pluginVerilog.ProjectProperty.IsRuleFilePath("A/.RULE.YAML"));
+
+        Assert.False(pluginVerilog.ProjectProperty.IsRuleFilePath("a/top.sv"));
+        Assert.False(pluginVerilog.ProjectProperty.IsRuleFilePath("a/rules.yaml"));
+        Assert.False(pluginVerilog.ProjectProperty.IsRuleFilePath(""));
     }
 }
