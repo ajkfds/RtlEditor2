@@ -3,6 +3,31 @@
 
 ## 進行中タスク (最新)
 
+- **`.fileClassify` が VS Code 拡張で効かない → 修正完了** (ビルド 0 errors、テスト 251 + sv-tests 1028 合格、コミット済み)
+  - ユーザ質問: `.fileClassify` ファイルも vscode で効きますか？ → **効いていなかった**ので修正した
+  - **実測 (一時プローブ、削除済み)**: `.fileClassify` に `+ VerilogHeaderFile / *.inc` を置いて `.inc` を開いても
+    | 計測 | 修正前 | 修正後 |
+    |---|---|---|
+    | `FileClassify.HasDefinition()` | **False** (ファイルが読まれていない) | True |
+    | `Project.GetFileType("defs.inc")?.ID` | **null** | `VerilogHeaderFile` |
+    | plugin item の型 | `VerilogFile` | `VerilogHeaderFile` |
+  - **原因1 (`FileClassify` が `RootPath` 確定前にパスを解決していた)**: コンストラクタで `project.GetAbsolutePath(".fileClassify")` を 1 回だけ実行。LSP は `Project` を `initialize` **前**に作るため `RootPath` がプレースホルダで、**誤ったディレクトリを見て何も見つけていなかった**。エディタはルート確定後にプロジェクトを作るため偶然正しく動いていた
+    - 修正: `FileClassify.Refresh()` を新設 (`commands.Clear()` → パス再解決 → 存在すれば `loadFile`)。`Project.RootPath` の setter で **値が変わったときだけ** `FileClassify?.Refresh()` を呼ぶ。旧 `Reload()` は `Refresh()` への委譲に
+  - **原因2 (`GetOrCreatePluginItem` が `Project.GetFileType` を呼んでいなかった)**: 拡張子で直接 `VerilogHeaderFile` / `VerilogFile` を選んでいたため、`.fileClassify` の上書きを**一度も参照していなかった**
+    - 修正: `PluginProject.GetFileType(relativePath)?.ID` を先に引き、`VerilogHeaderFile` なら header として生成。拡張子判定は**フォールバックとして残置** (従来の `.svh` / `.vh` 動作を壊さない)
+  - **`VerilogHeaderFile.TypeID` を新設**: 他の FileType (`VerilogFile` / `SystemVerilogFile` / `RuleFile`) には `TypeID` 定数があるが `VerilogHeaderFile` だけ文字列リテラルだった。呼び出し側で定数比較できるようにした
+  - **`.fileClassify` の書式 (実装確認)**: `+ TypeName` で適用 / `- TypeName` で除外、次の行がワイルドカード。`#` はコメント。**当初プローブで `-` を使っており「効かない」と誤判定した**が、`-` は除外の意味だった (実装は正常)
+  - 回帰テスト新設 (`FileClassifyTests`, 3 件):
+    - `FileClassify_OverridesTheFileTypeInTheLspHost` — `.inc` が `VerilogHeaderFile` になり、item tree も header になる
+    - `FileClassify_LeavesUnmentionedPathsAlone` — 記載の無い `top.sv` は `VerilogFile` のまま
+    - `WithoutFileClassify_TheExtensionDecides` — `.fileClassify` が無ければ従来どおり拡張子で決まる
+    - **`InMemorySystemVerilogCore` の修正を stash で戻すと 1 件目が失敗** (`Expected: "VerilogHeaderFile" / Actual: "VerilogFile"`) することを実証
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **251 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - コミット: CodeEditor2 `c6e0439` / CodeEditor2VerilogPlugin `cf44bad` / SystemVerilogLanguageServer `d70fef7`、メイン `e45fc23` (テスト) + `b3f19d6` (submodule pointer)
+  - 補足: 同梱サーバを `dotnet publish` で更新済み (`.gitignore` 対象のためコミット対象外)
+  - Next: VS Code で Reload Window 後、`.fileClassify` に `+ VerilogHeaderFile / *.inc` を置いて `.inc` を `include` したときに解決されること、記載外のファイルの扱いが変わらないことを確認
+  - メモ: 両方の不具合が**無音**だった (パースは成功し診断も出ず、症状は「include が解決しない = ファイルが無いように見える」だけ)。`GetFileType` が `null` を返すのは正常 (登録済み FileType にマッチしない → `FileClassify` が上書きする) という仕様も確認済み
+
 - **VS Code 拡張で `.rule.yaml` が動くか実測・回帰テスト化** → 確認完了 (動作する。ビルド 0 errors、テスト 248 + sv-tests 1028 合格、コミット済み)
   - ユーザ質問: VS Code 拡張でも `.rule.yaml` は動作する？
   - **結論: 動作する**。ただし**既存テストでは検証できていなかった**ため、実測して恒久テストにした
