@@ -276,6 +276,57 @@ public class NavigateNodeMenuTests
     }
 
     /// <summary>
+    /// A row that declares an icon must carry it to the client, and an icon name
+    /// must resolve to a file the extension actually ships - a missing asset
+    /// makes VS Code draw nothing for that row.
+    /// </summary>
+    [Fact]
+    public void Build_ForwardsTheClientIcon()
+    {
+        NavigateNodeMenuAdapter.MenuResult result = NavigateNodeMenuAdapter.Build(
+            FileContext(), HierarchyMenuCatalog.Hosts.VsCode);
+
+        NavigateNodeMenuAdapter.MenuEntry? verilogModule =
+            result.Entries.FirstOrDefault(e => e.Id == HierarchyMenuCatalog.MenuId.AddVerilogModule);
+        Assert.NotNull(verilogModule);
+        Assert.Equal("verilog-document", verilogModule!.VsCodeIcon);
+
+        // a codicon is passed through untouched
+        NavigateNodeMenuAdapter.MenuEntry? delete =
+            result.Entries.FirstOrDefault(e => e.Id == HierarchyMenuCatalog.MenuId.DeleteNode);
+        if (delete != null) Assert.StartsWith("$(", delete.VsCodeIcon ?? "");
+
+        // every bare icon name must exist under the extension's icons/
+        string icons = IconsDirectory();
+        foreach (NavigateNodeMenuAdapter.MenuEntry entry in result.Entries)
+        {
+            string? icon = entry.VsCodeIcon;
+            if (string.IsNullOrEmpty(icon) || icon!.StartsWith("$(", StringComparison.Ordinal)) continue;
+            foreach (string variant in new[] { "", "-dark" })
+            {
+                string file = Path.Combine(icons, icon + variant + ".svg");
+                Assert.True(File.Exists(file),
+                    "menu row '" + entry.Id + "' names icon '" + icon +
+                    "' but " + Path.GetFileName(file) + " does not exist");
+            }
+        }
+    }
+
+    private static string IconsDirectory()
+    {
+        System.IO.DirectoryInfo? dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            string candidate = System.IO.Path.Combine(
+                dir.FullName, "RtlEditorVscodeExtension", "icons");
+            if (System.IO.Directory.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        throw new InvalidOperationException(
+            "RtlEditorVscodeExtension/icons not found from " + AppContext.BaseDirectory);
+    }
+
+    /// <summary>
     /// Every catalog action that the two hosts share must be reachable without a
     /// desktop handler, otherwise VS Code would offer a row it can never run.
     /// </summary>
