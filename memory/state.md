@@ -3,6 +3,32 @@
 
 ## 進行中タスク (最新)
 
+- **メニューマニフェストを `package.json` へ直接書き出す (案B)** → 実装完了 (ビルド 0 errors、テスト 236 + sv-tests 1028 合格、コミット済み)
+  - 背景: VS Code は `contributes` を**拡張ロード時に 1 回だけ**読み、実行時に行を追加する API を持たない。したがって C# のカタログ変更は `package.json` に書かれていなければ**メニューに一切現れない**。従来は `--hierarchy-menu-manifest` の出力を**人手でコピー**しており、コピー漏れは「サーバは最新なのにメニューは古いまま」という**ログにも出ない**状態になっていた (Add 系のフラット表示 / `Add > Folder` 表記がこれで生き延びた)
+  - **実装1 (`HierarchyMenuManifest.WriteToPackageJson(path, write)`)**: `package.json` を**その場で書き換える**。所有するブロックだけを差し替える:
+    | ブロック | 扱い |
+    |---|---|
+    | `contributes.commands` | `systemverilogLsp.hierarchy.` で始まる行のみ置換。拡張独自コマンドは位置ごと保持 |
+    | `contributes.submenus` | 全行が生成対象なので丸ごと置換 |
+    | `contributes.menus["<submenu id>"]` | 生成メニューは先頭に、カタログから消えたサブメニューは削除 |
+    | `contributes.menus["view/item/context"]` | 生成行のみを元の位置で置換。`revealInEditor` / `showNodeMenu` / `copyHierarchyPath` は保持 |
+    | それ以外 (`editor/context` / `view/title` / `configuration` 等) | **一切触らない** |
+  - **テキスト splice 方式**: JSON を丸ごと再シリアライズすると整形・キー順・コメント位置が全部変わり巨大な diff になるため、`contributes` 内の対象値の**文字スパンを探して差し替える**。`FindPropertyValue` はオブジェクトをプロパティ単位で走査して値を `SkipValue` で飛ばす (ネストした `}` を終端と誤認しない / 文字列リテラル内のキー名に誤マッチしない)。編集は**開始オフセット降順**で適用 (前から消すと後続オフセットがずれる)。改行コードは元ファイルに合わせる (リポジトリは LF)
+  - **`--check` は「データ比較」**: `IsUpToDate` が生成ブロックを**行の集合と内容**で比較する (整形非依存)。当初テキスト一致で実装したため、手整形された `package.json` が永久に「不一致」になり `--check` がビルドゲートとして使えなかった
+  - **実装2 (CLI)**: `--write-hierarchy-menu-manifest <path>` / `--check-hierarchy-menu-manifest <path>` を追加。`--check` は不一致で exit 1。従来の `--hierarchy-menu-manifest` (stdout 出力) は診断用に残置
+  - **実装3 (npm scripts)**: `generate-menu` / `check-menu` を追加 (`scripts/generate-hierarchy-menu.js`)。サーバ DLL は Release → Debug → `server/` の順に探し、無ければ 1 回ビルドする
+  - **実装4 (`make-vsix.js`)**: 手順の**先頭**に `generate-menu` を追加 (4 ステップ → 5 ステップ)。**リリース経路では古いメニューを出荷できない**
+  - **実装5 (`update-server.bat` / `update-server.sh`)**: `verify_menu_manifest` を追加し、`--check` が失敗したら**警告**(エラーではない)を出す。サーバ自体は正常で「メニューだけ古い」状態は他に何も報告しないため
+  - **実装6 (ドキュメント)**: `README.md` の「Why the rows are generated」を書き直し (手作業コピー廃止 / `npm run generate-menu` / ネストは `menus["<submenu id>"]` に置く必要があること / `update-server` は警告のみ)。`hierarchy.js` の古いコメント (`menus.viewItemContext` / 手作業コピー) も更新
+  - 回帰テスト追加 (`HierarchyMenuManifestSyncTests`, 3 件):
+    - `CommittedPackageJson_IsUpToDate` — コミット済みファイルが生成結果と一致 (従来の「貼り忘れ」を検出)
+    - `Write_IsIdempotent` — 最新ファイルへの `--write` は無変更 (ビルドのたびに走らせても作業ツリーを汚さない)
+    - `Write_RepairsAStaleFileAndKeepsHandWrittenRows` — 生成行とサブメニューを 1 つずつ消したファイルを検出 → 修復 → 2 回目は無変更、かつ拡張独自行 (`showNodeMenu` / `revealInEditor`) が残ること
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **236 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格** / 実ファイルで `--check` が `[ok]`、`--write` が無変更 (作業ツリー clean)
+  - コミット: CodeEditor2VerilogPlugin `f50a830` / SystemVerilogLanguageServer `675e926` / RtlEditorVscodeExtension `9c600d4`、メイン `ea3c5f9` (テスト) + `93a6efa` (submodule pointer)
+  - Next: カタログに 1 行追加 → `npm run generate-menu` → Reload Window でメニューに出ること、`npm run check-menu` が 0 で通ること、`npm run vsix` が生成 → bundle → selftest → package の順で走ることを確認
+  - メモ: `--check` は**データ比較**なので、`package.json` を手で整形しても不一致にならない。逆に「生成行の中身 (label / when / group)」を変えた場合は検出される
+
 - **VS Code で Add 系メニューが階層にならず flat に展開される** → 修正完了 (ビルド 0 errors、テスト 233 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: VS Code で実行したとき `Add` 系のメニューがメニュー階層にならずフラットに展開されてしまう
   - **原因 (`HierarchyMenuManifest` が子行を `view/item/context` に出していた)**: VS Code は**サブメニューの内容を `contributes.menus["<submenu id>"]` から読む**。`view/item/context` はツリー自身の context menu なので、そこに子コマンドを置くと「`Add` フライアウトの隣に `Folder` / `Blank File` … が普通の行として並ぶ」= 報告どおりのフラット表示になっていた (`Simulation` も同様)
