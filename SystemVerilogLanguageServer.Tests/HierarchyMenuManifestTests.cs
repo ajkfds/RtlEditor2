@@ -97,9 +97,10 @@ public class HierarchyMenuManifestTests
 
             // A submenu's children live in the menu named after the submenu;
             // everything else lives in the tree's context menu.
-            string menuName = string.IsNullOrEmpty(entry.ParentId)
+            string? parentId = pluginVerilog.CoreBridge.HierarchyMenuCatalog.ParentOf(entry.Id)?.Id;
+            string menuName = string.IsNullOrEmpty(parentId)
                 ? pluginVerilog.CoreBridge.HierarchyMenuManifest.ViewItemContextMenu
-                : pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(entry.ParentId!);
+                : pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(parentId!);
 
             JsonArray? rows = menus[menuName]?.AsArray();
             Assert.True(rows != null,
@@ -137,7 +138,7 @@ public class HierarchyMenuManifestTests
         foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
                  in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
         {
-            if (string.IsNullOrEmpty(entry.ParentId)) continue;
+            if (pluginVerilog.CoreBridge.HierarchyMenuCatalog.ParentOf(entry.Id) == null) continue;
             if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
             // a nested submenu opens its own flyout, so it is a row of the
             // parent menu - but it must still be a `submenu`, never a command

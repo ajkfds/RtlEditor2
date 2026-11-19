@@ -107,6 +107,84 @@ public class NavigateNodeMenuTests
     }
 
     /// <summary>
+    /// Nesting is the shape of the declaration: a row is in a submenu because it
+    /// is written inside that row's <c>Children</c>, and
+    /// <see cref="HierarchyMenuCatalog.Entry.IsSubmenu"/> is derived from it. A
+    /// separately authored <c>IsSubmenu</c> flag (what this replaced) could
+    /// disagree with the tree.
+    /// </summary>
+    [Fact]
+    public void Catalog_NestingIsTheShapeOfTheTree()
+    {
+        HierarchyMenuCatalog.Entry? add = HierarchyMenuCatalog.Find(HierarchyMenuCatalog.MenuId.Add);
+        Assert.NotNull(add);
+        Assert.True(add!.IsSubmenu, "a row with children must be a grouping row");
+
+        // the Add children are reachable through the tree, not through a lookup
+        List<HierarchyMenuCatalog.Entry> children = HierarchyMenuCatalog.Children(add);
+        Assert.NotEmpty(children);
+        foreach (HierarchyMenuCatalog.Entry child in children)
+        {
+            Assert.False(child.IsSubmenu, "these rows have no children of their own");
+            Assert.Same(add, HierarchyMenuCatalog.ParentOf(child.Id));
+        }
+
+        // a leaf at the top level has no parent and is not a grouping row
+        HierarchyMenuCatalog.Entry? copyPath =
+            HierarchyMenuCatalog.Find(HierarchyMenuCatalog.MenuId.CopyPath);
+        Assert.NotNull(copyPath);
+        Assert.False(copyPath!.IsSubmenu);
+        Assert.Null(HierarchyMenuCatalog.ParentOf(copyPath.Id));
+        Assert.Contains(copyPath, HierarchyMenuCatalog.Root);
+    }
+
+    /// <summary>
+    /// A plugin can extend a submenu without knowing its id: it names the parent
+    /// row. The row lands inside that submenu in every host, because the hosts
+    /// walk the tree instead of matching ids.
+    /// </summary>
+    [Fact]
+    public void Register_PlacesTheRowInsideTheNamedParent()
+    {
+        const string id = "testNestedPluginRow";
+        HierarchyMenuCatalog.Register(new HierarchyMenuCatalog.Entry
+        {
+            Id = id,
+            Label = "Plugin row",
+            Detail = "added by a plugin",
+            Targets = HierarchyMenuCatalog.AppliesTo.File,
+            Hosts = HierarchyMenuCatalog.Hosts.Both,
+            Action = HierarchyMenuCatalog.ActionKind.CopyPath,
+            Group = 15,
+        }, parentId: HierarchyMenuCatalog.MenuId.Add);
+
+        try
+        {
+            HierarchyMenuCatalog.Entry? parent =
+                HierarchyMenuCatalog.ParentOf(id);
+            Assert.NotNull(parent);
+            Assert.Equal(HierarchyMenuCatalog.MenuId.Add, parent!.Id);
+
+            // and the adapter reports it as nested, so both hosts render it
+            // inside the submenu
+            NavigateNodeMenuAdapter.MenuResult result = NavigateNodeMenuAdapter.Build(
+                FileContext(), HierarchyMenuCatalog.Hosts.VsCode);
+            NavigateNodeMenuAdapter.MenuEntry? entry =
+                result.Entries.FirstOrDefault(e => e.Id == id);
+            Assert.NotNull(entry);
+            Assert.Equal(HierarchyMenuCatalog.MenuId.Add, entry!.ParentId);
+            Assert.Equal("Add › Plugin row", entry.FlatLabel);
+            Assert.Equal("Plugin row", entry.Label);
+        }
+        finally
+        {
+            HierarchyMenuCatalog.Unregister(id);
+        }
+
+        Assert.Null(HierarchyMenuCatalog.Find(id));
+    }
+
+    /// <summary>
     /// Every catalog action that the two hosts share must be reachable without a
     /// desktop handler, otherwise VS Code would offer a row it can never run.
     /// </summary>
