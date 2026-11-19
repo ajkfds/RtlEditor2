@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **`.rule` ファイルの拡張子を `.rule.yaml` に変更** → 実装完了 (ビルド 0 errors、テスト 246 + sv-tests 1028 合格、コミット済み)
+  - ユーザ要求: pluginVerilog の `.rule` ファイルの拡張子を `.rule.yaml` に変えて
+  - **理由**: 中身は YAML なのに `.rule` だけではエディタが YAML と認識せず、プレーンテキスト扱いになる。二重拡張子で「何であるか (rule set)」と「中身が何か (YAML)」の両方を示せる
+  - **実装1 (`ProjectProperty.RuleFileExtension`)**: `.rule` → `.rule.yaml`。この定数は `FileTypes.RuleFile.IsThisFileType` と `RefreshRuleSets` の両方が参照しているため、1 箇所の変更で新規作成・認識の両方に効く
+  - **実装2 (後方互換 `RuleFileExtensions`)**: `{ ".rule.yaml", ".rule" }` を新設し、`IsRuleFilePath(path)` でどちらの綴りも受理する
+    - **既存ワークスペースが黙って severity を失わない**ため。拡張子変更で既存の `.rule` が無視されると「パーサがファイルを読まなくなった」ように見える
+    - 新規作成は先頭の `.rule.yaml` のみ
+  - **実装3 (`RefreshRuleSets`)**: `EnumerateFiles(root, "*.rule")` の 1 パターン列挙から、`EnumerateFiles(root, "*")` + `IsRuleFilePath` フィルタに変更
+    - **2 パスにしなかった理由**: 同じディレクトリに両方の綴りがあると、どちらのパスが後に走るかで勝敗が決まってしまう
+  - **実装4 (`FileTypes.RuleFile.IsThisFileType`)**: `relativeFilePath.ToLower().EndsWith(RuleFileExtension)` から `ProjectProperty.IsRuleFilePath(...)` に委譲
+  - **実装5 (ドキュメント)**: `RuleSet.cs` / `Data/RuleFile.cs` / `Parser/RuleFileParser.cs` / `Verilog/WordScanner.cs` / `Verilog/WordReference.cs` / `Verilog/ModPort.cs` / `ProjectProperty.cs` の `<c>.rule</c>` 記述を `<c>.rule.yaml</c>` に更新 (互換の説明箇所は `.rule` のまま残置)
+  - 回帰テスト:
+    - 既存 `RuleSetTests` の 3 箇所を `.rule.yaml` に更新 (`AppliesToTheFilesBelowItsDirectory` / `SaveFile_RoundTrips` / `GetRuleSet_DeepestDirectoryWins`)
+    - **新規 `LegacyRuleExtension_IsStillApplied`** — `.rule` だけを置いたディレクトリでも severity が Error に上がること (後方互換の実証)
+    - **新規 `IsRuleFilePath_AcceptsBothSpellings`** — `.rule.yaml` / `.rule` / 大文字 `.RULE.YAML` を受理し、`.sv` / `rules.yaml` / 空文字を拒否
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **246 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - コミット: CodeEditor2VerilogPlugin `e8df092`、メイン `390a475` (テスト) + `92f623a` (submodule pointer)
+  - Next: エディタ / VS Code で (1) `.rule.yaml` を新規作成すると既定 YAML が書かれること (2) `.rule.yaml` を置いたディレクトリ配下だけ severity が変わること (3) 既存の `.rule` も引き続き効くこと (4) `.rule.yaml` が YAML として色付けされること を確認
+  - メモ: `verilog_sample/mySample/verilog.rule` は `verilog_sample/` が `.gitignore` 対象のため未追跡のまま。手元で使う場合は `.rule.yaml` にリネームすればそのまま動く (旧名も読めるため必須ではない)
+
 - **メニュー行のアイコンが VS Code 拡張で表示されない** → 実装完了 (ビルド 0 errors、テスト 244 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: メニューに使用されているアイコンが VS Code 拡張で表示されていない
   - **原因1 (マニフェストがアイコンを出力していなかった)**: `HierarchyMenuCatalog.Entry.IconPath` は**デスクトップ用**のリポジトリ相対パス (`CodeEditor2VerilogPlugin/Assets/Icons/verilogDocument.svg`) で、VS Code の拡張フォルダには存在しない。`HierarchyMenuManifest.AddCommand` は `command` / `title` / `category` しか出しておらず、`contributes.commands[].icon` が**まったく生成されていなかった**
