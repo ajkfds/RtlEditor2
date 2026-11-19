@@ -15,6 +15,134 @@ namespace SystemVerilogLanguageServer.Tests;
 /// </summary>
 public class HierarchyMenuManifestSyncTests
 {
+    /// <summary>
+    /// The committed file must be what the generator produces. This is the
+    /// check that replaces "remember to paste the JSON in by hand".
+    /// </summary>
+    [Fact]
+    public void CommittedPackageJson_IsUpToDate()
+    {
+        string path = Path.Combine(FindExtensionRoot(), "package.json");
+
+        pluginVerilog.CoreBridge.PackageJsonWriteResult result =
+            pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(path, write: false);
+
+        Assert.False(result.Failed, result.Message);
+        Assert.False(result.Changed,
+            "package.json is out of date. Run: dotnet SystemVerilogLanguageServer.dll " +
+            "--write-hierarchy-menu-manifest " + path);
+    }
+
+    /// <summary>
+    /// Writing an up-to-date file must be a no-op, so the generator can run on
+    /// every build without touching the working tree.
+    /// </summary>
+    [Fact]
+    public void Write_IsIdempotent()
+    {
+        string original = File.ReadAllText(Path.Combine(FindExtensionRoot(), "package.json"));
+        string temp = Path.Combine(Path.GetTempPath(), "pkg_" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(temp, original);
+        try
+        {
+            pluginVerilog.CoreBridge.PackageJsonWriteResult first =
+                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: true);
+            Assert.False(first.Failed, first.Message);
+
+            string afterFirst = File.ReadAllText(temp);
+            pluginVerilog.CoreBridge.PackageJsonWriteResult second =
+                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: true);
+            Assert.False(second.Failed, second.Message);
+            Assert.False(second.Changed, "the second write must not change anything");
+            Assert.Equal(afterFirst, File.ReadAllText(temp));
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>
+    /// A stale file (a generated row removed by hand) must be detected and
+    /// repaired, and the extension's own rows must survive the repair.
+    /// </summary>
+    [Fact]
+    public void Write_RepairsAStaleFileAndKeepsHandWrittenRows()
+    {
+        string original = File.ReadAllText(Path.Combine(FindExtensionRoot(), "package.json"));
+        string temp = Path.Combine(Path.GetTempPath(), "pkg_" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(temp, original);
+        try
+        {
+            // Drop one generated row and one generated command, keeping the
+            // hand-written ones ("showNodeMenu" etc.) untouched.
+            JsonNode root = JsonNode.Parse(original)!;
+            JsonArray commands = root["contributes"]!["commands"]!.AsArray();
+            for (int i = commands.Count - 1; i >= 0; i--)
+            {
+                if (commands[i]?["command"]?.GetValue<string>()
+                    == pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId("copyPath"))
+                {
+                    commands.RemoveAt(i);
+                }
+            }
+            JsonObject menus = root["contributes"]!["menus"]!.AsObject();
+            menus.Remove(pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId("add"));
+
+            File.WriteAllText(temp, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+            pluginVerilog.CoreBridge.PackageJsonWriteResult check =
+                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: false);
+            Assert.True(check.Changed, "a stale package.json must be reported as out of date");
+
+            pluginVerilog.CoreBridge.PackageJsonWriteResult repaired =
+                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: true);
+            Assert.False(repaired.Failed, repaired.Message);
+            Assert.True(repaired.Changed);
+
+            // The repair settles: a second write changes nothing. (The first
+            // write only replaces the generated spans, so the surrounding
+            // formatting is whatever the caller had - which is why this checks
+            // for stability rather than for byte equality with the original.)
+            string afterRepair = File.ReadAllText(temp);
+            pluginVerilog.CoreBridge.PackageJsonWriteResult recheck =
+                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: false);
+            Assert.False(recheck.Changed, recheck.Message);
+            Assert.Equal(afterRepair, File.ReadAllText(temp));
+
+            // the repaired blocks equal the catalog's rows
+            JsonNode repairedRoot = JsonNode.Parse(afterRepair)!;
+            List<string> repairedCommandIds = new();
+            foreach (JsonNode? command in repairedRoot["contributes"]!["commands"]!.AsArray())
+            {
+                string? id = command?["command"]?.GetValue<string>();
+                if (id != null) repairedCommandIds.Add(id);
+            }
+            Assert.Contains(
+                pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId("copyPath"),
+                repairedCommandIds);
+            Assert.True(
+                repairedRoot["contributes"]!["menus"]!.AsObject()
+                    .ContainsKey(pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId("add")),
+                "the dropped submenu must be restored");
+
+            // and the extension's own rows are still there
+            JsonNode after = JsonNode.Parse(File.ReadAllText(temp))!;
+            List<string> ids = new();
+            foreach (JsonNode? command in after["contributes"]!["commands"]!.AsArray())
+            {
+                string? id = command?["command"]?.GetValue<string>();
+                if (id != null) ids.Add(id);
+            }
+            Assert.Contains("systemverilogLsp.showNodeMenu", ids);
+            Assert.Contains("systemverilogLsp.revealInEditor", ids);
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch { /* best effort */ }
+        }
+    }
+
     [Fact]
     public void PackageJson_MatchesTheGeneratedManifest()
     {
