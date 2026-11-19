@@ -3,6 +3,24 @@
 
 ## 進行中タスク (最新)
 
+- **`--write-hierarchy-menu-manifest` でバッジアイコンも生成する** → 実装完了 (ビルド 0 errors、テスト 243 + sv-tests 1028 合格、コミット済み)
+  - ユーザ要求: `--write-hierarchy-menu-manifest` の事前準備にアイコン生成機構も入れられるか
+  - **背景**: ツリーのエラー / 警告 / dirty バッジは **SVG アセットに焼き込む**必要がある (`TreeItem.iconPath` は 1 アイコン + 1 テーマ色しか持てず、オーバーレイを描けない)。従来は `scripts/generate-badge-icons.js` が生成していたが、**C# のマニフェスト生成から呼べない**ため「新しいベースアイコンを足したら別コマンドも実行する」という**忘れやすい 2 手目**があった
+  - **実装1 (新規 `CoreBridge/BadgeIconGenerator.cs`)**: JS 版と**同一のパス・形状・色**で C# 実装 (`BadgeableIcons` 7 種 × light/dark × 3 バッジ = 42 ファイル、`ExclamationPath` / `ShinePath` / `BadgeStart=288` / `BadgeScale=224/512` / 色 `#f14c4c` `#cca700` `#ffd24a`)
+  - **実装2 (CLI 統合)**: `--write-hierarchy-menu-manifest` / `--check-hierarchy-menu-manifest` が `package.json` に加えて `icons/` も処理。`--check` は不一致で exit 1
+  - **実装3 (改行コードの扱い)**: 既存アセットは **LF / CRLF / mixed が混在**していた (複数ツールで書かれたため)。バイト比較だと **42 ファイル全部が永久に不一致**になるので、**内容で比較**し、書き込み時のみ**既存ファイルの改行を再適用**する。`--write` は 0 ファイル書き込み = 冪等 (作業ツリー clean)
+  - **実装4 (JS を薄いラッパに)**: `scripts/generate-badge-icons.js` は C# 生成器を呼ぶだけに。**形状・色の単一情報源**が C# 側になる
+  - **実装5 (npm scripts)**: `generate-icons` / `check-icons` を追加 (互換名として維持)
+  - 回帰テスト新設 (`BadgeIconTests`, 3 件):
+    - `EveryBadgeableIconHasAVariantForEveryBadge` — 7 ベース × 2 テーマ × 3 バッジが全て存在 (**アイコン欠落は VS Code で「何も描かれない」になる**ため)
+    - `CommittedIconsAreUpToDate` — コミット済みアセットが生成結果と一致 (「生成し忘れ」を検出)
+    - `Generate_IsIdempotent` — 2 回目の生成で 0 ファイル
+    - **`module-error.svg` を退避すると 1 件目が失敗**(`missing badge icon: module-error.svg`)することを実証
+  - 検証: `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **243 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格** / `--check-hierarchy-menu-manifest` → `[ok] package.json is already up to date` + `[ok] badge icons are up to date` / `--write` → `wrote 0 badge icon(s)`
+  - コミット: CodeEditor2VerilogPlugin `61155be` / SystemVerilogLanguageServer `cdf8563` / RtlEditorVscodeExtension `e03f45f`、メイン `293ddf1` (テスト) + `79d7a9f` (submodule pointer)
+  - Next: ベースアイコンを 1 つ追加して `npm run generate-menu` → その 3 バッジ変種が生成されること、`npm run check-menu` が 0 で通ること を確認
+  - メモ: ベースアイコンが無い場合は**警告して skip**(チェックアウトに未追加のアイコンで失敗しない)。`--check` は内容比較なので改行の揺れでは落ちない
+
 - **メニュー行が「意味を持つ条件」を宣言できるように (案1: `Available` 述語)** → 実装完了 (ビルド 0 errors、テスト 240 + sv-tests 1028 合格、コミット済み)
   - ユーザ要求: 案2 に続けて実装
   - **変更前の問題**: アクションがプラグインに依存する行 (Icarus / Vivado の `Run Simulation`) は次のどちらかだった
