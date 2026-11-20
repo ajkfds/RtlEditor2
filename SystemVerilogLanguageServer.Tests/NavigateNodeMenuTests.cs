@@ -475,6 +475,61 @@ public class NavigateNodeMenuTests
         Assert.False(string.IsNullOrEmpty(delete.Reason));
     }
 
+    /// <summary>
+    /// "Property" must be offered on every node kind, including the project root
+    /// and folders.
+    /// </summary>
+    /// <remarks>
+    /// The editor built this row inline for every node type, so narrowing the
+    /// catalog to <c>File | Instance</c> made it disappear from the project,
+    /// folder, header and package nodes once the catalog replaced the inline
+    /// rows. The row only needs the node's Item (the editor's property form) or
+    /// its paths (the VS Code text rendering), not a parse result, so every kind
+    /// can run it.
+    /// </remarks>
+    [Fact]
+    public void Build_PropertyIsOfferedForEveryNodeKind()
+    {
+        HierarchyMenuCatalog.AppliesTo[] kinds =
+        {
+            HierarchyMenuCatalog.AppliesTo.Project,
+            HierarchyMenuCatalog.AppliesTo.Folder,
+            HierarchyMenuCatalog.AppliesTo.File,
+            HierarchyMenuCatalog.AppliesTo.Instance,
+            HierarchyMenuCatalog.AppliesTo.Header,
+            HierarchyMenuCatalog.AppliesTo.Package,
+        };
+
+        foreach (HierarchyMenuCatalog.AppliesTo kind in kinds)
+        {
+            NavigateNodeMenuContext context = new NavigateNodeMenuContext
+            {
+                Kind = kind,
+                NodeLabel = "node",
+                WorkspaceRelativePath = "src/rtl/top.sv",
+                FsPath = System.IO.Path.Combine("root", "src", "rtl", "top.sv"),
+                DirPath = System.IO.Path.Combine("root", "src", "rtl"),
+            };
+
+            foreach (HierarchyMenuCatalog.Hosts host in new[]
+                     {
+                         HierarchyMenuCatalog.Hosts.Desktop,
+                         HierarchyMenuCatalog.Hosts.VsCode,
+                     })
+            {
+                NavigateNodeMenuAdapter.MenuEntry? property = NavigateNodeMenuAdapter
+                    .Build(context, host).Entries
+                    .FirstOrDefault(e => e.Id == HierarchyMenuCatalog.MenuId.ShowProperty);
+
+                Assert.True(property != null,
+                    "the Property row must be offered for " + kind + " in " + host);
+                Assert.True(property!.Enabled,
+                    "the Property row must be enabled for " + kind + " in " + host +
+                    " (reason: " + property.Reason + ")");
+            }
+        }
+    }
+
     /// <summary>A file node with the paths the Add / Copy rows need.</summary>
     private static NavigateNodeMenuContext FileContext()
     {

@@ -238,6 +238,119 @@ public class SnippetTests : IDisposable
         Assert.Contains("( ${3} )", snippetText);
         Assert.DoesNotContain("${2:a}", snippetText);
         Assert.DoesNotContain("${3:b}", snippetText);
+
+        // The generated text must be a complete instantiation: the port list
+        // opened after the instance name has to be closed. A missing ")"
+        // (which happened when the builder moved out of SnippetAdapter) still
+        // contains every port name, so only a parenthesis check catches it -
+        // and the inserted text would not parse, making the instance vanish
+        // from the hierarchy.
+        string plainText = snippets[0].GetProperty("plainText").GetString() ?? "";
+        Assert.Equal(CountChar(plainText, '('), CountChar(plainText, ')'));
+        Assert.EndsWith(");", plainText.TrimEnd());
+    }
+
+    private static int CountChar(string text, char target)
+    {
+        int count = 0;
+        foreach (char c in text) if (c == target) count++;
+        return count;
+    }
+
+    /// <summary>
+    /// portConnectionCreate fills the unconnected ports of an existing
+    /// instantiation: the signal name is the port name without its
+    /// <c>_I</c> / <c>_O</c> direction suffix and lower-cased, and the signal is
+    /// declared (with the port's type) when the enclosing module does not have
+    /// it yet.
+    /// </summary>
+    /// <remarks>
+    /// This is the behaviour the editor's original snippet had. It was lost when
+    /// the text generation moved into the shared
+    /// <c>SnippetBuilder.BuildInstantiationTemplate</c>, which left every
+    /// connection blank - i.e. the tool "did nothing".
+    /// </remarks>
+    [Fact]
+    public void Snippet_PortConnectionCreate_DerivesAndDeclaresTheSignals()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        const string text =
+            "module leaf (\n" +
+            "  input logic CLK_I,\n" +
+            "  input logic [7:0] DATA_I,\n" +
+            "  output logic [7:0] RESULT_O\n" +
+            ");\n" +
+            "endmodule\n" +
+            "module top;\n" +
+            "  leaf u_leaf ();\n" +
+            "endmodule\n";
+        string uri = WriteFile("top.sv", text);
+        DidOpen(handler, uri, text);
+
+        JsonElement result = Request(handler, "rtl/snippet", new
+        {
+            textDocument = new { uri },
+            position = new { line = 7, character = 9 },
+            kind = "portConnectionCreate",
+        });
+
+        string plainText = result.GetProperty("snippets")[0].GetProperty("plainText").GetString() ?? "";
+
+        // the suffix is stripped and the rest lower-cased
+        Assert.Contains(".CLK_I\t( clk )", plainText);
+        Assert.Contains(".DATA_I\t( data )", plainText);
+        Assert.Contains(".RESULT_O\t( result )", plainText);
+
+        // ...and the signals are declared with the port's own width, before the
+        // statement that uses them
+        Assert.Contains("wire clk;", plainText);
+        Assert.Contains("[7:0] data;", plainText);
+        Assert.Contains("[7:0] result;", plainText);
+        Assert.True(
+            plainText.IndexOf("wire clk;", StringComparison.Ordinal)
+                < plainText.IndexOf("leaf u_leaf", StringComparison.Ordinal),
+            "the declarations must come before the instantiation");
+    }
+
+    /// <summary>
+    /// An already connected port keeps its expression, and a signal the
+    /// enclosing module already declares is not declared a second time.
+    /// </summary>
+    [Fact]
+    public void Snippet_PortConnectionCreate_KeepsConnectionsAndExistingSignals()
+    {
+        LspHandler handler = CreateInitializedHandler();
+        const string text =
+            "module leaf (\n" +
+            "  input logic CLK_I,\n" +
+            "  output logic [7:0] RESULT_O\n" +
+            ");\n" +
+            "endmodule\n" +
+            "module top;\n" +
+            "  wire my_clk;\n" +
+            "  wire [7:0] result;\n" +
+            "  leaf u_leaf (.CLK_I(my_clk));\n" +
+            "endmodule\n";
+        string uri = WriteFile("top.sv", text);
+        DidOpen(handler, uri, text);
+
+        JsonElement result = Request(handler, "rtl/snippet", new
+        {
+            textDocument = new { uri },
+            position = new { line = 8, character = 9 },
+            kind = "portConnectionCreate",
+        });
+
+        string plainText = result.GetProperty("snippets")[0].GetProperty("plainText").GetString() ?? "";
+
+        // the existing connection is kept, not replaced by the derived name
+        Assert.Contains(".CLK_I\t( my_clk )", plainText);
+        Assert.DoesNotContain(".CLK_I\t( clk )", plainText);
+
+        // both signals are already declared, so nothing is declared here
+        Assert.DoesNotContain("wire clk;", plainText);
+        Assert.DoesNotContain("wire  [7:0] result;", plainText);
+        Assert.StartsWith("leaf u_leaf", plainText);
     }
 
     /// <summary>

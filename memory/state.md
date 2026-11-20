@@ -3,6 +3,67 @@
 
 ## 進行中タスク (最新)
 
+- **PortConnectionCreate が未接続ポートの信号を導出・宣言しなくなっていた → 復元完了** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: `もともと、接続されていないポートに同名かつ小文字、_I,_Oを取り除いたwire/regを定義して接続した結果を出力されるようになってたはずです`
+  - **指摘は正確だった**。統合前の `PortConnectionCreateSnippet.CreateString` (`2ea4e78`) は未接続ポートに対して
+    (1) ポート名から `_I` / `_O` / `_IO` を除去 (`RemoveSuffixList`、大文字小文字無視) → (2) 小文字化 → (3) **その名前で接続**し、
+    (4) その信号を**ポートの型で宣言**して文の前に置いていた。`593fe81`/`a8683e8` で `SnippetBuilder.BuildInstantiationTemplate` に集約した際、この導出・宣言ロジックが丸ごと落ち、**全ポートが空接続**になっていた (前項の `)` 欠落と同根の「統合時の取りこぼし」)
+  - **修正1 (`SnippetBuilder.BuildInstantiationTemplate` に `enclosing` 引数を追加)**: 2 つのツールは書式を共有するが未接続ポートの扱いだけが違うため、引数で分岐
+    | ツール | `enclosing` | 未接続ポート |
+    |---|---|---|
+    | Insert Module Instance (`ModuleInstanceSnippet`) | `null` | **空のタブストップ** `${n}` (従来どおり。信号名を推測しない) |
+    | Fill Port Connections (`PortConnectionCreateSnippet`) | 所属 building block | **導出した信号名 + 必要なら宣言** |
+  - **修正2 (`ConnectionName` 新設)**: `_I` / `_O` / `_IO` を `OrdinalIgnoreCase` で除去して `ToLowerInvariant()`。`CLK_I` → `clk` / `RESULT_O` → `result`
+  - **修正3 (`AppendSignalDeclaration` 新設)**: `enclosing.NamedElements.ContainsKey(signal)` なら宣言しない。型は元実装と同じ 3 分岐 (Net は型を clone / `IntegerVectorValueVariable` は packed 次元を引き継いだ `wire` / それ以外は `CreateTypeString()`)。宣言は**文の前に前置**するため、`SnippetTemplate.Append` を新設してフィールド番号を保ったまま 2 つのテンプレートを連結
+  - **実測 (一時プローブ、削除済み)**: `leaf u_leaf ();` + `CLK_I` / `DATA_I [7:0]` / `RESULT_O [7:0]` で
+    ```
+    wire clk;
+    wire  [7:0] data;
+    wire  [7:0] result;
+    leaf u_leaf (
+      	.CLK_I	( clk ),
+      	.DATA_I	( data ),
+      	.RESULT_O	( result )
+      );
+    ```
+    - `moduleInstance` は従来どおり `(  )` の空タブストップ
+    - `CLK_I` 既接続 (`(.CLK_I(my_clk))`) → `( my_clk )` を保持し、`clk` は宣言しない
+    - `clk` / `data` 宣言済み → その 2 つは宣言せず `result` のみ宣言
+  - 回帰テスト新設 2 件 (`SnippetTests`):
+    - `Snippet_PortConnectionCreate_DerivesAndDeclaresTheSignals` — 導出名・宣言・**宣言が文より前**であること
+    - `Snippet_PortConnectionCreate_KeepsConnectionsAndExistingSignals` — 既存接続の保持と宣言済み信号の再宣言なし
+    - **導出・宣言の分岐を無効化すると 1 件目が `.CLK_I\t( clk )` 未検出で失敗**することを実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **254 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - Next: エディタで `leaf u_leaf ();` に caret を置き Fill Port Connections を実行し、(1) `wire clk;` 等が宣言され `.CLK_I( clk )` で接続されること (2) 既に宣言済みの信号は再宣言されないこと (3) Insert Module Instance は従来どおり空接続であること を確認。**C# を変更したので publish 更新が必要**
+  - メモ: `SnippetBuilder` は 2 つのツールが共有するため、「両方に共通の書式」と「片方だけの意味付け」を引数で分けるのが有効。統合時に落ちやすいのは後者
+
+- **RtlEditor で PortConnectionCreate tool が動かない → 修正完了** (ビルド 0 errors、テスト 252 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: `RtlEditorでPortConnectionCreate Toolが動かなくなってます`
+  - **根本原因 (`SnippetBuilder.BuildInstantiationTemplate` が閉じ括弧 `)` を出力していなかった)**: 生成テキストが `leaf u_leaf (\n\t.clk\t(  ),\n...\n  ;` で終わっており、**インスタンス名の後で開いた port list の `(` が閉じられていなかった**
+    - 実測 (一時プローブ、削除済み): `rtl/snippet` (portConnectionCreate) の `plainText` が `leaf u_leaf (\n  \t.clk\t(  ),\n  \t.d\t(  ),\n  \t.q\t(  )\n  ;` → 括弧が `(` 3 個に対し `)` 2 個
+    - **どのように壊れたか**: 統合前のデスクトップ実装 (`593fe81` 以前の `ModuleInstanceSnippet.getReplaceText`) は `sb.Append(");")` だったが、`SnippetAdapter` へ集約した際に `indent + ");"` になり、さらに `a8683e8`「Move the snippet Build* implementations into the snippet classes」で `SnippetBuilder` へ移したときに **`indent + ";"` に化けた** (括弧だけが落ちた)
+  - **症状が「動かない」に見える理由**: 置換後のテキストが parse できないため、**インスタンスが階層から消える**。その後もう一度ツールを実行すると `SnippetBuilder.FindInstantiationAt` がインスタンスを見つけられず「the caret is not inside a module instantiation」になり、何も起きないように見える
+  - 修正 (`Verilog/Snippets/SnippetBuilder.cs`): 末尾を `indent + ";"` → **`indent + ");"`** に戻し、`(` を閉じる + 文を終端する旨を経緯コメントで明記。`ModuleInstanceSnippet` (新規挿入) と `PortConnectionCreateSnippet` (既存の書き換え) が共有する helper なので、**両方のツールが同時に直る**
+  - **既存テストが検出できなかった理由**: `SnippetTests` は `Contains(".a")` / `Contains("( ${2} )")` のように**部分一致だけ**を見ており、生成テキストが文として妥当かを見ていなかった
+  - 回帰テスト強化 (`SnippetTests.Snippet_ModuleInstance_WithArgument_EmitsPortConnections`): `plainText` の `(` と `)` の**個数が一致**すること、および `TrimEnd()` が `");"` で終わることを assert。**`indent + ";"` に戻すと `Expected: 3 / Actual: 2` で失敗**することを実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **252 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - Next: エディタでインスタンス上に caret を置いて PortConnectionCreate (Shift+Space → Fill Port Connections) を実行し、(1) `)` まで含んだインスタンスに置換されること (2) 置換後も階層にインスタンスが残ること (3) 続けて再実行できること を確認。**C# を変更したので publish 更新が必要**
+  - メモ: `SnippetBuilder` は `ModuleInstanceSnippet` と `PortConnectionCreateSnippet` の共有 helper。片方だけ直すと片方が壊れるため、テキスト生成の検証は「部分一致」ではなく「括弧の対応 + 文末」まで見るのが有効
+
+- **RtlEditor の NavigateNode 右クリックメニューから `Property` が消えた → 修正完了** (ビルド 0 errors、テスト 252 + sv-tests 1028 合格、コミット済み)
+  - ユーザ報告: `RtlEditorでNavigateNodeの右クリックメニューのPropertyが消えてます`
+  - **原因1 (対象ノードが狭すぎた)**: `HierarchyMenuCatalog` の `ShowProperty` 行が `Targets = AppliesTo.File | AppliesTo.Instance` になっていた。しかし `NavigatePanelNode.createContextMenu` が**インラインで作っていた旧 `Property` 行は全ノード型** (Project / Folder / File / Instance / Header / Package) に出ていた。カタログ化したときに `File | Instance` へ絞ってしまったため、**プロジェクト / フォルダ / ヘッダ / パッケージのノードから行が消えた** (`AppliesTo.All` に修正)
+  - **原因2 (動作がテキスト表示に変わっていた)**: 旧インライン行は編集可能な `Tools.ItemPropertyForm` を開いていた (`NavigatePanelNode.menuItem_OpenProperty_Click` → `InitializePropertyForm` で `ProjectProperties` がタブを埋める)。カタログ化後は `ActionKind.ShowProperty` がホスト中立の `BuildPropertyText` をログに流すだけで、**フォームが開かなくなっていた**
+    - 修正: `NavigateNodeMenuRenderer.RunAsync` で `MenuId.ShowProperty` を特別扱いし、`ShowPropertyFormAsync(node)` で `ItemPropertyForm` を `Controller.ShowDialogAsync` 経由で開く (旧ハンドラと同じく例外はログ)
+    - **VS Code 側はテキスト表示のまま**: LSP ホストはフォームを持てないため、`NavigateNodeMenuAdapter` の `BuildPropertyText` をそのまま使う (ホストごとに「どう見せるか」だけが違う、という既存の分担を維持)
+  - **原因3 (無効化条件が厳しすぎた)**: `GetDisabledReason` の `ShowProperty` が `context.File == null` で無効にしていた。プロジェクト / フォルダは parse 結果を持たないため**行が出ても押せない**状態だった → 「file も path も無いノードだけ無効」に緩和
+  - 付随修正: `BuildPropertyText` に `kind:` 行を追加 (`DescribeKind` 新設)。行が全ノード型に広がったので、何を右クリックしたかが分かるようにした
+  - **生成物の更新**: `--write-hierarchy-menu-manifest` で `RtlEditorVscodeExtension/package.json` を再生成 → `viewItem == rtlFolder` の `showProperty` 行が 1 行追加 (5 行の diff)
+  - 回帰テスト新設 (`NavigateNodeMenuTests.Build_PropertyIsOfferedForEveryNodeKind`): 6 ノード種別 × 2 ホストすべてで `showProperty` が**出るかつ enabled** であることを assert。**カタログを `File | Instance` に戻すと `the Property row must be offered for Project in Desktop` で失敗**することを実証
+  - 検証: `dotnet build CodeEditor2VerilogPlugin.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **252 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗** / `--check-hierarchy-menu-manifest` → `[ok]`
+  - Next: エディタで (1) プロジェクト / フォルダ / ファイル / インスタンス / ヘッダ / パッケージの右クリックに `Property` が出ること (2) 押すと従来どおり編集可能な `ItemPropertyForm` が開くこと (3) VS Code では `Property` がテキスト表示のまま (フォルダにも出るようになった) を確認。**C# を変更したので publish 更新が必要**
+  - メモ: 「カタログ化でインライン行の挙動を落とす」型の回帰は、`Targets` の絞り込みと「ホスト固有の見せ方 (フォーム等)」の 2 点で起きやすい。行を追加/変更したら `Build_...IsOfferedForEveryNodeKind` 相当の全ノード型テストを足すのが有効
+
 - **`.fileClassify` が VS Code 拡張で効かない → 修正完了** (ビルド 0 errors、テスト 251 + sv-tests 1028 合格、コミット済み)
   - ユーザ質問: `.fileClassify` ファイルも vscode で効きますか？ → **効いていなかった**ので修正した
   - **実測 (一時プローブ、削除済み)**: `.fileClassify` に `+ VerilogHeaderFile / *.inc` を置いて `.inc` を開いても
