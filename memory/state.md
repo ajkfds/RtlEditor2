@@ -3,6 +3,29 @@
 
 ## 進行中タスク (最新)
 
+- **CodeEditor2VerilogPlugin を CodeEditor2 (Avalonia) から分離する — Stage 1/6 完了** (ビルド 0 errors、テスト 254 合格)
+  - ユーザ要求: `CodeEditor2VerilogPluginをCodeEditor2から分離して動作するようにして` → 段階計画 A (Stage 1〜6 を順に、各段階でビルド+全テスト+コミット) を選択
+  - **背景 (実測した規模)**: `CodeEditor2VerilogPlugin/Verilog` は **約 300 ファイル / 約 40,000 行**。うち **約 100 ファイルが `CodeEditor2.*` を参照**しており、すべてが Avalonia / AvaloniaEdit に到達する
+    | 依存先 | ファイル数 | 代表例 |
+    |---|---|---|
+    | `CodeEditor.CodeComplete.AutocompleteItem` | 約 50 | `INamedElement.CreateAutoCompleteItem()` が全要素に実装 |
+    | `Data.Project` / `TextFile` / `Item` | 17 | `WordScanner`, `NameReference`, `ParsedDocument`, 各 Instantiation |
+    | `CodeEditor.PopupHint.PopupItem` | 約 15 | `ModuleInstantiation`, `InterfaceInstance`, `ListOfArguments` |
+    | `Controller.*` | 12 | スニペット / AutoComplete 各 Item |
+    | `Snippets.InteractiveSnippet` | 9 | 全スニペットクラス |
+  - **Stage 1 の成果 (`SystemVerilogCore/Documents/IVerilogTextDocument.cs` 新規)**: パーサが実際に必要とする最小契約だけを定義
+    - **`IVerilogTextDocument`**: `Length` / `GetCharAt(int)` / `CreateString(int,int)` / `SetColorAt(int,byte,int)` の **4 つだけ**
+      - **実測で確定した根拠**: `WordPointer.cs` / `CommentScanner.cs` が `document.*` として呼ぶのは `GetCharAt` / `Length` / `CreateString` / `TextColors.SetColorAt` のみ (`git grep -oh "document\.[A-Za-z]*"` で全数走査)。`WordScanner.cs` は `TextColors` を直接使わない
+      - 既存の `ISystemVerilogCodeDocument` は読み取り専用で `SetColorAt` を持たないため**別インターフェース**にした (読み取り専用の利用側はそちらを使い続ける)
+    - **`IVerilogColorPalette` + `VerilogColorType` enum**: パーサは色値ではなく**パレット index** しか必要としないため、`Avalonia.Media.Color` を持ち込まない。数値は editor の `pluginVerilog.CodeDrawStyle.ColorType` と同一スロット (0/1/3/4/5/6/7/8/9/10/11/12) に固定 — **既存の parse 結果キャッシュを再着色しないため**
+    - **`IVerilogAutocompleteItem` / `IVerilogPopupItem`**: パーサが実際に埋める `Label` / `ColorIndex` / `IconPath` / `Text` のみ
+  - **`CodeDocument` の実シグネチャと一致することを確認** (推測ではなく実装で検証): `public int Length` / `public char GetCharAt(int)` / `public string CreateString(int,int)` / `public ColorHandler TextColors` (`SetColorAt(int,byte,int)`)
+  - **`IVerilogProjectContext` は定義してから削除した (重要)**: 当初 `FindFile(relativePath)` / `SearchFileByName(name)` という推測で定義したが、実際の `WordScanner.parseInclude` → `diveIntoIncludeFile` → `addIncludeFile` は `CodeEditor2.Data.Project.FindItems` / `SearchFile` に加え `Data.VerilogHeaderInstance.Create` (引数に `CodeEditor2.Data.Item` / `TextFile`、`ParsedDocument.IncludeFiles` への登録まで行う) に依存しており、**推測した形では合わなかった**。検証できない抽象を残すのは有害なので削除し、include 経路を実際に書き換える Stage 3 で実コールサイトを見ながら設計する方針にした
+  - 検証: `dotnet build SystemVerilogCore.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.Tests.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **254 合格 / 0 失敗**
+  - パーサ本体は**一切変更していない** (抽象を追加しただけ) ため、sv-tests への影響はゼロ
+  - Next (Stage 2): `CodeEditor2` 側の `CodeDocument` に `IVerilogTextDocument` を、`AutocompleteItem` に `IVerilogAutocompleteItem` を、`PopupItem` に `IVerilogPopupItem` を実装させる (デスクトップ起動 + テストで検証)。ただし **`SystemVerilogCore` を `CodeEditor2` から参照させる必要がある**ため、依存方向 (CodeEditor2 → SystemVerilogCore) の妥当性を最初に確認すること
+  - メモ: 抽象を「推測で」置くと後で必ず作り直しになる。Stage 1 では `git grep` で実コールサイトを全数確認してから定義した
+
 - **SystemVerilogCore を VS Code 専用に整理し、RtlEditor2 側の死んだ二重実装を削除** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格)
   - ユーザ要求: `systemverilogCore は vscode extension と rtleditor2 の両方から起動するようになってますが、vscode 専用にコードを修正し、rtlEditor2 をコードから除外していきたい。vscode 側からみて見通しが良くなるようコードを整理したい。typescript/javascript 側は最小限のラッパ実装とし、実態は可能な限り C# 側におきたい`
   - **調査で判明した実態: プラグイン側の `CoreBridge` アダプタ層は到達不能な死んだコードだった**
