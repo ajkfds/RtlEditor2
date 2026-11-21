@@ -22,7 +22,18 @@
     - **購読側を新設**: `NavigatePanelNode` のコンストラクタで `item.PresentationChanged += OnItemPresentationChanged`。ハンドラは `CheckAccess()` で UI スレッドなら直接 `UpdateVisual()`、それ以外は `Post`。**`Dispose()` で解除** (Item が長生きしてノードがリークするのを防ぐ)
   - 検証: `CodeEditor2` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
   - **LSP 側の配線も完了**: `InMemorySystemVerilogCore.PresentationChangedNotification` (core 所有、1 セッション 1 ハンドラ) を新設し、`LspHandler` のコンストラクタで `PushHierarchyInvalidated` に接続。`InMemoryProject` が `_owner` 経由で転送する (project を跨いでも同じ通知先)。`GetOrCreatePluginItem` で item 生成時に `PresentationChanged` を購読 (1 回だけなのでハンドラが積み上がらない)。**ハンドラは throw しない** (パーサの完了パス内で走るため、例外は parse 全体を中断させる)
-  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) VS Code で背景 parse 後にツリーが自動更新されること (3) `Item.NavigatePanelNode` / `CreateNode()` の削除 (これで `Item` が UI 非依存になる)
+  - **`Item.NavigatePanelNode` / `CreateNode()` を削除完了** — データ層から UI 依存が消えた
+    - **新規 `NavigatePanel/NavigateNodeFactory.cs`**: `Item` → `NavigatePanelNode` の対応を UI 層へ移設
+      - `GetNode(item)` は弱参照キャッシュ (破棄された item がノードごとサブツリーを引き留めない)
+      - `Register<TItem>(Func<TItem, NavigatePanelNode>)` を新設 — プラグインが自前のノード型を登録する拡張ポイント。**基底型を辿って最も近い登録を使う** (`TextFile` 登録が `VerilogFile` にも効く。明示登録があればそちらが優先)
+      - 組み込みの `switch` は `TextFile` を `File` より**先**に判定 (逆だと dirty バッジ・診断が出ない `FileNode` になる)
+    - **`Item` から削除**: `NavigatePanelNode` プロパティ (内部で `Dispatcher.UIThread.Invoke` を呼んでいた) / `node` フィールド / `CreateNode()`。**`ITextFile.NavigatePanelNode` も削除**
+    - **`CreateNode()` オーバーライドを全削除** (計 13 箇所): `CodeEditor2` の `File` / `Folder` / `TextFile` / `FileClassifyFile` / `ParseRuleFile` / `YamlFile`、プラグインの `ImportedPackage` / `InterfaceInstance` / `RuleFile` / `TestResultFile` / `VerilogFile` / `VerilogHeaderFile` / `VerilogHeaderInstance` / `VerilogModuleInstance`、他プラグインの `ChatLogFile` / `DrawIoXmlFile` / `LiveMarkdownFile`
+    - **各プラグインの `Register()` で `NavigateNodeFactory.Register<T>` を呼ぶ**よう変更 (Verilog 8 種 / Ai 1 種 / DrawIo 1 種 / LiveMarkdown 1 種)
+    - **`TextFile.HierarchicalRefreshRequested` イベントを新設**: 階層 parse 後の可視ツリー更新もホストフック化 (`ParseHierarchyAsync` が `NavigatePanelNode.HierarchicalVisibleUpdateAsync` を直接呼んでいたのを置換)。`NavigatePanelNode` が購読して UI スレッドで実行、`Dispose()` で解除
+  - **実測 (検証)**: `git grep NavigatePanel -- Data/Item.cs Data/ITextFile.cs` の結果が**コメントのみ**。`Item` / `ITextFile` から UI 型への実参照はゼロ
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `CodeEditor2AiPlugin` / `CodeEditor2DrawIoPlugin` / `CodeEditor2LiveMarkdownPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) **各プラグインのノード型が正しく生成されること** (VerilogFile / VerilogModuleInstance / ImportedPackage / VerilogHeaderInstance / InterfaceInstance / ChatLog / DrawIo / LiveMarkdown) — 登録漏れがあると `NotSupportedException` になる (3) VS Code で背景 parse 後にツリーが自動更新されること
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
