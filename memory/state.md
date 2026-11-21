@@ -3,7 +3,25 @@
 
 ## 進行中タスク (最新)
 
-- **CodeEditor2VerilogPlugin を CodeEditor2 (Avalonia) から分離する — Stage 1-2/6 完了** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格)
+- **CodeEditor2VerilogPlugin を CodeEditor2 (Avalonia) から分離する — Stage 1-2 + 変更通知の抽象化 完了** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格)
+  - **データ層から UI スレッド依存を除去した (C-2b の第一歩)**
+    - ユーザ指摘: `Item.NavigatePanelNode が Dispatcher.UIThread.Invoke を呼んでいるのは非同期に行ったデータ要素変更を UI に UI スレッドで反映するため。これを LSP ではどう実装すべき？`
+    - **回答**: `Dispatcher.UIThread.Invoke` の役割は 2 つに分解できる — (1) スレッドマーシャリング (2) ノードの遅延生成。**LSP では両方とも不要**。LSP は既に `rtl/hierarchyInvalidated` の push (5 箇所) で同じ目的を達成しており、UI スレッドが存在しないため `Invoke` に相当するものは原理的に無い
+    - **採用した設計**: `Item` は「変わった」ことだけを通知し、**どう反映するかは購読側の責務**にする
+      | ホスト | 反映方法 |
+      |---|---|
+      | エディタ | `NavigatePanelNode` が購読 → `Dispatcher.UIThread.Post` で `UpdateVisual()` |
+      | LSP | `LspHandler` が購読 → `rtl/hierarchyInvalidated` を push |
+    - **`Item.PresentationChanged` イベント + `NotifyPresentationChanged()` を新設** (`Item.cs`)。スレッド非依存で呼べる (購読側がマーシャリングする)
+    - **UI 直参照を通知に置換 (4 箇所)**:
+      - `Item.Remove()` の `Parent.NavigatePanelNode.UpdateVisual()` → `Parent.NotifyPresentationChanged()`
+      - `TextFile.Remove()` の同箇所 → 同上
+      - `TextFile.SaveAsync()` の `NavigatePanelNode.UpdateVisual()` → `NotifyPresentationChanged()`
+      - `TextFile.FileChangedAsync()` の `NavigatePanelNode?.PostUpdate()` → `NotifyPresentationChanged()`
+    - **プラグイン側 3 箇所も置換**: `VerilogModuleInstance` / `InterfaceInstance` / `VerilogHeaderInstance` の `NavigatePanelNode.UpdateVisual()` → `NotifyPresentationChanged()`
+    - **購読側を新設**: `NavigatePanelNode` のコンストラクタで `item.PresentationChanged += OnItemPresentationChanged`。ハンドラは `CheckAccess()` で UI スレッドなら直接 `UpdateVisual()`、それ以外は `Post`。**`Dispose()` で解除** (Item が長生きしてノードがリークするのを防ぐ)
+  - 検証: `CodeEditor2` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) LSP 側で `PresentationChanged` を購読して `PushHierarchyInvalidated` を呼ぶ配線を追加 (3) `Item.NavigatePanelNode` / `CreateNode()` の削除 (これで `Item` が UI 非依存になる)
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
