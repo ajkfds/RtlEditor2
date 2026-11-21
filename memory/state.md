@@ -3,6 +3,25 @@
 
 ## 進行中タスク (最新)
 
+- **SystemVerilogCore を VS Code 専用に整理し、RtlEditor2 側の死んだ二重実装を削除** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格)
+  - ユーザ要求: `systemverilogCore は vscode extension と rtleditor2 の両方から起動するようになってますが、vscode 専用にコードを修正し、rtlEditor2 をコードから除外していきたい。vscode 側からみて見通しが良くなるようコードを整理したい。typescript/javascript 側は最小限のラッパ実装とし、実態は可能な限り C# 側におきたい`
+  - **調査で判明した実態: プラグイン側の `CoreBridge` アダプタ層は到達不能な死んだコードだった**
+    - `Plugin.projectCreated` → `VerilogSystemVerilogCore.Instance.Wrap(project, ...)` が唯一の入口で、**戻り値は誰も読まない**
+    - `VerilogSystemVerilogCore.GetProjectAsync` は `new SystemVerilogProjectAdapter(null!)` を作るため、仮に使われれば NRE
+    - LSP は**使っていない**。`InMemorySystemVerilogCore` が `ParseEngine` から独自の `InMemoryProject` / `InMemoryFile` / `InMemoryElement` / `InMemoryBlock` を構築する
+    - `PluginHoverContentProvider` は `NamedElementAdapter` / `BuildingBlockAdapter` のときだけ enrich するが、LSP の要素は `InMemoryElement` なので常に `null` を返す no-op だった
+    - → **同じ seam の実装が 2 つあり、片方は一度も動いていなかった**
+  - **削除1 (プラグインの死んだアダプタ層 10 ファイル)**: `VerilogSystemVerilogCore` / `SystemVerilogProjectAdapter` / `SystemVerilogFileAdapter` / `SystemVerilogDocumentAdapter` / `SystemVerilogCodeDocumentAdapter` / `BuildingBlockAdapter` / `NamedElementAdapter` / `AutocompleteAdapter` / `SymbolResolver` / `PluginHoverContentProvider`
+  - **削除2 (`Plugin.cs` の 2 呼び出し)**: `PluginHoverInstaller.Install()` と `VerilogSystemVerilogCore.Instance.Wrap(...)`。どちらも上記の死んだ層のためだけに存在していた
+  - **削除3 (`AutoConnectModel` を `SystemVerilogCore` → プラグインへ移動)**: `AutoConnectAdapter` が `SystemVerilogCore.AutoConnect` を使っていたため、プラグインが LSP 契約アセンブリに依存していた。モデルを `pluginVerilog.CoreBridge.AutoConnectModel` に移し、サーバ側 (`LspHandler.AutoConnect` / `InMemorySystemVerilogCore.GetAutoConnectModel`) をプラグインの型に向け直した
+  - **削除4 (`CodeEditor2VerilogPlugin.csproj` の `SystemVerilogCore` ProjectReference)**: 上記 3 つで参照がゼロになったため削除。**プラグインは LSP 側に一切依存しない**構造になった (依存方向は サーバ → プラグイン の一方向のみ)
+  - **削除5 (`SystemVerilogCore.csproj` の `AvaloniaUI.DiagnosticsSupport`)**: このアセンブリには Avalonia のコードが 1 行も無いのに Avalonia パッケージを参照しており、**同梱サーバに Avalonia 依存グラフ全体を引き込んでいた**。削除により LSP のビルド警告が **560 → 24** に減少 (依存グラフから Avalonia が外れたことの実測)
+  - **テスト修正 (`ParserBackedAdapterTests.ParseEngine_ParseAndFindDefinition`)**: 削除した `SystemVerilogFileAdapter` / `SystemVerilogDocumentAdapter` を直接 new していたため、パーサ結果 (`parsed.Root.BuildingBlocks`) を直接 assert する形に変更 (検証内容は同じ)
+  - **ドキュメント修正**: `SystemVerilogCore/README.md` の「How the seam is wired today」が削除済みアダプタを説明していたため、実際の配線 (サーバのみが consumer、プラグインは非依存) に書き換え、削除の経緯も明記。`InMemorySystemVerilogCore` の class doc も「later phase で置き換え予定」という stale な記述を実態に修正
+  - 検証: `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.Tests.csproj -clp:ErrorsOnly` 0 errors / `dotnet build RtlEditor2.Desktop.csproj -clp:ErrorsOnly` 0 errors (警告 0) / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **254 合格 / 0 失敗** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+  - メモ: 「両ホストから起動する」ように見えていたのは**型と名前空間が揃っていたから**で、実際に動いていたのは LSP 側の 1 実装だけだった。共有されているのは `ParseEngine` などの**UI フリー helper** であり、契約アセンブリ (`SystemVerilogCore`) ではない。この区別が今回の整理の指針
+  - Next: (1) 同梱サーバを publish 更新 (`RtlEditorVscodeExtension/update-server.bat`、VS Code 終了後に実行) (2) VS Code で Reload Window し、hover / 補完 / hierarchy / snippet / autoConnect が従来どおり動くこと (3) デスクトップで NavigatePanel / AutoConnect が従来どおり動くことを確認
+
 - **PortConnectionCreate が未接続ポートの信号を導出・宣言しなくなっていた → 復元完了** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格、コミット済み)
   - ユーザ報告: `もともと、接続されていないポートに同名かつ小文字、_I,_Oを取り除いたwire/regを定義して接続した結果を出力されるようになってたはずです`
   - **指摘は正確だった**。統合前の `PortConnectionCreateSnippet.CreateString` (`2ea4e78`) は未接続ポートに対して

@@ -6,10 +6,10 @@ using Xunit;
 namespace SystemVerilogLanguageServer.Tests
 {
     /// <summary>
-    /// Phase 10: parser-backed adapter tests.
+    /// Parser-backed tests.
     /// Drives the real CodeEditor2VerilogPlugin parser (VerilogParser /
     /// ParsedDocument) through the UI-free CoreBridge.ParseEngine and verifies
-    /// that the CoreBridge adapters expose the parse results through the
+    /// that the LSP server exposes the parse results through the
     /// UI-agnostic SystemVerilogCore interfaces.
     /// </summary>
     public class ParserBackedAdapterTests
@@ -83,12 +83,8 @@ endmodule
             Assert.NotNull(parsed);
             Assert.NotNull(parsed!.Root);
 
-           // drive the CoreBridge adapters
-           var fileAdapter = new pluginVerilog.CoreBridge.SystemVerilogFileAdapter(file);
-           var document = new pluginVerilog.CoreBridge.SystemVerilogDocumentAdapter(fileAdapter, parsed);
-
            // documentSymbol: top module must appear as a top-level block.
-           Assert.Contains(document.Root.BuildingBlocks.Values, b => b.Name == "top");
+           Assert.Contains(parsed.Root!.BuildingBlocks.Values, b => b.Name == "top");
        }
 
        [Fact]
