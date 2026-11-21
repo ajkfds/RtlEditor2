@@ -3,7 +3,14 @@
 
 ## 進行中タスク (最新)
 
-- **CodeEditor2VerilogPlugin を CodeEditor2 (Avalonia) から分離する — Stage 1/6 完了** (ビルド 0 errors、テスト 254 合格)
+- **CodeEditor2VerilogPlugin を CodeEditor2 (Avalonia) から分離する — Stage 1-2/6 完了** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格)
+  - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
+    - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
+    - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
+    - `AutocompleteItem` に `IVerilogAutocompleteItem` を実装 (明示的実装で `Text` / `colorIndex` / `svgPath` を公開。既存フィールドをそのまま使うため挙動不変)
+  - **`IVerilogPopupItem` は定義してから削除した (2 度目)**: `PopupItem` は `AjkAvaloniaLibs.Controls.ColorLabel` 継承で、**順序付きの色付きテキスト/画像スパンのリスト**。パーサは `Port.GetLabel()` で `ColorLabel` を直接構築しており、`{ Text, ColorIndex }` の単一ペアでは表現できない。推測した形が実態と合わないため削除し、hint コールサイトを書き換える段階で設計する方針にした
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - メモ: 抽象を追加しただけで既存コードは無変更のため、sv-tests への影響はゼロ
   - ユーザ要求: `CodeEditor2VerilogPluginをCodeEditor2から分離して動作するようにして` → 段階計画 A (Stage 1〜6 を順に、各段階でビルド+全テスト+コミット) を選択
   - **背景 (実測した規模)**: `CodeEditor2VerilogPlugin/Verilog` は **約 300 ファイル / 約 40,000 行**。うち **約 100 ファイルが `CodeEditor2.*` を参照**しており、すべてが Avalonia / AvaloniaEdit に到達する
     | 依存先 | ファイル数 | 代表例 |
@@ -23,7 +30,10 @@
   - **`IVerilogProjectContext` は定義してから削除した (重要)**: 当初 `FindFile(relativePath)` / `SearchFileByName(name)` という推測で定義したが、実際の `WordScanner.parseInclude` → `diveIntoIncludeFile` → `addIncludeFile` は `CodeEditor2.Data.Project.FindItems` / `SearchFile` に加え `Data.VerilogHeaderInstance.Create` (引数に `CodeEditor2.Data.Item` / `TextFile`、`ParsedDocument.IncludeFiles` への登録まで行う) に依存しており、**推測した形では合わなかった**。検証できない抽象を残すのは有害なので削除し、include 経路を実際に書き換える Stage 3 で実コールサイトを見ながら設計する方針にした
   - 検証: `dotnet build SystemVerilogCore.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.csproj -clp:ErrorsOnly` 0 errors / `dotnet build SystemVerilogLanguageServer.Tests.csproj -clp:ErrorsOnly` 0 errors / `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **254 合格 / 0 失敗**
   - パーサ本体は**一切変更していない** (抽象を追加しただけ) ため、sv-tests への影響はゼロ
-  - Next (Stage 2): `CodeEditor2` 側の `CodeDocument` に `IVerilogTextDocument` を、`AutocompleteItem` に `IVerilogAutocompleteItem` を、`PopupItem` に `IVerilogPopupItem` を実装させる (デスクトップ起動 + テストで検証)。ただし **`SystemVerilogCore` を `CodeEditor2` から参照させる必要がある**ため、依存方向 (CodeEditor2 → SystemVerilogCore) の妥当性を最初に確認すること
+  - Next (Stage 3): `WordPointer` / `WordScanner` / `CommentScanner` を `IVerilogTextDocument` 越しに書き換える (**最重要・高リスク**)
+    - 現状の `WordPointer` は `CodeEditor.CodeDocument` 型を直接受け取っている (コンストラクタ / フィールド / static ヘルパー 6 箇所)。これを `IVerilogTextDocument` に変える
+    - **注意**: `WordPointer.Document._tag` / `CodeDocument.SnapShotFrom` / `new CodeDocument(text)` (マクロ展開・include スナップショット) など、**インターフェース外のメンバーを使っている箇所がある**。これらは Stage 3 で実コールサイトを全数確認してから設計すること
+    - 検証は **sv-tests 1028 全合格が必須** (パーサ本体の書き換えのため)
   - メモ: 抽象を「推測で」置くと後で必ず作り直しになる。Stage 1 では `git grep` で実コールサイトを全数確認してから定義した
 
 - **SystemVerilogCore を VS Code 専用に整理し、RtlEditor2 側の死んだ二重実装を削除** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格)
