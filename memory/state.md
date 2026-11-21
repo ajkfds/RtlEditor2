@@ -21,7 +21,8 @@
     - **プラグイン側 3 箇所も置換**: `VerilogModuleInstance` / `InterfaceInstance` / `VerilogHeaderInstance` の `NavigatePanelNode.UpdateVisual()` → `NotifyPresentationChanged()`
     - **購読側を新設**: `NavigatePanelNode` のコンストラクタで `item.PresentationChanged += OnItemPresentationChanged`。ハンドラは `CheckAccess()` で UI スレッドなら直接 `UpdateVisual()`、それ以外は `Post`。**`Dispose()` で解除** (Item が長生きしてノードがリークするのを防ぐ)
   - 検証: `CodeEditor2` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
-  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) LSP 側で `PresentationChanged` を購読して `PushHierarchyInvalidated` を呼ぶ配線を追加 (3) `Item.NavigatePanelNode` / `CreateNode()` の削除 (これで `Item` が UI 非依存になる)
+  - **LSP 側の配線も完了**: `InMemorySystemVerilogCore.PresentationChangedNotification` (core 所有、1 セッション 1 ハンドラ) を新設し、`LspHandler` のコンストラクタで `PushHierarchyInvalidated` に接続。`InMemoryProject` が `_owner` 経由で転送する (project を跨いでも同じ通知先)。`GetOrCreatePluginItem` で item 生成時に `PresentationChanged` を購読 (1 回だけなのでハンドラが積み上がらない)。**ハンドラは throw しない** (パーサの完了パス内で走るため、例外は parse 全体を中断させる)
+  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) VS Code で背景 parse 後にツリーが自動更新されること (3) `Item.NavigatePanelNode` / `CreateNode()` の削除 (これで `Item` が UI 非依存になる)
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
