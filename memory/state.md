@@ -33,7 +33,14 @@
     - **`TextFile.HierarchicalRefreshRequested` イベントを新設**: 階層 parse 後の可視ツリー更新もホストフック化 (`ParseHierarchyAsync` が `NavigatePanelNode.HierarchicalVisibleUpdateAsync` を直接呼んでいたのを置換)。`NavigatePanelNode` が購読して UI スレッドで実行、`Dispose()` で解除
   - **実測 (検証)**: `git grep NavigatePanel -- Data/Item.cs Data/ITextFile.cs` の結果が**コメントのみ**。`Item` / `ITextFile` から UI 型への実参照はゼロ
   - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `CodeEditor2AiPlugin` / `CodeEditor2DrawIoPlugin` / `CodeEditor2LiveMarkdownPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
-  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) **各プラグインのノード型が正しく生成されること** (VerilogFile / VerilogModuleInstance / ImportedPackage / VerilogHeaderInstance / InterfaceInstance / ChatLog / DrawIo / LiveMarkdown) — 登録漏れがあると `NotSupportedException` になる (3) VS Code で背景 parse 後にツリーが自動更新されること
+  - **Stage 3-1 完了**: `IVerilogTextDocument` をパーサが必要とする形に拡張
+    - **全数調査の結果** (Stage 3 の前提): `ParsedDocument` 内の `TextFile` 依存は **4 箇所のみ**で、すべて同型 `document.TextFile as Data.IVerilogRelatedFile`。`Project` の使用は 68 ファイル / 約 500 箇所だが、実質 3 パターン (A: `ProjectProperty` 取得 / B: `DefinitionNameSpace` 経由のファイル解決 / C: `FindItems`・`SearchFile`) に集約される
+    - **`IVerilogTextDocument` に追加**: `SetMarkAt(int,int,byte)` / `File` (→ `IVerilogDocumentFile?`) / `GetLineAt(int)`
+    - **`IVerilogDocumentFile` を新設**: `Id` / `RelativePath` / `Name` のみ (診断とクロスファイル解決に必要な最小限)
+    - **`CodeDocument` に実装**: `SetMarkAt` は `Marks.SetMarkAt` へ転送。`File` は **`TextFileDocumentFile` アダプタ**を返す
+    - **重要な設計判断 (失敗からの修正)**: 当初 `IVerilogRelatedFile` に `IVerilogDocumentFile` を**継承させた**が、両者が `RelativePath` / `Name` を宣言するため **CS0229 (曖昧) が 21 箇所**発生。インターフェースの明示的再宣言では解消できないため**継承をやめ、アダプタ方式に変更**した。これで既存メンバーの意味を変えずに済む
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) **各プラグインのノード型が正しく生成されること** (VerilogFile / VerilogModuleInstance / ImportedPackage / VerilogHeaderInstance / InterfaceInstance / ChatLog / DrawIo / LiveMarkdown) — 登録漏れがあると `NotSupportedException` になる (3) VS Code で背景 parse 後にツリーが自動更新されること (4) **Stage 3-2**: `ParsedDocument` から `Messages` / `ParseMode` / `CreateMessageNode` を自前化
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
