@@ -73,7 +73,17 @@
     - **新規 `ProjectInterop.AsEditorProject()`**: エディタ専用コード (VerilogModuleInstance 等) が具象 `Project` を要る箇所の**単一のダウンキャスト点**。null を返すのでホスト非依存
     - **`required` 初期化子の補完**: `Port` / `Clocking` / `LetDeclaration` / `Checker` の生成箇所に `Project = word.RootParsedDocument.Project` を追加
   - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
-  - Next: (1) エディタで **`// @project` によるクロスプロジェクト参照**が従来どおり動くこと (2) include 解決が従来どおり動くこと (3) 保存 / 削除 / 階層 parse 後にノードが更新されること (4) Messages ペイン表示 (5) VS Code で背景 parse 後にツリーが自動更新されること (6) **Stage 3-5**: LSP 側で複数プロジェクト (workspace フォルダ単位) を実装し、`Verilog.ParsedDocument` の基底継承を外す
+  - **Stage 3-5 完了 (基底継承の除去)**: `pluginVerilog.Verilog.ParsedDocument` が `CodeEditor2.CodeEditor.ParsedDocument` を**継承しなくなった**
+    - **新規 `CodeEditor2/CodeEditor/IParsedDocument.cs`**: `Key` / `Version` / `LockedDocument` のみ。**`ParsedDocument` がこれを実装** (フィールドはインターフェースを満たさないため明示的実装を追加)
+    - **新規 `SystemVerilogCore/Parsing/VerilogParseMode.cs`**: `LoadParse` / `BackgroundParse` / `EditParse` / `SingleHierParse`。`DocumentParser.ParseModeEnum` は**この enum の別名**になり、`DocumentParser.ToVerilogParseMode()` で変換
+    - **`ITextFile.ParsedDocument` / `TextFile.ParsedDocument` / `DocumentParser.ParsedDocument` を `IParsedDocument` に変更** (`TextFile` / `InfoView` / `Controller.MessageView.Update` も追従)
+    - **`Verilog.ParsedDocument` が基底クラスから引き継いでいたメンバーを自前宣言**: `Key` / `Version` / `ParseMode` (新 enum) / `LockedDocument` / `TextFile` / `Project` (`ProjectInterop` 経由)
+    - **`DocumentParser.ToVerilogParseMode()` を `VerilogParser` の 2 箇所で使用**、`Root.cs` / `Module.cs` / `CommentAnnotationItem.cs` の 13 箇所の `ParseMode` 比較を `VerilogParseMode` に統一
+    - **`VerilogFile.GetInstancedParsedDocument` / `RegisterInstanceParsedDocument` / `instancedParsedDocumentRefs` / `CleanWeakRef` を `IParsedDocument` に変更**
+    - **`WordReference.RuleSet` を `ParsedDocument.ProjectProperty` 経由に変更** (editor project 不要に)
+    - **`YamlParser` / `RuleFileParser` の `Messages` 追加箇所**は `is CodeEditor2.CodeEditor.ParsedDocument` で絞り込み (パーサ契約に `Messages` は無い)
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - Next: (1) エディタで **`// @project` クロスプロジェクト参照** / include 解決 / 保存 / 削除 / 階層 parse / Messages ペイン / 背景 parse 後のツリー更新 が従来どおり動くこと (2) **LSP 側の複数プロジェクト実装** (workspace フォルダ単位) — `InMemoryProject` を `IVerilogProject` として実装し、`_projects` で複数管理。`LoadWorkspaceFiles` が単一 `"default"` に全ルートを詰めている箇所を分割する
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
