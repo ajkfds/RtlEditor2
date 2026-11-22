@@ -3,6 +3,21 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code の hover 詳細 / function 引数 popup が出ない → 原因は同梱サーバが古いこと (publish 未完了)** (コード修正は完了・テスト 241 + sv-tests 1028 合格)
+  - ユーザ報告: `vscodeでのマウスオーバーポップアップに詳細が出ないです。function パラメータ入力時のpopupも出ないです。`
+  - **実測 (同梱バイナリの文字列走査)**: 修正で追加したリテラル (`bit width: ` / `ports: ` / `arguments: ` / `value: `) の有無
+    | バイナリ | size | mtime (UTC) | 4 文字列すべて |
+    |---|---|---|---|
+    | `RtlEditorVscodeExtension/server/SystemVerilogLanguageServer.dll` | 159,744 | **2026-11-22 03:48** | **False (古い)** |
+    | `SystemVerilogLanguageServer/bin/Debug/net10.0/...dll` | 181,248 | 2026-11-22 21:34 | True (最新) |
+  - **結論**: サーバ側の実装 (hover 詳細 `InMemoryElement.Detail` / `signatureHelp` の `HandleSignatureHelp`) は**既に正しく入っている**。VS Code が使う同梱バイナリが修正前のビルドのため、両方の症状が出ていた。**publish 未完了が唯一の原因**
+  - **拡張側の配線も確認済み (欠落なし)**: `registerHoverProvider` (`extension.js` L1485) / `registerSignatureHelpProvider` (L1551、trigger `(` `,`) / `provideSignatureHelp` (L1101 → `textDocument/signatureHelp`)
+  - **publish は実行できなかった**: 稼働中の LSP サーバ (**PID 34528**) が `server/*.dll` をロックしており `MSB3027/MSB3021` で失敗。**VS Code を完全に終了する必要がある**
+  - **Next (必須・ユーザ作業)**: VS Code を**完全に終了**してから `RtlEditorVscodeExtension/update-server.bat` を実行 → Reload Window → 確認
+    - (1) 変数 / ポート / パラメータ / module 名の hover に `type:` / `bit width:` / `value:` / `ports:` が出る
+    - (2) function / task 呼び出しの `(` 直後・`,` 直後で引数 popup (signature help) が出る
+  - メモ: `RtlEditorVscodeExtension/server/` は `.gitignore` 対象のためコミット対象外。**C# を変更したら必ず publish が必要** (この落とし穴は `state.md` に既出)
+
 - **VS Code のマウスオーバー hint に詳細が出ない (変数名と定義パスのみ) → 修正完了** (ビルド 0 errors、テスト 241 + sv-tests 1028 合格)
   - ユーザ報告: `マウスオーバー時のhintがvscode extensionでうまく出てないようです。変数名/定義ファイル名だけ出て詳細説明が出ません。`
   - **根本原因**: `HoverContent.Build` は `ISystemVerilogNamedElement` (Name / Kind / DefinitionRange / Owner / File) しか持たないため、**` ```systemverilog\n<name>\n``` ` + `_Defined in: ..._` しか生成できない**
