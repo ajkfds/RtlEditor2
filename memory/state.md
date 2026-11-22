@@ -3,6 +3,17 @@
 
 ## 進行中タスク (最新)
 
+- **Stage 4 (後半-a) 完了: `Verilog/` 配下からエディタ専用コード (`AutoComplete` / `Popup`) を移設・削除** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
+  - **発見 (実測)**: `Verilog/AutoComplete/*` と `Verilog/Popup/*` は **パーサから一切参照されていない**エディタ専用コードだった。`Verilog/` に置かれていたため分離作業の「残存依存」に数えられていたが、実際はパーサの一部ではない
+    - `Verilog/AutoComplete/*` (8 ファイル) の消費元は `Data/VerilogCommon/AutoCompleteKeyword.cs` (エディタ側) と `ProjectProperty.SnippetSetup` のみ。中身は `Controller.CodeEditor.SetCaretPosition` / `codeDocument.Replace` を呼ぶ**挿入動作つき候補**で、UI 必須
+    - `Verilog/Popup/*` (6 ファイル) は**全行コメントアウトされた死んだコード** (旧 `CodeEditor2.CodeEditor.PopupItem` 派生の痕跡)
+  - **移設**: `Verilog/AutoComplete/` → `Data/VerilogCommon/EditorAutoComplete/` (`git mv`)、namespace を `pluginVerilog.Data.VerilogCommon.EditorAutoComplete` に変更。`AutoCompleteKeyword.cs` の参照 8 箇所と `ProjectProperty.SnippetSetup` を追従
+  - **削除**: `Verilog/Popup/` (6 ファイル) は全行コメントのため削除 (`git rm`)
+  - **副次修正**: namespace 移動で相対名解決が変わった `CaseAutocompleteItem` の `BuildingBlocks.BuildingBlock` / `INamedElement` を完全修飾名に (移動前は `pluginVerilog.Verilog` 配下だったため相対で解決していた)
+  - 検証: `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `Tests` すべて **0 errors** / `--filter !~ParseSvTestFile` **240 合格** / `--filter ~ParseSvTestFile` **1028 合格**
+  - **残存依存の実測 (次の対象)**: `Verilog/` 配下で `CodeEditor2` を参照するのは **89 ファイル**。うち `CodeEditor2...AutocompleteItem` が **49 ファイル / 58 箇所**で最大 (残りは `Snippets.InteractiveSnippet` 10 / `Data.IVerilogRelatedFile` 約 20 / `Controller.*` 4 / `Avalonia` 6)
+  - **次にやる (Stage 4 の本命)**: `CompletionContext.AutoCompleteItems` を契約型に変え、completion の適用動作を editor 側へ移す。ただし消費側 (`CodeCompleteHandler.work` の `ToolItem.Assign` / `OpenAutoComplete` / `UpdateAutoComplete`) は editor の popup パイプラインと密結合しており、**sv-tests では回帰検出できないため実機確認が必須**
+
 - **Stage 4 (前半) 完了: autocomplete 候補の「種別」を契約に載せ、LSP kind 判定を契約経由に** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
   - **Stage 4 の阻害要因を実測で確定** (推測で抽象を置かない方針に従い、全コールサイトを確認した結果)
     - `CompletionContext.AutoCompleteItems` は **editor 基底クラスのフィールド** `List<CodeEditor2.CodeEditor.PopupMenu.ToolItem>` (CodeEditor2/CodeEditor/CodeComplete/CompletionContext.cs L14)。候補リストの型が editor 型に固定されている
