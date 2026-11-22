@@ -3,6 +3,15 @@
 
 ## 進行中タスク (最新)
 
+- **`IVerilogTextDocument.GetLineStartIndex` の未定義でビルドが壊れていたのを修復 完了** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格)
+  - 作業再開時の状態: サブモジュール 2 つに**未コミットかつビルド不能**な変更が残っていた
+    - `CodeEditor2` / `CodeEditor/CodeDocument.cs`: `IVerilogTextDocument.GetLineAt` / `GetLineStartIndex` の明示的実装を追加 (0-based 変換を実装側に寄せる)
+    - `SystemVerilogLanguageServer` / `Server/InMemorySystemVerilogCore.cs`: `GetLineOfIndex` / `GetCharacterOfIndex` の引数を `CodeEditor2.CodeEditor.CodeDocument?` → `SystemVerilogCore.Documents.IVerilogTextDocument?` に変更
+  - **原因**: 実装側 (`CodeDocument`) だけが `GetLineStartIndex(int line)` を実装しており、**契約 (`SystemVerilogCore/Documents/IVerilogTextDocument.cs`) にそのメンバーが無かった** → `error CS0539: 明示的なインターフェイス宣言内の 'CodeDocument.GetLineStartIndex(int)' が、実装可能なインターフェイスのメンバーの中に見つかりません`
+  - **修正**: 契約に `int GetLineStartIndex(int line)` を追加 (`GetLineAt` の対として 0-based、doc コメントに「ホスト実装が 0-based/1-based の変換を所有する」旨を明記)。実装側・サーバ側のコードは変更なし (既に正しい形で書かれていた)
+  - 検証: `CodeEditor2` / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer.Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - メモ: この 2 つの変更は「`GetLineAt` を 0-based に統一する」Stage 3 系の続き。サーバ側は `GetLineOfIndex` から `- 1` を削除し、契約側が 0-based を返す前提に切り替えた形
+
 - **CodeEditor2VerilogPlugin を CodeEditor2 (Avalonia) から分離する — Stage 1-2 + 変更通知の抽象化 完了** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格)
   - **データ層から UI スレッド依存を除去した (C-2b の第一歩)**
     - ユーザ指摘: `Item.NavigatePanelNode が Dispatcher.UIThread.Invoke を呼んでいるのは非同期に行ったデータ要素変更を UI に UI スレッドで反映するため。これを LSP ではどう実装すべき？`
