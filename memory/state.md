@@ -3,6 +3,21 @@
 
 ## 進行中タスク (最新)
 
+- **Stage 4 (前半) 完了: autocomplete 候補の「種別」を契約に載せ、LSP kind 判定を契約経由に** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
+  - **Stage 4 の阻害要因を実測で確定** (推測で抽象を置かない方針に従い、全コールサイトを確認した結果)
+    - `CompletionContext.AutoCompleteItems` は **editor 基底クラスのフィールド** `List<CodeEditor2.CodeEditor.PopupMenu.ToolItem>` (CodeEditor2/CodeEditor/CodeComplete/CompletionContext.cs L14)。候補リストの型が editor 型に固定されている
+    - `Data.VerilogCommon.AutoCompleteItem` は `CodeEditor2...AutocompleteItem` を**継承**し、`ApplyAsync` が `Controller.CodeEditor.SetCaretPosition` / `AutoCompleteHandled` を呼ぶ。候補データと**適用動作**が editor に密結合
+    - `IVerilogAutocompleteItem` は `ToolItem` を継承しないため、契約化しても `AutoCompleteItems` に直接入れられない
+    - → 「50 ファイルの戻り値型を変える」だけでは依存は消えず、**`CompletionContext` の型変更 + completion 適用動作の移設**が不可分。sv-tests (パースのみ) では回帰検出できず実機確認が必須のため、独立して完結する前半だけを先に実施
+  - **実施内容 (前半)**
+    - **契約に `Kind` を追加** (`SystemVerilogCore/Documents/IVerilogTextDocument.cs` の `IVerilogAutocompleteItem`): `SystemVerilogAutocompleteItemKind Kind { get; }`。ホストが自前の提示型 (LSP `CompletionItemKind` / editor の popup アイコン) を選ぶのに必要で、ラベルから推測させない
+    - **`CodeEditor2` の `AutocompleteItem` に `public virtual Kind` を新設**し、契約の明示的実装はそれを返す。基底は種別を持たない (ツールメニュー行にも使う) ため既定は `Unknown`。`virtual` にしたのは、派生 (parser 側) の override が**契約経由でも見える**ようにするため (`new` で隠すと契約経由で基底値が返り、実際に踏んだ)
+    - **`Data.VerilogCommon.AutoCompleteItem` で `Kind` を override**: `CompleteType` → 契約 enum の対応 (Keyword→Keyword / Task→Task / Function→Function / DataObject→Variable / NameSpace→Module)
+    - **`CoreBridge/CompletionAdapter` を契約経由に変更**: `item is Data.VerilogCommon.AutoCompleteItem acItem` + `acItem.Type` の switch を `item is IVerilogAutocompleteItem contractItem` + `contractItem.Kind` の switch に置換。プラグインの具象型に依存せず LSP kind を決められるようになった
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer.Tests` すべて **0 errors** / `--filter !~ParseSvTestFile` **240 合格** / `--filter ~ParseSvTestFile` **1028 合格**
+  - メモ: `--no-incremental` ビルドの警告数が 750 になるが、**stash で変更を戻しても同じ 750** であることを実測済み (今回の変更由来ではない。通常の増分ビルドでは 545)
+  - **Stage 4 の残り (次にやる)**: `CompletionContext.AutoCompleteItems` を契約型リストに変え、completion 適用動作 (`ApplyAsync` の caret 操作) を editor 側へ移設する。`Verilog/` 配下の `AutocompleteItem` 参照 約 50 ファイルと `PopupItem` 21 箇所はその後に一括で置き換える
+
 - **Stage 3 完了: tokenizer (`WordPointer` / `CommentScanner` / `WordReference`) を UI フリー契約へ移行** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
   - **目的**: `state.md` に「最重要・高リスク」と記録されていた残作業。パーサ本体が `CodeEditor2.CodeEditor.CodeDocument` (Avalonia 到達) を直接受け取っていた箇所を、`SystemVerilogCore.Documents.IVerilogTextDocument` 越しに書き換える
   - **契約に追加した 2 メンバー** (実コールサイトを全数確認してから追加。推測なし)
