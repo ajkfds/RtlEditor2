@@ -58,7 +58,22 @@
     - **`WordScanner.ProjectProperty` / `RuleSet` を `RootParsedDocument.ProjectProperty` 経由に変更**: `Project.ProjectProperties[...]` を辿らなくなり、この 2 プロパティから `CodeEditor2.Data.Project` 依存が消えた
     - **`WordScanner.Project` は残置 (判断ミスからの修正)**: 一度削除したが **49 箇所**で使われていた (ほとんどが `ProjectProperty` 経由、一部は instance 生成に owning project が必要)。ビルドが 49 エラーになったため復活させ、doc コメントで「`ProjectProperty` 経由で解決するので新たな依存は増えない」旨を明記
   - 検証: `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
-  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) **各プラグインのノード型が正しく生成されること** — 登録漏れがあると `NotSupportedException` (3) **Messages ペインに診断が従来どおり表示されること** (4) VS Code で背景 parse 後にツリーが自動更新されること (5) **Stage 3-4**: `WordScanner` の `FindItems` / `SearchFile` を抽象化 (**最大の難所**。`Project` の 49 箇所と item tree 構造の抽象化が必要)
+  - **Stage 3-4 完了 (主要部分)**: `NamedItem.Project` を UI 非依存の `IVerilogProject` に置換
+    - **ユーザ指示**: `Project は LSP では workspace になります。データを保持する Items の root です` / `ProjectProperty は Project 固有の設定を補完する領域です。LSP では workspace ごとの設定に相当します` / `LSP も複数 project 対応は必要です`
+    - **新規抽象 (`SystemVerilogCore/Projects/`)**:
+      - `IVerilogProject`: `Name` / `Items` (item tree root) / `Settings` / `ResolveProject(name)`
+      - `IVerilogItemTree`: `FindByRelativePath` / `FindByName` (include 解決の 2 問いのみ)
+      - `IVerilogItem`: `Name` / `RelativePath`
+      - `IVerilogProjectSettings` / `IVerilogSerializableProjectSettings`: パーサが読む設定面だけ
+    - **`CodeEditor2.Data.Project` に実装**: `Settings` は **プラグイン ID ではなく `is IVerilogProjectSettings` で解決** (この assembly はプラグインを参照できないため)。`ResolveProject` は `Global.Projects` を引く。`Items` は新規 `ProjectItemTree` アダプタ経由
+    - **`CodeEditor2.Data.TextFile` に `IVerilogItem` を実装** (Name / RelativePath は既存メンバーで充足)
+    - **`pluginVerilog.ProjectProperty` に `IVerilogProjectSettings` を実装** (ID は `Plugin.StaticID`)
+    - **`NamedItem.Project` / `InterfaceInstance.Project` / `Variables.Object.Project` / `Variables.VirtualInterface.Project` / `IBuildingBlockInstantiation.Project` を `IVerilogProject` に変更**。`ProjectProperty` getter は `Project.Settings as ProjectProperty` 経由に
+    - **`GetInstancedBuildingBlockProject()` を `IVerilogProject` 返しに変更** (`ModuleInstantiation` / `ProgramInstantiation` / `UdpInstantiation`)。`Global.Projects` 直参照を `Project.ResolveProject(...)` に置換
+    - **新規 `ProjectInterop.AsEditorProject()`**: エディタ専用コード (VerilogModuleInstance 等) が具象 `Project` を要る箇所の**単一のダウンキャスト点**。null を返すのでホスト非依存
+    - **`required` 初期化子の補完**: `Port` / `Clocking` / `LetDeclaration` / `Checker` の生成箇所に `Project = word.RootParsedDocument.Project` を追加
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - Next: (1) エディタで **`// @project` によるクロスプロジェクト参照**が従来どおり動くこと (2) include 解決が従来どおり動くこと (3) 保存 / 削除 / 階層 parse 後にノードが更新されること (4) Messages ペイン表示 (5) VS Code で背景 parse 後にツリーが自動更新されること (6) **Stage 3-5**: LSP 側で複数プロジェクト (workspace フォルダ単位) を実装し、`Verilog.ParsedDocument` の基底継承を外す
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
