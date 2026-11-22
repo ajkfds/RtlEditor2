@@ -3,6 +3,29 @@
 
 ## 進行中タスク (最新)
 
+- **Stage 4 完了 (後半-e): ラベル / caret-hint を UI フリー契約へ移行 (案 A)** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
+  - **目的**: `Verilog/` 最後の関門だった `PopupItem` / `ColorLabel` / `AjkAvaloniaLibs` 依存を除去する
+  - **契約を新設 (`SystemVerilogCore/Documents/IVerilogPopupItem.cs`)**
+    - `IVerilogPopupItem` (`CreateString()` のみ) — ホストが hint を文字列として扱うための最小面
+    - `VerilogLabelRun` (Text + `VerilogColorType?`) と `VerilogLabel` (`AppendText` / `AppendLabel` / `CreateString` / `Runs`)
+    - **色はパレット index で運ぶ** (`Avalonia.Media.Color` を持ち込まない)。数値は `CodeDrawStyle.ColorType` と同一スロット
+    - `AppendIconImage()` は**引数なしの no-op**: `ColorLabel` の画像スパンは UI フリーに表現できず、`Net` のラベルは直後に `"wire"` / `"tri"` 等のテキストで種類を示すため装飾を落とした
+  - **`GetLabel()` / `AppendLabel()` / `AppendTypeLabel()` を全階層で契約型へ** (84 ファイルが関与)
+    - `Port` / `Net` / `Variable` / `Constants` / `DataObject` / `IDataType` 全実装 / `Expression` 全派生 / `PackedArray` / `UnPackedArray` / `IArray` / `VariableArray` / `SyncContext` / `ModportInstance` / `Typedef` / `Macro` / `Function` / `Task_`
+    - **機械置換で実施** (一時 C# ツール、削除済み): 型名 107 箇所 / `new ColorLabel()` 13 箇所 / `AppendTypeLabel(ColorLabel)` 18 箇所 / ローカル宣言 16 箇所
+  - **色引数の扱い (`VerilogLabelExtensions.cs` 新設)**: `AppendText(text, CodeDrawStyle.ColorType)` と `AppendLabel(VerilogLabel)` を**拡張メソッド**で提供
+    - 131 箇所の `label.AppendText(x, CodeDrawStyle.ColorType.Y)` をそのまま活かすため。`VerilogLabel` にオーバーロードを足すと `SystemVerilogCore` が pluginVerilog に依存してしまう
+  - **`PopupItem` に `VerilogLabel` + 色解決デリゲートのコンストラクタを新設** (`CodeEditor2`)
+    - `CodeEditor2` は `VerilogColorType` を知らないため、`Func<VerilogColorType, Color>` を注入する形にした
+    - プラグイン側の `ToPopupItem()` 拡張が `Global.CodeDrawStyle.Color(...)` で解決する (20 箇所を置換)
+  - **`ParsedDocument.GetPopupItem` を 2 分割**: メッセージ行 (任意色 + アイコン、editor 専用) は `PopupItem` に直接、要素ラベルは `VerilogLabel` に積んで最後に `AppendLabel` で合成
+    - **到達不能な死んだコードを削除**: `return ret;` より後ろに「階層 lookup + macro / element ラベル再追加」の第 2 実装が残っていた
+  - **`Net.cs` の `AppendIconImage`**: 画像スパン → 引数なし no-op + 経緯コメント
+  - **未使用 `using AjkAvaloniaLibs.Controls;` を 16 ファイルから削除**
+  - **実測 (成果)**: `git grep -l AjkAvaloniaLibs -- Verilog/` が **19 → 3 ファイル**。残る 3 つは `Dimension.cs` / `String.cs` (コメントアウトされた旧コード) と `ParsedDocument.cs` (hint のアイコン) のみ
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `Tests` すべて **0 errors** / `--filter !~ParseSvTestFile` **240 合格** / `--filter ~ParseSvTestFile` **1028 合格**
+  - **実機確認が必要**: `PopupItem` の構築経路を変えたため、エディタで (1) ポート接続入力中の引数 hint が従来どおり出る (2) マウスオーバー hint の色が従来どおり (3) パラメータ override の hint が出る (4) AutoConnect ウィンドウの元接続表示が正しい、を確認すること
+
 - **Stage 4 (後半-d) 完了: `Port` の `Project` 契約化 + `Snippets` をエディタ側へ移設** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
   - **(1) `Port.Create` の引数を `IVerilogProject` に** — `Port : NamedItem` なので `Project` プロパティ自体は既に `IVerilogProject` だったが、**`Create` の仮引数だけが具象 `Project`** のまま残っていた。契約型に変え、不要になった `using CodeEditor2.Data;` を削除
   - **(2) `Snippets` の切り分けと移設**
