@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **Stage 4 (後半-b) 完了: 到達不能な autocomplete 実装を削除し `Verilog/` から `AutocompleteItem` 依存を全消し** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
+  - **決定的な発見 (実測)**: `CreateAutoCompleteItem()` (57 実装) と `AppendAutoCompleteItem()` (12 ファイル) は**外部からの入口が存在しない死んだコード**だった
+    - `CreateAutoCompleteItem()` の唯一の呼び出し元は `ParsedDocument.appendAutoCompleteINamedElements` で、**これも誰からも呼ばれていなかった** (定義と自己再帰のみ)
+    - `AppendAutoCompleteItem()` は `NameSpace` のオーバーライド群が `base.` で呼び合うだけで、**外から呼ぶ箇所がゼロ**
+    - **生きている経路は `CompletionContext.appendNamedElements` → `appendItemsUpward`** で、候補はそこで `Data.VerilogCommon.AutoCompleteItem` を直接構築している (58 箇所の `AutocompleteItem` 参照とは無関係)
+    - `IAutoCompleteRange` は**宣言のみで実装者ゼロ**
+  - **削除**
+    - `Verilog/IAutoCompleteRange.cs` (実装者ゼロ)
+    - `INamedElement.CreateAutoCompleteItem()` (契約から削除、経緯コメント残置)
+    - `ParsedDocument.appendAutoCompleteINamedElements()` / `newItem()`
+    - `NameSpace.AppendAutoCompleteItem()` (基底) / `AppendAutoCompleteItemFromCommentScopes()` / `AppendAutoCompleteItemsFromModuleInstance()` / `CreateAutoCompleteItem()` / `newItem()`
+    - `DataObject.AppendAutoCompleteItem()` (virtual 基底) と `Variables/Object` / `Variables/VirtualInterface` のオーバーライド
+    - `BuildingBlocks/{Checker,Class,Interface,InterfaceClass,Module,Package,Primitive,Program}` の `AppendAutoCompleteItem()` オーバーライドと `newItem()`
+    - `CreateAutoCompleteItem()` 実装 **47 箇所** (Statements 23 / Assertion 5 / Items 5 / DataObjects 5 / Coverage 4 / Property 1 / Sequence 1 / BuiltInMethod 1 / Expressions 1 / NameSpace 1)
+  - **実測 (成果)**: `git grep -c "CodeEditor2.CodeEditor.CodeComplete.AutocompleteItem" -- Verilog/` が **0**。`CreateAutoCompleteItem` の残存は経緯コメントのみ
+  - **副次効果**: プラグインの警告が 545 → **538** に減少 (死んだコードの削除分)。`RtlEditor2.Desktop` も 36 → **21** に減少
+  - 検証: `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `Tests` すべて **0 errors** / `--filter !~ParseSvTestFile` **240 合格** / `--filter ~ParseSvTestFile` **1028 合格**
+  - **`Verilog/` の残存依存 (次の対象)**: 82 ファイル。内訳は `Snippets.InteractiveSnippet` 10 (SnippetRunner 27 箇所が最大) / `PopupItem` 21 箇所 (`CarletPopupItems` 経由) / `Data.IVerilogRelatedFile` 約 20 / 未使用 `using CodeEditor2.*` 多数 (各ファイル 1 行)
+  - **次にやる**: (a) 未使用 `using` の一括削除 (機械的・低リスク) (b) `PopupItem` の契約化 (`CarletPopupItems` の型) (c) `Snippets` のエディタ側移設
+
 - **Stage 4 (後半-a) 完了: `Verilog/` 配下からエディタ専用コード (`AutoComplete` / `Popup`) を移設・削除** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
   - **発見 (実測)**: `Verilog/AutoComplete/*` と `Verilog/Popup/*` は **パーサから一切参照されていない**エディタ専用コードだった。`Verilog/` に置かれていたため分離作業の「残存依存」に数えられていたが、実際はパーサの一部ではない
     - `Verilog/AutoComplete/*` (8 ファイル) の消費元は `Data/VerilogCommon/AutoCompleteKeyword.cs` (エディタ側) と `ProjectProperty.SnippetSetup` のみ。中身は `Controller.CodeEditor.SetCaretPosition` / `codeDocument.Replace` を呼ぶ**挿入動作つき候補**で、UI 必須
