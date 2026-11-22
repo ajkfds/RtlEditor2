@@ -83,7 +83,19 @@
     - **`WordReference.RuleSet` を `ParsedDocument.ProjectProperty` 経由に変更** (editor project 不要に)
     - **`YamlParser` / `RuleFileParser` の `Messages` 追加箇所**は `is CodeEditor2.CodeEditor.ParsedDocument` で絞り込み (パーサ契約に `Messages` は無い)
   - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
-  - Next: (1) エディタで **`// @project` クロスプロジェクト参照** / include 解決 / 保存 / 削除 / 階層 parse / Messages ペイン / 背景 parse 後のツリー更新 が従来どおり動くこと (2) **LSP 側の複数プロジェクト実装** (workspace フォルダ単位) — `InMemoryProject` を `IVerilogProject` として実装し、`_projects` で複数管理。`LoadWorkspaceFiles` が単一 `"default"` に全ルートを詰めている箇所を分割する
+  - **Stage 3-6 完了 (LSP の複数プロジェクト対応)**
+    - **`InMemoryProject` が `IVerilogProject` を実装**: `Name` (workspace フォルダ名 = `// @project` の参照名) / `Settings` (能力ベースで解決) / `ResolveProject(name)` (core 経由) / `Items` (新規 `InMemoryItemTree` アダプタ)
+    - **新規 `InMemoryItemTree`**: `FindByRelativePath` / `FindByName` を**プロジェクト自身のファイル表**で解決。editor の item tree を擬装する必要がなくなった
+    - **`InMemoryFile` が `IVerilogItem` を実装** (`Name` は絶対パスのファイル名、`RelativePath` はプロジェクトルートからの相対)
+    - **`InMemorySystemVerilogCore` に `FindProjectForPath` / `FindProjectByName` / `Projects` を新設**: パスが属するプロジェクトを**最長一致のルート**で決定。名前は workspace フォルダ名
+    - **`LoadWorkspaceFiles` がルートごとに 1 プロジェクトを作成** (従来は全ルートを単一 `"default"` に詰めていた)。`ScanWorkspaceFiles` も全プロジェクトを走査
+    - **`GetOrCreateProjectForUri` がパスからプロジェクトを解決**。未知のパス (untitled / ルート確定前) は最初のルートのプロジェクトへフォールバック
+    - **`BuildWorkspaceNodes` を全プロジェクト横断に変更**: 各プロジェクトのルートを集約し、1 つなら中身を直下に、複数なら各ルートをノード化 (従来は単一プロジェクト内の `WorkspaceRoots.Count` で判定していたため、分割後は常に「1 ルート」に見えて壊れた)
+    - **`GetOrCreateProject("default")` の互換維持**: プロジェクトが 1 つだけならそれを返す (既存の呼び出し元とテストが `"default"` を要求するため)
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - **Stage 1〜3-6 完了**: 当初計画の全 Stage が完了。`Verilog` 配下は `IVerilogProject` / `IVerilogTextDocument` / `IParsedDocument` の 3 契約だけに依存する形になった
+  - Next (実機確認): (1) エディタで **`// @project` クロスプロジェクト参照** / include 解決 / 保存 / 削除 / 階層 parse / Messages ペイン / 背景 parse 後のツリー更新 が従来どおり動くこと (2) VS Code で**複数ルートの workspace** を開き、各フォルダが別プロジェクトとして扱われツリーが正しく出ること (3) 単一ルートの workspace が従来どおり動くこと
+  - 残課題: `SystemVerilogLanguageServer` は `CodeEditor2` を**直接参照し続けている** (`InMemorySystemVerilogCore.cs` の 60 箇所。`CodeEditor2.Data.Project` / `TextFile` / `CodeDocument` / `CodeDrawStyle` を使うため)。プラグイン側は 3 契約で抽象化済みだが、LSP ホスト自身が editor の item tree を構築する設計 (`RegisterPluginItem`) を残しているため、完全分離にはこの構築処理の置き換えが別途必要
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
