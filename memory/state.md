@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **Stage 3 完了: tokenizer (`WordPointer` / `CommentScanner` / `WordReference`) を UI フリー契約へ移行** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
+  - **目的**: `state.md` に「最重要・高リスク」と記録されていた残作業。パーサ本体が `CodeEditor2.CodeEditor.CodeDocument` (Avalonia 到達) を直接受け取っていた箇所を、`SystemVerilogCore.Documents.IVerilogTextDocument` 越しに書き換える
+  - **契約に追加した 2 メンバー** (実コールサイトを全数確認してから追加。推測なし)
+    - `string CreateString()` — `WordScanner` が入れ子ドキュメントの行番号を報告するとき全文が要る (`wordPointer.Document.CreateString()`)
+    - `void AppendBlock(int, int)` / `void AppendBlock(int, int, string, bool)` — 折りたたみ領域の登録。呼び出し元 18 箇所 (Module / Class / Function / GenerateBlock 等) が `word.AppendBlock(...)` 経由で使う
+  - **`WordPointer` の変更**
+    - `Document` を `CodeEditor.CodeDocument` → `IVerilogTextDocument` に変更
+    - **`VerilogFile` を document から読むのをやめ、コンストラクタで受け取る**ようにした。契約の `File` は `IVerilogDocumentFile` (Id / RelativePath / Name のみ) で、`include` 解決は `VerilogHeaderInstance.Create` に **Data 層の `IVerilogRelatedFile` をそのまま渡す**必要があるため (実測で確認した唯一の契約外要件)
+    - **`ConcreteDocument` (plugin 自身の `CodeDocument?`) を新設**: パース結果の `LockedDocument` (`List<CodeEditor2...CodeDocument>`) と `ParsedDocument.CodeDocument` へ buffer を戻す 2 箇所だけが具象型を要求するため。editor 由来でない buffer (マクロ展開) では null
+    - static ヘルパー 6 つ (`FetchNext` / `fetchNext` / `FetchNextUntilEol` / `fetchNextAtNumber` / `fetchNextAtOperator` / `ParseInLineComments`) の引数を契約型に変更
+    - `Document.TextColors.SetColorAt(...)` → `Document.SetColorAt(...)` (3 箇所)
+  - **`CommentScanner`**: コンストラクタとフィールドを契約型に変更、`Color` を `document.SetColorAt` に
+  - **`WordReference`**: `Color` が `Document.TextColors.SetColorAt` を直接呼んでいたのを、新設の `ContractDocument` (`IVerilogTextDocument?`) 経由の `SetColorAt` に変更
+  - **`WordScanner`**: `Document` を契約型に変更し `ConcreteDocument` を新設。コンストラクタを契約型 + file + concreteDocument を受ける形に拡張 (既存の `CodeEditor.CodeDocument` を受けるオーバーロードはそのまま残し、内部で振り分け)。`Clone` / `returnHierarchy` / `getLineEndIndex` を追従
+  - **`VerilogParser`**: `LockedDocument.Add(word.Document)` を `word.ConcreteDocument` 経由に (リストの要素型が具象型のため)
+  - **`wordPointer.Document._tag = "diveInto"` は削除**: `git grep _tag` で**読み取り箇所がゼロ** (書き込みは他に `VerilogHeaderFile.cs` と editor の `ParseProjectUnit.cs` のみ) と確認したため、抽象化せず削除。経緯コメントを残置
+  - **実測 (成果)**: `git grep -c CodeEditor2 -- Verilog/WordPointer.cs Verilog/CommentScanner.cs` が **0**。`TextColors` の直接参照もコメントのみ。tokenizer は契約だけに依存する形になった
+  - 検証: `CodeEditor2VerilogPlugin` / `CodeEditor2` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer.Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **240 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - メモ: `ExpandBeforeBackgroundParseFinishes_ShowsInstances` が全体実行時に 1 度だけ失敗したが単体・再実行では合格 (既知のタイミング依存フレーク、`state.md` に既出)
+
 - **`IVerilogTextDocument.GetLineStartIndex` の未定義でビルドが壊れていたのを修復 完了** (ビルド 0 errors、テスト 254 + sv-tests 1028 合格)
   - 作業再開時の状態: サブモジュール 2 つに**未コミットかつビルド不能**な変更が残っていた
     - `CodeEditor2` / `CodeEditor/CodeDocument.cs`: `IVerilogTextDocument.GetLineAt` / `GetLineStartIndex` の明示的実装を追加 (0-based 変換を実装側に寄せる)
