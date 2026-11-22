@@ -279,6 +279,84 @@ public class LspHandlerEndToEndTests
         Assert.Contains("module bar", hover.Contents.Value);
     }
 
+    /// <summary>
+    /// The hover response must include the parser-side detail (data type, bit
+    /// width, value, port list), not just the name and the definition path.
+    ///
+    /// <para>
+    /// The editor's mouse-over hint renders the element's label, which shows
+    /// this information; the language server has to state it as text. Before
+    /// this, the response was only "```systemverilog\n&lt;name&gt;\n```" plus
+    /// "_Defined in: ..._", i.e. the user saw the identifier and the file but
+    /// no type or width.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Hover_IncludesParserDetail()
+    {
+        InMemorySystemVerilogCore core = new InMemorySystemVerilogCore();
+        LspHandler handler = new LspHandler(core);
+        string text =
+            "module leaf #(parameter int W = 8) (input logic [W-1:0] DATA_I, output logic [W-1:0] DATA_O);\n"
+            + "endmodule\n"
+            + "module top;\n"
+            + "  logic [7:0] aaaa;\n"
+            + "  leaf #(.W(8)) u_leaf (.DATA_I(aaaa), .DATA_O());\n"
+            + "endmodule\n";
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = "file:///detail.sv", text }
+        });
+
+        // the local variable: type + bit width
+        int variableIndex = text.IndexOf("aaaa", StringComparison.Ordinal);
+        Hover? variableHover = SendRequest(handler, "textDocument/hover", new
+        {
+            textDocument = new { uri = "file:///detail.sv" },
+            position = PositionAt(text, variableIndex),
+        }) as Hover;
+        Assert.NotNull(variableHover);
+        Assert.Contains("type: logic [7:0]", variableHover!.Contents.Value);
+        Assert.Contains("bit width: 8", variableHover.Contents.Value);
+
+        // the parameter: type + value
+        int parameterIndex = text.IndexOf("W = 8", StringComparison.Ordinal);
+        Hover? parameterHover = SendRequest(handler, "textDocument/hover", new
+        {
+            textDocument = new { uri = "file:///detail.sv" },
+            position = PositionAt(text, parameterIndex),
+        }) as Hover;
+        Assert.NotNull(parameterHover);
+        Assert.Contains("value: 8", parameterHover!.Contents.Value);
+
+        // the module: its port list
+        int moduleIndex = text.IndexOf("leaf #(", StringComparison.Ordinal);
+        Hover? moduleHover = SendRequest(handler, "textDocument/hover", new
+        {
+            textDocument = new { uri = "file:///detail.sv" },
+            position = PositionAt(text, moduleIndex),
+        }) as Hover;
+        Assert.NotNull(moduleHover);
+        Assert.Contains("ports: ", moduleHover!.Contents.Value);
+        Assert.Contains("DATA_I", moduleHover.Contents.Value);
+    }
+
+    /// <summary>Converts a document offset into an LSP position.</summary>
+    private static object PositionAt(string text, int index)
+    {
+        int line = 0;
+        int lineStart = 0;
+        for (int i = 0; i < index && i < text.Length; i++)
+        {
+            if (text[i] == '\n')
+            {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+        return new { line, character = index - lineStart };
+    }
+
     [Fact]
     public void Hover_OffSymbol_ReturnsNull()
     {

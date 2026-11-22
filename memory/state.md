@@ -3,6 +3,29 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code のマウスオーバー hint に詳細が出ない (変数名と定義パスのみ) → 修正完了** (ビルド 0 errors、テスト 241 + sv-tests 1028 合格)
+  - ユーザ報告: `マウスオーバー時のhintがvscode extensionでうまく出てないようです。変数名/定義ファイル名だけ出て詳細説明が出ません。`
+  - **根本原因**: `HoverContent.Build` は `ISystemVerilogNamedElement` (Name / Kind / DefinitionRange / Owner / File) しか持たないため、**` ```systemverilog\n<name>\n``` ` + `_Defined in: ..._` しか生成できない**
+    - 詳細を足す `IHoverContentProvider` の拡張点はあったが、**`RegisterProvider` の呼び出しがリポジトリ全体でゼロ**だった (`PluginHoverContentProvider` は Stage 4 より前に削除済み)
+    - 仮に復活させても効かない: LSP の要素は `InMemoryElement` (プラグインの型ではない) で、provider は `NamedElementAdapter` 系しか enrich しない
+  - **修正1 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`)**: `InMemoryElement` に `Detail` (internal) を新設
+    - パーサの要素から**構築時に取得**する (`BuildSymbolsFromParsedDocument` / `AppendBuildingBlocks`)
+    - `BuildElementDetail(INamedElement)` を新設: `Port` の direction / `DataObject` の `type` (DataType.CreateString) と `bit width` / `Function`・`Task_` の `arguments` / `IPortNameSpace` の `ports` / `Constants` の `value`
+    - **例外は握りつぶして null** (未解決の cross-project 要素が hover 要求全体を壊さないように)
+  - **修正2 (`Server/LspHandler.cs` `HandleHover`)**: `HoverContent.Build` の結果に `Detail` を追記
+  - **実測 (一時プローブ、削除済み)**: `logic [7:0] aaaa;` に対して
+    | トークン | 修正前 | 修正後 |
+    |---|---|---|
+    | `aaaa` (Variable) | 名前 + 定義パスのみ | `type: logic [7:0]` / `bit width: 8` |
+    | `DATA_I` (Net) | 同上 | `type: logic [W - 1:0]` / `bit width: 8` |
+    | `W` (Parameter) | 同上 | `type: int` / `value: 8` |
+    | `leaf` (Module) | 同上 | `ports: input logic [W - 1:0] DATA_I, output logic [W - 1:0] DATA_O` |
+  - **回帰テスト新設 (`LspHandlerEndToEndTests.Hover_IncludesParserDetail`)**: 変数の `type` / `bit width`、パラメータの `value`、module の `ports` を assert
+    - **修正を stash で戻すと `String: "```systemverilog\naaaa\n```\n\n_Defined in: ..."` / `Not found: "type: logic [7:0]"` で失敗**することを実証 (報告された症状そのもの)
+  - 検証: `SystemVerilogLanguageServer` / `Tests` **0 errors** / `--filter !~ParseSvTestFile` **241 合格 (+1)** / `--filter ~ParseSvTestFile` **1028 合格** / `--filter ~Hover` **8 合格**
+  - **Next (実機確認)**: `RtlEditorVscodeExtension/update-server.bat` で同梱サーバを更新 → VS Code で Reload Window → 変数 / ポート / パラメータ / module 名にマウスオーバーして `type:` / `bit width:` / `value:` / `ports:` が出ることを確認
+  - メモ: プラグイン側に hover provider を戻す必要はない (LSP は `InMemoryElement` を使うため)。詳細はサーバ側で `InMemoryElement.Detail` として持たせるのが正しい分担
+
 - **Stage 4 完了 (後半-e): ラベル / caret-hint を UI フリー契約へ移行 (案 A)** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
   - **目的**: `Verilog/` 最後の関門だった `PopupItem` / `ColorLabel` / `AjkAvaloniaLibs` 依存を除去する
   - **契約を新設 (`SystemVerilogCore/Documents/IVerilogPopupItem.cs`)**
