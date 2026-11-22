@@ -53,7 +53,12 @@
     - **テスト 19 箇所を修正**: `parsed.Messages ?? new List<CodeEditor2...Message>()` → `parsed.Messages` (自前型になったため null 合体もダウンキャストも不要)
   - **`ParseMode` は今回見送り**: `DocumentParser.ParseModeEnum` が `DocumentParser` / `VerilogParser` の両方から参照され、enum の移動は波及が大きい。Stage 3-4 以降で扱う
   - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
-  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) **各プラグインのノード型が正しく生成されること** — 登録漏れがあると `NotSupportedException` (3) **Messages ペインに診断が従来どおり表示されること** (今回 `MessageNodeFactory` 経由に変わったため要確認) (4) VS Code で背景 parse 後にツリーが自動更新されること (5) **Stage 3-3**: `ParsedDocument.Project` を `ProjectProperty` 保持に変更
+  - **Stage 3-3 完了**: `ProjectProperty` を `ParsedDocument` にキャッシュ
+    - **`ParsedDocument.ProjectProperty` をキャッシュ化**: 従来は `File.ProjectProperty` を毎回引いていた (weak 参照経由)。コンストラクタで 1 回取得して保持するようにし、**weak 参照が回収された後でも lookup が壊れない**ようにした
+    - **`WordScanner.ProjectProperty` / `RuleSet` を `RootParsedDocument.ProjectProperty` 経由に変更**: `Project.ProjectProperties[...]` を辿らなくなり、この 2 プロパティから `CodeEditor2.Data.Project` 依存が消えた
+    - **`WordScanner.Project` は残置 (判断ミスからの修正)**: 一度削除したが **49 箇所**で使われていた (ほとんどが `ProjectProperty` 経由、一部は instance 生成に owning project が必要)。ビルドが 49 エラーになったため復活させ、doc コメントで「`ProjectProperty` 経由で解決するので新たな依存は増えない」旨を明記
+  - 検証: `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) **各プラグインのノード型が正しく生成されること** — 登録漏れがあると `NotSupportedException` (3) **Messages ペインに診断が従来どおり表示されること** (4) VS Code で背景 parse 後にツリーが自動更新されること (5) **Stage 3-4**: `WordScanner` の `FindItems` / `SearchFile` を抽象化 (**最大の難所**。`Project` の 49 箇所と item tree 構造の抽象化が必要)
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
