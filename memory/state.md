@@ -95,7 +95,15 @@
   - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
   - **Stage 1〜3-6 完了**: 当初計画の全 Stage が完了。`Verilog` 配下は `IVerilogProject` / `IVerilogTextDocument` / `IParsedDocument` の 3 契約だけに依存する形になった
   - Next (実機確認): (1) エディタで **`// @project` クロスプロジェクト参照** / include 解決 / 保存 / 削除 / 階層 parse / Messages ペイン / 背景 parse 後のツリー更新 が従来どおり動くこと (2) VS Code で**複数ルートの workspace** を開き、各フォルダが別プロジェクトとして扱われツリーが正しく出ること (3) 単一ルートの workspace が従来どおり動くこと
-  - 残課題: `SystemVerilogLanguageServer` は `CodeEditor2` を**直接参照し続けている** (`InMemorySystemVerilogCore.cs` の 60 箇所。`CodeEditor2.Data.Project` / `TextFile` / `CodeDocument` / `CodeDrawStyle` を使うため)。プラグイン側は 3 契約で抽象化済みだが、LSP ホスト自身が editor の item tree を構築する設計 (`RegisterPluginItem`) を残しているため、完全分離にはこの構築処理の置き換えが別途必要
+  - **include 解決を `IVerilogItemTree` 経由に変更 (LSP の item tree 擬装を不要にする第一歩)**
+    - `WordScanner.parseInclude` が `Project.FindItems` / `Project.SearchFile` を**直接**呼んでいたため、パーサは依然として editor の item tree に依存していた (LSP が `_pluginItems` で `CodeEditor2.Data.TextFile` のツリーを擬装する必要があった原因)
+    - `FindByRelativePath(sameFolderPath)` / `FindByName(filePathNameOnly)` に置き換え。**同じフォルダ → プロジェクト全体の名前一致**という従来の 2 段階の順序は維持
+    - `NamedItem.Items` と名前が衝突するため、`((IVerilogProject)Project).Items` と明示的にキャストしている (経緯コメント付き)
+  - 検証: `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - 残課題: `SystemVerilogLanguageServer` は `CodeEditor2` を**直接参照し続けている** (`InMemorySystemVerilogCore.cs` の約 60 箇所)
+    - 内訳: `Data.Project` (item tree 構築) / `Data.TextFile` / `Data.Folder` / `Data.Item` / `CodeDocument` / `CodeDrawStyle` / `Global.FileTypes`
+    - **include 解決は抽象化済み**なので、残るのは (a) `RegisterPluginItem` が editor の item tree を構築している部分 (b) 色の逆引き (`CodeDrawStyle`) (c) 階層ツリーが `Data.Item` を辿る部分
+    - (a) を `InMemoryItemTree` に一本化できれば `_pluginItems` と `ParserProjectStub` を削除できる見込み
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
