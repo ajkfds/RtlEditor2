@@ -3,6 +3,17 @@
 
 ## 進行中タスク (最新)
 
+- **Stage 4 (後半-c) 完了: `Verilog/` の未使用 `using CodeEditor2.*` を一括削除** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
+  - 死んだコード削除 (後半-b) の後始末。`AutocompleteItem` を消した結果、`using CodeEditor2.CodeEditor.CodeComplete;` が 64 ファイルで**参照ゼロの未使用 using** になっていた
+  - **判定方法**: `git grep -c "CodeEditor2" -- Verilog/` でファイルごとの出現回数を数え、**1 回だけ** = `using` 行のみ = 完全未使用と判定 (機械的・推測なし)
+  - **削除**: 53 ファイルの未使用 `using`
+    - `using CodeEditor2.CodeEditor.CodeComplete;` … 52 ファイル (Assertion 5 / BuildingBlocks 8 / DataObjects 6 / Expressions 1 / Items 12 / Statements 19 / NameSpace / BuiltInMethod / Task_)
+    - `using CodeEditor2.Data;` … 1 ファイル (`DataObjects/Port.cs` で試したが**実際に `Project` 型を使っておりビルドエラー**になったため戻した。削除したのは `Items/ContinuousAssign.cs` と `Items/InitialConstruct.cs` の 2 ファイル)
+  - **実測 (成果)**: `git grep -l "using CodeEditor2" -- Verilog/` が **64 → 11 ファイル**
+  - **残る 11 ファイルは正当な依存** (いずれも `using` 以外に実参照あり): `CompletionContext` (`CodeDocument` / `PopupItem`) / `DataObjects/Port` (`Project` 型) / `Items/{InterfaceInstance,ModuleInstantiation,ProgramInstantiation,UdpInstantiation}` (`PopupItem` 21 箇所) / `ParameterValueAssignment` (`PopupItem`) / `ParsedDocument` (`CodeDocument` / `PopupItem`) / `Snippets/{AutoConnectSnippet,ConnectionCheckSnippet,SnippetRunner}` (`Controller` / `InteractiveSnippet`)
+  - 検証: `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `Tests` すべて **0 errors** / `--filter !~ParseSvTestFile` **240 合格** / `--filter ~ParseSvTestFile` **1028 合格**
+  - **次の対象 (残る実依存 11 ファイル)**: `PopupItem` (21 箇所、`CarletPopupItems` の型) / `Snippets.InteractiveSnippet` (3 ファイル) / `CodeDocument` (`CompletionContext` / `ParsedDocument`) / `Data.Project` (`Port`)
+
 - **Stage 4 (後半-b) 完了: 到達不能な autocomplete 実装を削除し `Verilog/` から `AutocompleteItem` 依存を全消し** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
   - **決定的な発見 (実測)**: `CreateAutoCompleteItem()` (57 実装) と `AppendAutoCompleteItem()` (12 ファイル) は**外部からの入口が存在しない死んだコード**だった
     - `CreateAutoCompleteItem()` の唯一の呼び出し元は `ParsedDocument.appendAutoCompleteINamedElements` で、**これも誰からも呼ばれていなかった** (定義と自己再帰のみ)
