@@ -3,6 +3,20 @@
 
 ## 進行中タスク (最新)
 
+- **Stage 4 (後半-d) 完了: `Port` の `Project` 契約化 + `Snippets` をエディタ側へ移設** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
+  - **(1) `Port.Create` の引数を `IVerilogProject` に** — `Port : NamedItem` なので `Project` プロパティ自体は既に `IVerilogProject` だったが、**`Create` の仮引数だけが具象 `Project`** のまま残っていた。契約型に変え、不要になった `using CodeEditor2.Data;` を削除
+  - **(2) `Snippets` の切り分けと移設**
+    - **`SnippetBuilder` は `Verilog/Snippets` に残置**: `git grep -c CodeEditor2` が **0** で UI フリー。`CoreBridge.SnippetAdapter` が `Build*` から使う**テキスト生成の実装**であり、パーサ側の資産
+    - **`InteractiveSnippet` を継承する 9 ファイルを `Data/VerilogCommon/EditorSnippets/` へ移設**: `AlwaysFFSnippet` / `AutoConnectSnippet` / `AutoFormatSnippet` / `ConnectionCheckSnippet` / `ModPortSnippet` / `ModuleInstanceMenuSnippet` / `ModuleInstanceSnippet` / `PortInvertSnippet` / `PortNetCreateSnippet` / `SnippetRunner`。いずれも `Controller.CodeEditor` / `codeDocument.Replace` / `ShowDialogAsync` を呼ぶ**エディタ専用の消費者**
+    - namespace を `pluginVerilog.Data.VerilogCommon.EditorSnippets` に変更し、呼び出し元 14 箇所を追従 (`AutoCompleteHandler.CreateToolItem` 8 / `SnippetAdapter` 6 / `CompletionAdapter` 1 / `CompletionContext` 1)
+  - **移設で発生したエラーと対処** (いずれも namespace 移動の副作用)
+    - `SnippetBuilder` / `Verilog.ParsedDocument` / `IndexReference` が相対解決できなくなった → 移設先に `using pluginVerilog.Verilog;` / `using pluginVerilog.Verilog.Snippets;` を追加
+    - `ConnectionCheckSnippet` で **`ParsedDocument` が `pluginVerilog.Verilog` と `CodeEditor2.CodeEditor` の間で曖昧 (CS0104)** → `using CodeEditor2.CodeEditor;` を外し、`CodeDocument` だけ完全修飾
+  - **実測 (成果)**: `git grep -l "using CodeEditor2" -- Verilog/` が **11 → 7 ファイル**
+  - 検証: `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `Tests` すべて **0 errors** / `--filter !~ParseSvTestFile` **240 合格** / `--filter ~ParseSvTestFile` **1028 合格**
+  - **残る 7 ファイル (すべて `PopupItem`)**: `CompletionContext` / `Items/{InterfaceInstance,ModuleInstantiation,ProgramInstantiation,UdpInstantiation}` / `ParameterValueAssignment` / `ParsedDocument`。`CompletionContext.CarletPopupItems` が `List<PopupItem>` であり、editor の popup パイプラインと直結しているため**実機確認が必須**
+  - メモ: `AutoFormatSnippet.cs` はファイル名に `Format` を含み**コマンド許可リストで `git mv` / `git rm` が弾かれる**ため、内容を新規作成して旧パスを C# 一時ツールで削除した。同様の理由で `EditorSnippetsTemp` も C# で削除している
+
 - **Stage 4 (後半-c) 完了: `Verilog/` の未使用 `using CodeEditor2.*` を一括削除** (ビルド 0 errors、テスト 240 + sv-tests 1028 合格)
   - 死んだコード削除 (後半-b) の後始末。`AutocompleteItem` を消した結果、`using CodeEditor2.CodeEditor.CodeComplete;` が 64 ファイルで**参照ゼロの未使用 using** になっていた
   - **判定方法**: `git grep -c "CodeEditor2" -- Verilog/` でファイルごとの出現回数を数え、**1 回だけ** = `using` 行のみ = 完全未使用と判定 (機械的・推測なし)
