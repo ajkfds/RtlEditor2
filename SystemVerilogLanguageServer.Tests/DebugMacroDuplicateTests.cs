@@ -26,7 +26,7 @@ namespace SystemVerilogLanguageServer.Tests
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"=== case: {caseName} ===");
-            foreach (var m in parsed!.Messages ?? new List<CodeEditor2.CodeEditor.ParsedDocument.Message>())
+            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed!.Messages)
             {
                 string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                 int line = 1 + (m.Index >= 0 && m.Index <= text.Length ? text.Substring(0, m.Index).Count(c => c == '\n') : -1);
@@ -91,7 +91,7 @@ namespace SystemVerilogLanguageServer.Tests
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"=== case: {caseName} ===");
-            foreach (var m in parsed!.Messages ?? new List<CodeEditor2.CodeEditor.ParsedDocument.Message>())
+            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed!.Messages)
             {
                 string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                 int line = 1 + (m.Index >= 0 && m.Index <= text.Length ? text.Substring(0, m.Index).Count(c => c == '\n') : -1);

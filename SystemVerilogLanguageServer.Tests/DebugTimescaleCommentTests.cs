@@ -27,7 +27,7 @@ namespace SystemVerilogLanguageServer.Tests
             var messages = new List<string>();
             if (parsed != null)
             {
-                foreach (var m in parsed.Messages ?? new List<CodeEditor2.CodeEditor.ParsedDocument.Message>())
+                foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
                 {
                     messages.Add(m.Text);
                 }

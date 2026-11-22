@@ -36,7 +36,7 @@ namespace SystemVerilogLanguageServer.Tests
                     sb.AppendLine();
                 }
             }
-            foreach (var m in parsed!.Messages ?? new List<CodeEditor2.CodeEditor.ParsedDocument.Message>())
+            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed!.Messages)
             {
                 string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                 int line = 1 + (m.Index >= 0 && m.Index <= text.Length ? text.Substring(0, m.Index).Count(c => c == '\n') : -1);
@@ -60,7 +60,7 @@ namespace SystemVerilogLanguageServer.Tests
                 string text = File.ReadAllText(path);
                 pluginVerilog.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
                 sb.AppendLine("=== full file ===");
-                foreach (var m in parsed!.Messages ?? new List<CodeEditor2.CodeEditor.ParsedDocument.Message>())
+                foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed!.Messages)
                 {
                     string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                     int line = 1 + (m.Index >= 0 && m.Index <= text.Length ? text.Substring(0, m.Index).Count(c => c == '\n') : -1);

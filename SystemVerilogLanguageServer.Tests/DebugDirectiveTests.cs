@@ -29,7 +29,7 @@ namespace SystemVerilogLanguageServer.Tests
             sb.AppendLine($"=== case: {caseName} ===");
             if (parsed != null)
             {
-                foreach (var m in parsed.Messages ?? new List<CodeEditor2.CodeEditor.ParsedDocument.Message>())
+                foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
                 {
                     string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                     sb.AppendLine($"[{type}] index={m.Index}: {m.Text}");

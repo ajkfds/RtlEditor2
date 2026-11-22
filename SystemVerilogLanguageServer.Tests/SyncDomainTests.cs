@@ -54,7 +54,7 @@ namespace SystemVerilogLanguageServer.Tests
 
             var result = new List<(string, string)>();
             if (parsed == null) return result;
-            foreach (var m in parsed.Messages ?? new List<CodeEditor2.CodeEditor.ParsedDocument.Message>())
+            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
             {
                 string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                 result.Add((type, m.Text));

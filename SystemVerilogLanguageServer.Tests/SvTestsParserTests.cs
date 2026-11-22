@@ -110,8 +110,9 @@ namespace SystemVerilogLanguageServer.Tests
             Assert.NotNull(parsed);
             Assert.NotNull(parsed!.Root);
 
-            var messages = parsed.Messages ?? new List<CodeEditor2.CodeEditor.ParsedDocument.Message>();
-            int errorCount = messages.Count(m => m is pluginVerilog.Verilog.ParsedDocument.Message vm && vm.Type == pluginVerilog.Verilog.ParsedDocument.Message.MessageType.Error);
+            // Messages is the parser's own type now (no base-class cast needed).
+            var messages = parsed.Messages;
+            int errorCount = messages.Count(m => m.Type == pluginVerilog.Verilog.ParsedDocument.Message.MessageType.Error);
             int allCount = messages.Count;
 
             string diagText = DescribeMessages(messages);
@@ -154,15 +155,13 @@ namespace SystemVerilogLanguageServer.Tests
             }
         }
 
-        private static string DescribeMessages(List<CodeEditor2.CodeEditor.ParsedDocument.Message> messages)
+        private static string DescribeMessages(List<pluginVerilog.Verilog.ParsedDocument.Message> messages)
         {
             if (messages.Count == 0) return "";
             StringBuilder sb = new StringBuilder();
-            foreach (var m in messages)
+            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in messages)
             {
-                string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm
-                    ? vm.Type.ToString() : "?";
-                sb.Append($"\n  [{type}] {m.Index}: {m.Text}");
+                sb.Append($"\n  [{m.Type}] {m.Index}: {m.Text}");
             }
             return sb.ToString();
         }

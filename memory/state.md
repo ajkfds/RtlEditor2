@@ -40,7 +40,20 @@
     - **`CodeDocument` に実装**: `SetMarkAt` は `Marks.SetMarkAt` へ転送。`File` は **`TextFileDocumentFile` アダプタ**を返す
     - **重要な設計判断 (失敗からの修正)**: 当初 `IVerilogRelatedFile` に `IVerilogDocumentFile` を**継承させた**が、両者が `RelativePath` / `Name` を宣言するため **CS0229 (曖昧) が 21 箇所**発生。インターフェースの明示的再宣言では解消できないため**継承をやめ、アダプタ方式に変更**した。これで既存メンバーの意味を変えずに済む
   - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
-  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) **各プラグインのノード型が正しく生成されること** (VerilogFile / VerilogModuleInstance / ImportedPackage / VerilogHeaderInstance / InterfaceInstance / ChatLog / DrawIo / LiveMarkdown) — 登録漏れがあると `NotSupportedException` になる (3) VS Code で背景 parse 後にツリーが自動更新されること (4) **Stage 3-2**: `ParsedDocument` から `Messages` / `ParseMode` / `CreateMessageNode` を自前化
+  - **Stage 3-2 完了**: `ParsedDocument` の `Messages` を自前化し、`Message` の基底継承を削除
+    - `pluginVerilog.Verilog.ParsedDocument.Message` から **`CodeEditor2.CodeEditor.ParsedDocument.Message` の継承を削除**。`Index` / `Length` / `Text` / `Project` を自前プロパティとして持つ
+    - **`Messages` を自前の `List<Message>` に変更** (基底の `List<CodeEditor2...Message>` を使わなくなり、ダウンキャストが不要に)
+    - **`CreateMessageNode()` の override を削除** — これは `MessageView` (Avalonia) を返す UI フックで、パーサから UI 型への最後の直接依存だった
+    - **代替機構を新設**:
+      - `CodeEditor2/Views/MessageNodeFactory.cs`: プラグインが `Register<TMessage>(Func<TMessage, MessageNode?>)` で行ビルダーを登録。基底型を辿るので派生型にも効く。**`TMessage` に制約を付けない** (プラグインのメッセージ型は独自型になったため、制約を付けると本末転倒)
+      - `CodeEditor2/CodeEditor/IParsedDocumentMessagesProvider.cs`: `IReadOnlyList<object> Messages` — エディタの Messages ペインがプラグインのメッセージ型を読むための口
+      - `InfoView.UpdateMessages` はこのインターフェース経由でメッセージを取得し、`MessageNodeFactory` で行を生成。**null を返す場合は行をスキップ** (以前は NRE)
+      - プラグインの `Plugin.Register()` で `MessageNodeFactory.Register<Verilog.ParsedDocument.Message>` を登録
+    - **LSP 側の修正**: `CollectDiagnostics` のダウンキャスト (`message as Verilog...Message`) が不要になったため簡素化
+    - **テスト 19 箇所を修正**: `parsed.Messages ?? new List<CodeEditor2...Message>()` → `parsed.Messages` (自前型になったため null 合体もダウンキャストも不要)
+  - **`ParseMode` は今回見送り**: `DocumentParser.ParseModeEnum` が `DocumentParser` / `VerilogParser` の両方から参照され、enum の移動は波及が大きい。Stage 3-4 以降で扱う
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `RtlEditor2.Desktop` / `SystemVerilogLanguageServer` / `Tests` すべて **0 errors** / `--filter FullyQualifiedName!~ParseSvTestFile` **254 合格** / `--filter FullyQualifiedName~ParseSvTestFile` **1028 合格**
+  - Next: (1) エディタで保存 / 削除 / 階層 parse 後にノードのアイコン・dirty バッジが従来どおり更新されること (2) **各プラグインのノード型が正しく生成されること** — 登録漏れがあると `NotSupportedException` (3) **Messages ペインに診断が従来どおり表示されること** (今回 `MessageNodeFactory` 経由に変わったため要確認) (4) VS Code で背景 parse 後にツリーが自動更新されること (5) **Stage 3-3**: `ParsedDocument.Project` を `ProjectProperty` 保持に変更
   - **Stage 2 の成果**: `CodeEditor2` 側に抽象を実装し、依存方向を確定
     - `CodeEditor2.csproj` に `SystemVerilogCore` への ProjectReference を追加 (経緯コメント付き)。**`SystemVerilogCore` はパッケージ参照ゼロなので Avalonia は流入せず、循環もない** (SystemVerilogCore → CodeEditor2 の逆参照は禁止である旨をコメントに明記)
     - `CodeDocument` に `IVerilogTextDocument` を実装。`Length` / `GetCharAt` / `CreateString` は既存メンバーで充足し、**`SetColorAt` だけを明示的実装** (`TextColors.SetColorAt` へ転送)。既存シグネチャと一致することを確認済み
