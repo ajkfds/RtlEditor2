@@ -3,6 +3,34 @@
 
 ## 進行中タスク (最新)
 
+- **`CompletionContext.AutoCompleteItems` を UI フリー契約へ + 適用動作を editor へ移設 (Step 2) — 完了** (ビルド 0 errors、テスト 264 + sv-tests 1028 合格、**実機確認が必要**)
+  - ユーザ要求: `続けて` (Step 1 の続き)
+  - **着手前の実測 (推測ではない)**: `AutoCompleteItems` の**読み取りは 2 箇所だけ**
+    | 読み取り元 | 用途 |
+    |---|---|
+    | `CodeCompleteHandler.work` (editor) | 候補を popup 行に変換して挿入 |
+    | `CoreBridge/CompletionAdapter` (LSP) | `Kind` を LSP kind に写像 |
+    - 書き込みは parser 側 10 箇所 (すべて `AutoCompleteItem` または `ModuleInstanceSnippet`)
+    - `Data.VerilogCommon.AutoCompleteItem` は `AutocompleteItem` 派生で `Kind` を override、`ApplyAsync` で `GetAutoCompleteTarget` を呼び直して**置換範囲を再計算**していた
+  - **修正1 (`CodeEditor2/Snippets/InteractiveSnippet.cs`)**: `IVerilogAutocompleteItem` を実装。snippet も候補リストに入るため契約が必要。`Kind = Snippet`、`InsertText = Text`、`IconPath = null`、`ColorIndex = 0` (実際の挿入は従来どおり `ApplyAsync` が対話的に行う)
+  - **修正2 (`CodeEditor2/CodeComplete/CompletionContext.cs`)**: `AutoCompleteItems` を `List<ToolItem>` → **`List<IVerilogAutocompleteItem>`** に変更
+  - **修正3 (`CodeEditor2/CodeComplete/ContractAutocompleteToolItem.cs` 新規)**: **契約 → popup 行のアダプタ**。`ApplyAsync` に**挿入動作を移設** (候補語の置換 / caret 移動 / `AutoCompleteHandled`)。置換範囲は `file.GetAutoCompleteItems(caretIndex)` で**再取得** (旧 `ApplyAsync` と同じ再計算)。色は `Global.DefaultDrawStyle.ColorPallet[colorIndex]` で解決
+  - **修正4 (`CodeEditor2/CodeComplete/CodeCompleteHandler.cs`)**: `AutoCompleteItems` を契約型で反復し、`ToolItem` なら**そのまま使用** (interactive snippet の `ApplyAsync` を維持)、それ以外は `ContractAutocompleteToolItem` でラップ
+  - **修正5 (`CodeEditor2/CodeComplete/AutocompleteItem.cs`)**: `IconPath` を `protected` で公開 (アダプタがパーサのアイコンを引き継ぐため)
+  - **修正6 (`Data/VerilogCommon/AutoCompleteKeyword.cs`)**: `AppendKeywordAutoCompleteItems` と内部 helper 2 つの引数を契約型リストに
+  - **修正7 (`Verilog/CompletionContext.cs`)**: `x.Text` → `x.Label` (重複排除 2 箇所)、未使用になった `using CodeEditor2.CodeEditor.PopupMenu` を削除
+  - **修正8 (`CoreBridge/CompletionAdapter.cs`)**: ループを契約型にし、`is IVerilogAutocompleteItem` のキャストを**不要化** (全要素が契約)。`item` → `contractItem` に統一
+  - **実測 (成果)**: `Verilog/` 配下で `PopupMenu` / `ToolItem` 参照が **0 件**。`using CodeEditor2.*` は 2 ファイルのみ
+    | ファイル | 残る理由 |
+    |---|---|
+    | `CompletionContext.cs` | **基底クラス `CompletionContext`** の継承 (まだ editor 型) |
+    | `ParsedDocument.cs` | `IParsedDocument` / `PopupItem` / `DocumentParser` |
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **264 合格** / `~ParseSvTestFile` **1028 合格**
+  - **実機確認が必須 (sv-tests では検出不可)**: エディタで
+    (1) 識別子入力中に候補が出る (2) **候補を選ぶと正しく置換される** (`.` 直後 / 識別子の途中 / 上書き) (3) 候補の**色とアイコン**が従来どおり (4) **module 名候補を選ぶとインスタンス全体が挿入される** (interactive snippet 経路) (5) `begin` など block keyword が skeleton に展開される (6) Enter / Tab / Space / Escape / 矢印の挙動が従来どおり
+  - メモ: 挿入ロジックを `ContractAutocompleteToolItem.ApplyAsync` に**そのまま移設**した (判定条件・順序は同一)。`ModuleInstanceSnippet` は `ToolItem` のままなので `ApplyAsync` が従来どおり動く
+  - **残る本丸**: `Verilog.CompletionContext` が editor の `CompletionContext` を**継承**している点 (基底を契約化するか、parser 側に独自基底を持たせるかの設計判断が必要)
+
 - **`IVerilogAutocompleteItem` に `InsertText` を追加 (CompletionContext 契約化の Step 1) — 完了** (ビルド 0 errors、テスト 264 + sv-tests 1028 合格)
   - ユーザ要求: `step1から` (CompletionContext 契約化を 2 段階に分けた Step 1)
   - **Step 1 / Step 2 の分割理由 (実測に基づく)**: `AutoCompleteItems` の契約化は
