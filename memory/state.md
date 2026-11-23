@@ -3,6 +3,20 @@
 
 ## 進行中タスク (最新)
 
+- **`IParsedDocumentMessagesProvider` を契約へ移設 — CodeEditor2 分離 Stage 16a** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
+  - ユーザ要求: `進めて` (Stage 15 で示した残り 3 種の解消の 1 つ目)
+  - **着手前の実測**: 中身は `IReadOnlyList<object> Messages` の **1 メンバーだけ**で、要素型が `object` なのは「各プラグインが自前のメッセージ型を持ち、ホストは行ビルダー (`MessageNodeFactory`) に渡すだけ」という設計。**完全に UI フリー**
+  - 修正1 (`SystemVerilogCore/Parsing/IParsedDocumentMessagesProvider.cs` 新規): 同一定義を契約アセンブリへ
+  - 修正2 (`CodeEditor2/CodeEditor/IParsedDocumentMessagesProvider.cs`): **削除** (Stage 14 の `IParsedDocument` と同じく、別名では代入できないため)
+  - 修正3: 参照 2 箇所を契約型に置換 — `Views/InfoView.axaml.cs` (パターンマッチ) / `Verilog/ParsedDocument.cs` (実装宣言 + 明示的実装)
+  - **実測 (成果)**: `Verilog/ParsedDocument.cs` の `CodeEditor2` 依存が **`DocumentParser` のみ**に。`IParsedDocumentMessagesProvider` のための editor 参照が消えた
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **268 合格** / `~ParseSvTestFile` **1028 合格**
+  - **残り 2 種 (未着手)**
+    | 依存 | 箇所 | 解消方法 | 難易度 |
+    |---|---|---|---|
+    | `DocumentParser.ParseModeEnum` | editor 18 / plugin 20 | `CreateDocumentParser` の引数を契約 enum に変える (**`override` シグネチャも同時に変わる**ため一括置換が必要) | 小〜中 |
+    | `CodeEditor2.Data.Project` | include 1 箇所 | `IncludeFiles` の型を契約に。ただし editor 側が `ID` / `VerilogParsedDocument` / `Items` / `Dispose` を読むため**契約に 4 つ載せる**必要がある | 中 |
+
 - **`Verilog/` (パーサ本体) が Avalonia フリーになった — CodeEditor2 分離 Stage 15** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
   - ユーザ要求: `pluginVerilogの内容の多くをVerilogCoreに移して、LSPをpluginVerilogから切り離すことは可能？`
   - **回答のための実測 (推測しない)**
