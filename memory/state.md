@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **`IVerilogAutocompleteItem` に `InsertText` を追加 (CompletionContext 契約化の Step 1) — 完了** (ビルド 0 errors、テスト 264 + sv-tests 1028 合格)
+  - ユーザ要求: `step1から` (CompletionContext 契約化を 2 段階に分けた Step 1)
+  - **Step 1 / Step 2 の分割理由 (実測に基づく)**: `AutoCompleteItems` の契約化は
+    (a) `AutoCompleteItems` の型変更 と (b) **候補の適用動作の移設** が不可分
+    - 適用動作は各候補の `ApplyAsync` にあり、`codeDocument.Replace` + `Controller.CodeEditor.SetCaretPosition` + `AutoCompleteHandled` を呼ぶ
+    - `Data.VerilogCommon.AutoCompleteItem.ApplyAsync` は `GetAutoCompleteTarget` を**呼び直して置換範囲を再計算**する (パーサ由来のロジック)
+    - `ModuleInstanceSnippet` は `ToolItem` 派生の**スニペット適用**を持つ
+    - `state.md` 既出のとおり **sv-tests では回帰検出できず実機確認が必須**
+    → 情報量を先に契約へ載せる Step 1 (低リスク) と、型変更 + 適用移設の Step 2 (高リスク) に分割
+  - **Step 1 の実装**
+    - 修正1 (`SystemVerilogCore/Documents/IVerilogTextDocument.cs`): `IVerilogAutocompleteItem` に **`string InsertText { get; }`** を追加。`Label` の doc を「一覧に出す文字列」に直し、`InsertText` は「受け入れ時に挿入する文字列」であること、**両者は一致しない場合がある**こと (module 名 → インスタンス全体、block keyword → begin/end skeleton) を明記
+    - 修正2 (`CodeEditor2/CodeEditor/CodeComplete/AutocompleteItem.cs`): `public virtual string InsertText => Text;` を新設し、契約の明示的実装がそれを返す。**基底は展開規則を持たない** (ツールメニュー行にも使われる) ため既定は `Text`、展開する派生型が override する
+    - 修正3: `Data.VerilogCommon.AutoCompleteItem` は基底既定 (`Text`) を継承。実際の `ApplyAsync` も `Text` を挿入するため**現状の挙動と一致**
+  - **回帰テスト新設 2 件**
+    - `ParserBackedAdapterTests.AutocompleteContract_CarriesInsertText`: 契約に `InsertText` (string, 読み取り可) が存在し、実候補 (`AutoCompleteItem("begin")`) が `Label` / `InsertText` とも `"begin"` を返すこと
+    - `InMemoryCore_CompletionFromRealParser` に「全候補が text か insertText のどちらかを持つ」assert を追加
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **264 合格 (+1)** / `~ParseSvTestFile` **1028 合格**
+  - メモ: Step 1 は**契約の追加のみ**で、editor / parser の挙動は不変 (`ToolItem` 継承も維持)。Step 2 の変更が「型の差し替え + 適用動作の移設」だけになるよう下準備した形
+  - **Step 2 (未着手・高リスク) の内容**: (1) `CompletionContext.AutoCompleteItems` を `List<IVerilogAutocompleteItem>` に (2) `CodeCompleteHandler.work` の `aItem.Text` / `aItem.Assign` / `aItem.Apply()` を契約経由に (3) 適用動作 (置換範囲の再計算 / caret 移動 / `AutoCompleteHandled`) を editor 側ヘルパへ移設 (4) `Data.VerilogCommon.AutoCompleteItem` の editor 継承を外す。**sv-tests では検出できないため、エディタ実機での確認が必須**
+
 - **`Verilog/` の未使用 `using CodeEditor2.*` を一括削除 — CodeEditor2 分離 Stage 11** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
   - ユーザ要求: `続けて` (Stage 10 の続き)
   - **判定方法 (機械的・推測なし)**: ファイルごとに `CodeEditor2` の出現を全数走査し、**`using` 行以外に出現が無い**ものを未使用と判定

@@ -158,6 +158,46 @@ endmodule
            // DataObject candidate when typing an expression (the candidate
            // list is filtered by the incomplete word "my")
            Assert.Contains(entries!, e => e.Text == "mysignal");
+
+           // The parser-facing contract must carry the text to insert, not just
+           // the label: a host that inserts must not have to re-derive it from
+           // the label (a module name expands to a whole instantiation, a block
+           // keyword to its begin/end skeleton).
+           Assert.All(entries!, e =>
+               Assert.False(string.IsNullOrEmpty(e.InsertText) && string.IsNullOrEmpty(e.Text),
+                   $"candidate '{e.Text}' has neither text nor insert text"));
+       }
+
+       /// <summary>
+       /// The autocomplete contract exposes InsertText separately from Label.
+       ///
+       /// <para>
+       /// The editor's candidate types apply their expansion inside
+       /// ApplyAsync, which a UI-free host cannot call. Carrying the text on the
+       /// contract is the first step to moving the insertion to the host, so
+       /// this pins that the member exists and is populated.
+       /// </para>
+       /// </summary>
+       [Fact]
+       public void AutocompleteContract_CarriesInsertText()
+       {
+           Type contract = typeof(SystemVerilogCore.Documents.IVerilogAutocompleteItem);
+           var insertText = contract.GetProperty("InsertText");
+
+           Assert.NotNull(insertText);
+           Assert.Equal(typeof(string), insertText!.PropertyType);
+           Assert.True(insertText.CanRead);
+
+           // A concrete candidate must actually fill it (not throw / return
+           // null), otherwise the host has nothing to insert.
+           EnsurePluginRegistered();
+           var candidate = new pluginVerilog.Data.VerilogCommon.AutoCompleteItem(
+               pluginVerilog.Data.VerilogCommon.AutoCompleteItem.CompleteType.Keyword,
+               "begin", 4, Avalonia.Media.Colors.White);
+           SystemVerilogCore.Documents.IVerilogAutocompleteItem asContract = candidate;
+
+           Assert.Equal("begin", asContract.Label);
+           Assert.Equal("begin", asContract.InsertText);
        }
 
       [Fact]
