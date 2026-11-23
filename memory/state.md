@@ -3,6 +3,37 @@
 
 ## 進行中タスク (最新)
 
+- **`LockedDocument` (書き込み専用の死んだデータ) を契約ごと削除 — CodeEditor2 分離 Stage 10** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
+  - ユーザ要求: `続けて` (Stage 9 の続き)
+  - **着手前の実測 (全リポジトリ走査)**: `LockedDocument` は
+    | 種別 | 箇所 |
+    |---|---|
+    | 契約宣言 | `IParsedDocument.LockedDocument` / editor `ParsedDocument` のフィールド + 明示的実装 |
+    | parser 側の実装 | `Verilog.ParsedDocument` のフィールド + 明示的実装 |
+    | **書き込み** | `VerilogParser.ParseAsync` / `WordScanner.returnHierarchy` の **2 箇所** |
+    | **読み取り** | **0 箇所** (editor / LSP / テストすべて) |
+    - つまり **書き込むだけで誰も読まない死んだデータ**。そのために parser が editor の具象 `CodeDocument` を参照していた
+  - 修正1 (`CodeEditor2/CodeEditor/IParsedDocument.cs`): `List<CodeDocument> LockedDocument` を**契約から削除**。経緯コメントを残置
+  - 修正2 (`CodeEditor2/CodeEditor/ParsedDocument.cs`): editor 側のフィールドと明示的実装を削除
+  - 修正3 (`Verilog/ParsedDocument.cs`): parser 側のフィールドと明示的実装を削除
+  - 修正4 (`Parser/VerilogParser.cs`): `word.ConcreteDocument` を `LockedDocument` に追加する 5 行を削除
+  - 修正5 (`Verilog/WordScanner.cs` `returnHierarchy`): 同 6 行を削除
+  - 修正6 (`Verilog/WordScanner.cs`): 公開プロパティ `ConcreteDocument` の型を **`CodeEditor2.CodeEditor.CodeDocument?` → `CodeEditor.CodeDocument?`** (plugin 自身の型) に変更。`WordPointer.ConcreteDocument` も同様。plugin の `CodeDocument` は editor の派生なので色テーブル等には従来どおり到達できる
+  - **実測 (成果)**: `Verilog/` 配下の `CodeEditor2.CodeEditor.CodeDocument` 参照が **0 件**
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **263 合格** / `~ParseSvTestFile` **1028 合格**
+  - **実機確認が必要**: `LockedDocument` を削除したため、エディタで (1) ファイル編集→色付け更新 (2) include の色付け (3) 階層 parse が従来どおり動く ことを確認 (読み取りゼロなので影響は無い見込み)
+  - **`Verilog/` の残存 `CodeEditor2` 依存 (最終形が見えた)**
+    | 依存 | 箇所 | 性質 |
+    |---|---|---|
+    | `CompletionContext` 基底クラス / `AutocompleteItem` | `CompletionContext.cs` ほか (using のみのファイル多数) | **本丸** (`AutoCompleteItems` が `ToolItem`) |
+    | `IParsedDocument` / `IParsedDocumentMessagesProvider` | `ParsedDocument.cs` の実装宣言のみ | editor が parse 結果を保持するための契約 |
+    | `PopupItem` | `ParsedDocument.GetPopupItem` / `VerilogLabelExtensions` | editor 専用の hint 組み立て |
+    | `DocumentParser.ParseModeEnum` | 2 箇所 | `VerilogParseMode` の別名 (変換済み) |
+    | `Data.Project` (具象) | `WordScanner.addIncludeFile` の `ProjectInterop` 1 箇所 | include の item tree |
+    | `Data.File` | `HierarchyConnection` | editor 専用クラス |
+    | `Data.TextFile` 等 (using のみ) | 5 ファイル | 未使用 using |
+  - **次の対象**: (1) 未使用 `using CodeEditor2.*` の一括削除 (機械的・低リスク) (2) `CompletionContext` の契約化 (最大の難所)
+
 - **include 経路から `Data.Item` 依存を除去 — CodeEditor2 分離 Stage 9** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
   - ユーザ要求: `続けて` (Stage 8 の続き)
   - **着手前の実測**: `WordScanner.addIncludeFile` の `Data.Item` 依存は**1 行の代入と 1 回の ID 読み取りだけ**だった
