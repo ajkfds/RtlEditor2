@@ -169,6 +169,69 @@ endmodule
        }
 
        /// <summary>
+       /// At the start of a module-body line, the module names of the project are
+       /// offered as candidates and each one carries a full instantiation as its
+       /// insert text.
+       ///
+       /// <para>
+       /// This is the VS Code symptom "choosing a module name only inserts the
+       /// bare name / nothing expands". Two gates used to suppress the
+       /// candidates:
+       /// </para>
+       ///
+       /// <list type="bullet">
+       /// <item>Module.cs appended the snippets only when the candidate list was
+       /// still empty, but the keyword append immediately before it filled that
+       /// list, so the snippets were never appended;</item>
+       /// <item>the append also required two characters of candidate word.</item>
+       /// </list>
+       /// </summary>
+       [Fact]
+       public async Task Completion_ModuleNameCandidateExpandsToAnInstantiation()
+       {
+           EnsurePluginRegistered();
+
+           var core = new SystemVerilogLanguageServer.Server.InMemorySystemVerilogCore();
+           var project = (SystemVerilogLanguageServer.Server.InMemoryProject)await core.GetProjectAsync("default");
+
+           // One typed character is the case that broke: the module-body EOF
+           // branch appended the keyword list first, so the "list is empty"
+           // guard around AppendModuleInstanceSnippets was already false and no
+           // module candidate was produced. Measured before the fix:
+           //   typed "l"  -> [localparam, logic]           (no module)
+           //   typed "le" -> [leaf, top]                   (works)
+           // so the test must use a single character to be a real regression
+           // test.
+           string text =
+               "module leaf (input logic DATA_I, output logic DATA_O);\n" +
+               "endmodule\n" +
+               "module top;\n" +
+               "  l\n" +
+               "endmodule\n";
+
+           project.AddOrUpdateFile("mem://moduleinstance.sv", null, text, true);
+           var memFile = (SystemVerilogLanguageServer.Server.InMemoryFile)
+               project.FindFile("mem://moduleinstance.sv")!;
+
+           // caret right after "l" at the start of a module-body line
+           int index = text.IndexOf("  l\n", StringComparison.Ordinal) + 3;
+           var entries = project.GetCompletionItems(memFile, index);
+
+           Assert.NotNull(entries);
+           var leaf = entries!.FirstOrDefault(e => e.Text == "leaf");
+           Assert.True(leaf != null,
+               "the module name 'leaf' must be offered; got: " +
+               string.Join(", ", entries.Select(e => e.Text)));
+
+           // The candidate must expand: a snippet body, not the bare name.
+           Assert.Equal(2, leaf!.InsertTextFormat);
+           Assert.NotNull(leaf.InsertText);
+           Assert.True(leaf.InsertText!.Length > "leaf".Length,
+               "the module candidate must carry an instantiation body, got: " + leaf.InsertText);
+           Assert.Contains("leaf", leaf.InsertText);
+       }
+
+       /// <summary>
        /// The autocomplete contract exposes InsertText separately from Label.
        ///
        /// <para>

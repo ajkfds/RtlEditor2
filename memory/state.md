@@ -3,6 +3,41 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code で module 名候補を選んでもインスタンスが挿入されない → 修正完了** (ビルド 0 errors、テスト 265 + sv-tests 1028 合格、同梱サーバ publish 更新・実測済み)
+  - ユーザ報告: `module名候補→インスタンス挿入がvscodeでは動いてない。RTL Editorでは動作している。`
+  - **調査で否定できた原因 (実測)**
+    | 疑った原因 | 実測結果 |
+    |---|---|
+    | 同梱サーバが古い | **最新** (bundled の mtime が build より新しく、`systemverilog-hover` も含む) |
+    | サーバが snippet を返していない | **返している** (`insertText` + `insertTextFormat: 2` を stdio 実測で確認) |
+    | 拡張が insertText を落としている | **落としていない** (`extension.js` が `SnippetString` に変換、provider も 1 つだけ) |
+  - **決定的な一次情報 (`svlsp-extension.log` の実測)**: 実機では `completion result count: 1〜4` しか出ていなかった → **module 名候補自体が生成されていない**
+  - **根本原因 (2 つのゲート)** — `Module.cs` の module body EOF 分岐
+    ```csharp
+    if (word.CompletionContext.AutoCompleteItems.Count == 0)   // ← この条件が
+    {
+        word.CompletionContext.AppendKeywords(...);            //    キーワードを追加し
+        word.CompletionContext.AppendModuleInstanceSnippets(...);  // ← 同じ条件内で呼ばれる
+    }
+    ```
+    - `AppendKeywords` が先にリストを埋めるため、**`AppendModuleInstanceSnippets` は常にスキップ**されていた
+    - さらに `AppendModuleInstanceSnippets` 側の条件が `CandidateWord.Length > 1` で、**1 文字入力では出ない**
+  - **修正1 (`Verilog/BuildingBlocks/Module.cs`)**: 「リストが空」の判定を `appendModuleSnippets` に保持し、**キーワード追加だけ**をその条件で囲み、`AppendModuleInstanceSnippets` は**無条件で呼ぶ**よう変更 (経緯コメント付き)
+  - **修正2 (`Verilog/CompletionContext.cs`)**: `CandidateWord.Length > 1` → **`> 0`** (1 文字でも絞り込みとして機能する)
+  - **実測 (修正前 OLD vs 修正後 NEW、同じ入力で比較)**
+    | 入力 | OLD (修正前) | NEW (修正後) |
+    |---|---|---|
+    | `l` (1 文字) | 2 件 `localparam, logic` — **module 候補なし** | 4 件 `localparam, logic, leaf, top` — **`leaf` が snippet** |
+    | `le` (2 文字) | 2 件 `leaf, top` — snippet | 2 件 `leaf, top` — snippet |
+    - → **報告された症状 (1 文字目を打った時点で module 候補が出ない) を再現・解消**
+  - **回帰テスト新設 (`ParserBackedAdapterTests.Completion_ModuleNameCandidateExpandsToAnInstantiation`)**
+    - 1 文字 (`l`) の caret で `leaf` が候補に出ること、`InsertTextFormat == 2` で **インスタンス全体**が `InsertText` に入ることを assert
+    - **修正を stash で戻すと `the module name 'leaf' must be offered; got: localparam, logic` で失敗**することを実証 (症状そのもの)
+    - 注意: 当初 2 文字 (`le`) でテストを書いたが**修正前でも合格**した。1 文字に変えて初めて回帰テストとして機能した (この切り分けが重要)
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **265 合格 (+1)** / `~ParseSvTestFile` **1028 合格** / publish 更新 + `--selftest` 正常
+  - Next (実機確認): VS Code を**完全に終了**してから `RtlEditorVscodeExtension/update-server.bat` → Reload Window → module body の行頭で **1 文字打った時点で module 名が出る**こと、選ぶと**インスタンス全体が挿入される**ことを確認。**RtlEditor でも同じ修正が効く**ため、そちらでも module 名候補が出ることを確認
+  - メモ: 検証用プローブ (`_tmp_bundlecheck`) は削除済み。`RtlEditorVscodeExtension/server/` は `.gitignore` 対象
+
 - **`CompletionContext.AutoCompleteItems` を UI フリー契約へ + 適用動作を editor へ移設 (Step 2) — 完了** (ビルド 0 errors、テスト 264 + sv-tests 1028 合格、**実機確認が必要**)
   - ユーザ要求: `続けて` (Step 1 の続き)
   - **着手前の実測 (推測ではない)**: `AutoCompleteItems` の**読み取りは 2 箇所だけ**
