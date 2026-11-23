@@ -3,6 +3,34 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code で variable / port に hover したとき popup の文字に色が付かない → 修正完了** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格、同梱サーバ publish 更新・実測済み)
+  - ユーザ報告: `vscodeでvariable/portにhoverしたときのpopupの文字に色がついていません。RtlEditorで動作させたときは色がついています。`
+  - **前提の実測 (推測ではない)**: VS Code の hover markdown は**インライン色を原理的に描けない**。`workbench.desktop.main.js` の sanitizer を読み、許可される属性が `href,target,src,alt,title,for,name,role,tabindex,x-dispatch,required,checked,placeholder,type,start,width,height,align` のみで **`style` / `class` が無い**ことを確認 (`<span style="color:...">` は除去される)。色を出せる唯一の経路は **フェンス付きコードブロック + その言語に登録された TextMate grammar**
+  - **第二の実測**: 拡張は `contributes.grammars` を**持っていなかった** (`syntaxes/systemverilog.tmLanguage.json` は存在するが未参照の死んだファイル)。よってホバーのフェンスはトークン化されず、色は付きようがなかった
+  - 修正1 (`SystemVerilogCore/Documents/VerilogLabelRuns.cs` 新規): `VerilogLabel` → フェンス付き markdown の変換 (CRLF 正規化、空ラベルは null)
+  - 修正2 (`SystemVerilogCore/Documents/HoverContent.cs`): `Build(element, signatureBlock)` オーバーロード + `BuildSignature(element)` を公開 (レイアウト = 定義パス + Detail の組み立てを 1 箇所に保つ)
+  - 修正3 (`CodeEditor2VerilogPlugin/CoreBridge/ElementLabelAdapter.cs` 新規): パーサ要素 → ラベル markdown。**`ParsedDocument.GetPopupItem` と同じ要素種別** (DataObject / Function / Task_ / Typedef) を `AppendLabel` してラベル化 (エディタの hover hint と同一テキスト)。`GetPalette()` は `CodeDrawStyle` から `#RRGGBB` を返す
+  - 修正4 (`CodeEditor2VerilogPlugin/CoreBridge/HoverGrammar.cs` 新規): TextMate grammar の**生成器**。色は `CodeDrawStyle`、語はパーサのキーワード集合から。`ScopeName = source.systemverilog.hover` / ファイルは `syntaxes/systemverilog.tmLanguage.json` (死んでいた旧ファイルを置換)
+  - 修正5 (`SystemVerilogLanguageServer/Server/InMemorySystemVerilogCore.cs`): `InMemoryElement.Source` (パーサ要素) を新設し、`BuildSymbolsFromParsedDocument` の 2 箇所で設定
+  - 修正6 (`Server/LspHandler.cs` `HandleHover`): ラベル markdown を優先、無ければ `BuildSignatureMarkdown` で**全 hover を同じフェンス**に統一 (module も色付き)
+  - 修正7 (`SystemVerilogLanguageServer/Program.cs`): `--write-hover-grammar` / `--check-hover-grammar` を追加 (既存 `--write-hierarchy-menu-manifest` と同列の生成物管理)
+  - 修正8 (拡張): `contributes.grammars` に**専用言語 id `systemverilog-hover`** で登録 + `contributes.languages` に同 id を追加。`scripts/generate-hover-grammar.js` 新規 + `npm run generate-hover-grammar` / `check-hover-grammar`、`make-vsix.js` の手順に生成ステップを挿入。README に「Hover colours」節 (sanitizer の許可属性 / なぜフェンスしかないか / 生成手順)
+  - **専用言語 id にした理由 (重要)**: `systemverilog` 用に grammar を contribute すると**semantic tokens の色を TextMate が上書き**する (state.md 既出の回帰「カラーリングが textMate になっている」)。`injectTo` も同じ理由で使わない
+  - 回帰テスト新設:
+    - `LspHandlerEndToEndTests` 3 件: ラベルがフェンス (`systemverilog-hover`) で出る / module も同じフェンス / `@sync clk` アノテーション行が保持される
+    - `HoverGrammarTests` 4 件: コミット済み grammar が生成結果と一致 / manifest が専用 id で contribute し `injectTo` を持たない / 全色がパレット値 / 出力する全スコープに色規則がある / 全 regex がコンパイルできる
+  - **実測 (publish 済み同梱サーバを stdio 起動、VS Code と同じ経路)**:
+    | hover | 出力 |
+    |---|---|
+    | `logic [7:0] aaaa;` | ```` ```systemverilog-hover\nlogic  [7:0] aaaa\n``` ```` + `type:` / `bit width:` |
+    | `parameter int W = 8` | `parameter int W = 8` |
+    | port `DATA_I` | `wire logic [W - 1:0] DATA_I` |
+    | module `leaf` | `module leaf` |
+    | `logic [7:0] sync_var; // @sync:clk` | ラベル + `@sync clk` 行 |
+  - 検証: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **263 合格** / `~ParseSvTestFile` **1028 合格** / `--check-hover-grammar` → `[ok]`
+  - Next (実機確認): VS Code を**完全に終了**してから `RtlEditorVscodeExtension/update-server.bat` → Reload Window → 変数 / port / parameter / module の hover で **コードブロックの文字に色が付く**こと、`@sync` 行が annotation 色 (#C8FF64) になること、**エディタ本体の色分けが従来どおり** (semantic tokens のまま) であることを確認
+  - メモ: 検証用プローブ (`_tmp_vscodeprobe`) は削除済み。作業ツリーに残っていた未追跡の `SystemVerilogLanguageServer.Tests/DebugSignatureProbe.cs` は**既に存在しない API を参照してテストプロジェクトをビルド不能にしていた**ため削除した (本タスクの妨げ)。`RtlEditorVscodeExtension/server/` は `.gitignore` 対象
+
 - **VS Code の hover 詳細 / function 引数 popup が出ない → 原因は同梱サーバが古いこと (publish 未完了)** (コード修正は完了・テスト 241 + sv-tests 1028 合格)
   - ユーザ報告: `vscodeでのマウスオーバーポップアップに詳細が出ないです。function パラメータ入力時のpopupも出ないです。`
   - **実測 (同梱バイナリの文字列走査)**: 修正で追加したリテラル (`bit width: ` / `ports: ` / `arguments: ` / `value: `) の有無

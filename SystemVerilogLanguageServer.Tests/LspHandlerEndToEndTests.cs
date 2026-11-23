@@ -341,6 +341,117 @@ public class LspHandlerEndToEndTests
         Assert.Contains("DATA_I", moduleHover.Contents.Value);
     }
 
+    /// <summary>
+    /// The hover signature must be a fenced code block in the extension's
+    /// hover grammar, and it must carry the parser's own label.
+    ///
+    /// <para>
+    /// A hover cannot be coloured any other way: VS Code's markdown sanitizer
+    /// keeps only href/target/src/alt/title/for/name/role/tabindex/x-dispatch/
+    /// required/checked/placeholder/type/start/width/height/align, so a
+    /// <c>style</c> or <c>class</c> attribute is dropped and the only channel
+    /// is a fence tokenised by a TextMate grammar. Rendering the parser label
+    /// (not a re-worded description) is what makes the VS Code hover match the
+    /// editor's mouse-over hint - before this the block was the bare name, so
+    /// nothing in it could be coloured.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Hover_SignatureIsAColouredFenceOfTheParserLabel()
+    {
+        InMemorySystemVerilogCore core = new InMemorySystemVerilogCore();
+        LspHandler handler = new LspHandler(core);
+        string text =
+            "module top;\n"
+            + "  logic [7:0] data_bus;   // bus\n"
+            + "endmodule\n";
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = "file:///fence.sv", text }
+        });
+
+        int index = text.IndexOf("data_bus", StringComparison.Ordinal);
+        Hover? hover = SendRequest(handler, "textDocument/hover", new
+        {
+            textDocument = new { uri = "file:///fence.sv" },
+            position = PositionAt(text, index),
+        }) as Hover;
+
+        Assert.NotNull(hover);
+        string value = hover!.Contents.Value;
+        // The fence language must be the one the extension contributes a
+        // grammar for; "systemverilog" would be tokenised by the editor
+        // grammar instead (or not at all), so the colours would drift.
+        Assert.Contains("```systemverilog-hover", value);
+        // The label itself: type keyword, packed range, name.
+        Assert.Contains("logic", value);
+        Assert.Contains("[7:0]", value);
+        Assert.Contains("data_bus", value);
+    }
+
+    /// <summary>
+    /// A building block has no parser label, but its hover must still use the
+    /// same fence so it is coloured like every other hover.
+    /// </summary>
+    [Fact]
+    public void Hover_BuildingBlock_UsesTheSameFence()
+    {
+        InMemorySystemVerilogCore core = new InMemorySystemVerilogCore();
+        LspHandler handler = new LspHandler(core);
+        string text = "module leaf;\nendmodule\n";
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = "file:///block.sv", text }
+        });
+
+        int index = text.IndexOf("leaf", StringComparison.Ordinal);
+        Hover? hover = SendRequest(handler, "textDocument/hover", new
+        {
+            textDocument = new { uri = "file:///block.sv" },
+            position = PositionAt(text, index),
+        }) as Hover;
+
+        Assert.NotNull(hover);
+        Assert.Contains("```systemverilog-hover", hover!.Contents.Value);
+        Assert.Contains("module leaf", hover.Contents.Value);
+    }
+
+    /// <summary>
+    /// The label's comment annotation lines (`@sync clk`) must reach the hover:
+    /// the editor paints them with a distinct colour, so dropping them would
+    /// lose information the desktop hint shows.
+    /// </summary>
+    /// <remarks>
+    /// The clock has to be declared: the parser only records the domain when
+    /// the annotated signal resolves, so an undeclared clock yields no
+    /// annotation line at all (verified - the editor's hint behaves the same).
+    /// </remarks>
+    [Fact]
+    public void Hover_KeepsTheLabelAnnotationLines()
+    {
+        InMemorySystemVerilogCore core = new InMemorySystemVerilogCore();
+        LspHandler handler = new LspHandler(core);
+        string text =
+            "module top;\n"
+            + "  logic clk;\n"
+            + "  logic [7:0] sync_var; // @sync:clk\n"
+            + "endmodule\n";
+        SendNotification(handler, "textDocument/didOpen", new
+        {
+            textDocument = new { uri = "file:///sync.sv", text }
+        });
+
+        int index = text.IndexOf("sync_var", StringComparison.Ordinal);
+        Hover? hover = SendRequest(handler, "textDocument/hover", new
+        {
+            textDocument = new { uri = "file:///sync.sv" },
+            position = PositionAt(text, index),
+        }) as Hover;
+
+        Assert.NotNull(hover);
+        Assert.Contains("@sync", hover!.Contents.Value);
+    }
+
     /// <summary>Converts a document offset into an LSP position.</summary>
     private static object PositionAt(string text, int index)
     {
