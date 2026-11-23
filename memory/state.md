@@ -3,6 +3,35 @@
 
 ## 進行中タスク (最新)
 
+- **`DocumentParser` 中継による `ParseMode` 依存の解消 — CodeEditor2 分離 Stage 16b** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
+  - ユーザ要求: `pluginVerilog/Verilog以下をAvalonia/CodeEditorと分離したい。DocumentParserからParserの間を中継させることで、ParseModeの問題は回避できるのでは？`
+  - **回答 (実測に基づく)**: **回避できる**。`Verilog/` が `DocumentParser` を**型として使っていたのは 2 箇所だけ**で、しかも触っていたのは `CreateDocumentParser` / `ParseAsync` / `ParsedDocument` の 3 メンバだけだった
+    | 計測 | 結果 |
+    |---|---|
+    | `Verilog/` の `DocumentParser` 型参照 | **2 箇所のみ** (`Items/ModuleInstantiation.cs` L449 / `Items/CommentAnnotationItem.cs` L338)。`ParsedDocument.cs` はコメントアウト行 + `using` 行のみ |
+    | 2 箇所が使うメンバ | `CreateDocumentParser` → `ParseAsync()` → `ParsedDocument` の 3 つだけ |
+    | レシーバの型 | `Data.VerilogFile` / `Data.VerilogModuleInstance` (plugin 自身の型) |
+    | `DocumentParser.ParseModeEnum` の実体 | 「using-alias」ではなく**値をコピーした別 enum**。だから `ToVerilogParseMode()` 変換関数が必要だった |
+  - 修正1 (`SystemVerilogCore/Parsing/IVerilogDocumentParser.cs` 新規): UI フリーのパーサ契約 (`ParseMode` / `ParsedDocument` / `ParseAsync` ×2)。**契約 enum `VerilogParseMode` を使う**ので editor の別名 enum を名指ししなくて済む
+  - 修正2 (`CodeEditor2/CodeEditor/Parser/DocumentParser.cs`): 契約を実装。`ParseMode` プロパティは editor の `ParseModeEnum` のまま残し、契約側は**明示的実装**で `ToVerilogParseMode(ParseMode)` を返す → editor の呼び出し 20 箇所を**無変更**に保った
+  - 修正3 (`CodeEditor2/Data/TextFile.cs`): `AcceptVerilogParsedDocumentAsync(IVerilogDocumentParser)` を新設。**契約 → editor 型のダウンキャストをデータ層に集約** (parser は editor 型を名指ししない)
+  - 修正4 (`Data/IVerilogRelatedFile.cs`): `CreateVerilogDocumentParser(VerilogParseMode, token)` と `AcceptVerilogParsedDocumentAsync(...)` を追加
+  - 修正5 (実装 6 クラス): `VerilogFile` / `VerilogModuleInstance` / `InterfaceInstance` / `ImportedPackage` は editor 版へ委譲。`VerilogHeaderFile` / `VerilogHeaderInstance` は「EditParse のみ親ファイル経由」の既存規則を維持。`InstanceTextFile` に基底フォールバック
+  - 修正6 (`Verilog/` の 2 箇所): `CreateDocumentParser` → `CreateVerilogDocumentParser`、`AcceptParsedDocumentAsync` → `AcceptVerilogParsedDocumentAsync` に差し替え。`Verilog/ParsedDocument.cs` の未使用 `using CodeEditor2.CodeEditor.Parser;` を削除
+  - **実測 (成果)**: `Verilog/` 配下の `CodeEditor2.CodeEditor.Parser` / `DocumentParser.ParseModeEnum` / `CreateDocumentParser` の**実参照が 0 件** (残るのは経緯コメントのみ)。プラグインの警告が **754 → 560** に減少
+  - 検証: `RtlEditor2.Desktop.csproj` **0 errors** / `--filter !~ParseSvTestFile` **268 合格** / `~ParseSvTestFile` **1028 合格**
+  - コミット: SystemVerilogCore `6b5bc77` / CodeEditor2 `88d04d7` / CodeEditor2VerilogPlugin `718ae2a`、メイン `421633c` (submodule pointer)
+  - **中継で消えるもの / 消えないもの (実測)**
+    | 依存 | 中継で消えるか |
+    |---|---|
+    | `DocumentParser` / `ParseModeEnum` (型参照) | **消えた** (本 Stage) |
+    | `CodeEditor2.Data.ITextFile` 継承 (`RelativePath` / `ID` / `Project` / `Items` / `CodeDocument`) | **消えない** (25 ファイル) |
+    | `CodeEditor.CodeDocument` (`ConcreteDocument` 等) | **消えない** |
+    | `PopupItem` / `ToolItem` / `SnippetBuilder` の `Data.VerilogFile` | **消えない** |
+  - Next: エディタ / VS Code で (1) parameter override 付き instance をクリックしたとき override が反映されること (2) `// @scope` の即時解決が従来どおり動くこと (3) 階層 parse が末端まで走ること を確認
+  - メモ: `CodeEditor2` / `SystemVerilogCore` サブモジュールは**元から detached HEAD** (過去 Stage のコミットが branch 未到達)。今回も同じ状態でコミットしており、ブランチへの取り込みは別途必要
+=======
+
 - **`IParsedDocumentMessagesProvider` を契約へ移設 — CodeEditor2 分離 Stage 16a** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
   - ユーザ要求: `進めて` (Stage 15 で示した残り 3 種の解消の 1 つ目)
   - **着手前の実測**: 中身は `IReadOnlyList<object> Messages` の **1 メンバーだけ**で、要素型が `object` なのは「各プラグインが自前のメッセージ型を持ち、ホストは行ビルダー (`MessageNodeFactory`) に渡すだけ」という設計。**完全に UI フリー**
