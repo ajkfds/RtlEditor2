@@ -3,6 +3,34 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code 拡張の起動失敗 (exit code 134) → ログ調査完了・原因は特定できず (サイズ等はすべて健全)**
+  - ユーザ報告: `vscode extensionの起動失敗したのでログ確認して`
+  - **一次情報 (実測)**: `%APPDATA%\Code\logs\20261123T191927`
+    | 計測 | 結果 |
+    |---|---|
+    | `main.log` | `Extension host with pid 11808 exited with code: 134` / `crashed with code 134 and reason 'crashed'` (23:32:22) |
+    | `window6/exthost/` | **なし** → **拡張 JS が 1 行も走っていない** (`activate` 未到達) |
+    | `renderer.log` | `Loading development extension at ...` (23:32:21.475) → **1.17 秒後**にクラッシュ。**マニフェスト不正 (`property 'id'` / `'icon'`) は無し** |
+    | クラッシュログ | `svlsp-extension-crash.log` / `exthost.log` **なし** (`exthost/` が無いので正常) |
+    | Crashpad dump | 23:32 のクラッシュに対応する dump **なし** |
+  - **既知の原因をすべて実測で否定**
+    | 疑った原因 | 実測 | 判定 |
+    |---|---|---|
+    | `server/` の肥大化 | **148 files / 101.8 MB** (`.pdb` 0 / `.playwright` なし / runtimes は win のみ) | **健全** (目安 100〜150 MB / 150 files 以下) |
+    | 拡張フォルダ全体の肥大化 | 229 files / 102.2 MB | 健全 |
+    | 同梱サーバが古い | `systemverilog-hover` を含む最新 (前タスクで publish 済み) | 問題なし |
+    | `package.json` 不正 | strict JSON / contributes 11 セクション / 重複行 0 | 問題なし |
+    | `preLaunchTask` のビルド失敗 | `launch.json` / `code-workspace` とも **`preLaunchTask` 無し** | 対策済み |
+    | compound の `stopAll: true` | 両方とも **`false`** | 対策済み |
+    | 他拡張 (copilot-chat) の API proposal 警告 | 出ているが**起動を止めるものではない** | 無関係 |
+  - **結論**: 症状は「`server/` 肥大化」のシグネチャと完全一致するが、**サイズは健全**。ログにも VS Code の crash dump にも原因が残らないケースで、**これ以上の切り分けはログだけでは不可能**
+  - **次に試すこと (優先順、`memory/vscode_extension_debugging.md` に恒久化済み)**
+    1. **`Run Extension` 単体で F5** (compound を使わない) — 単体で起動すれば compound 側、落ちれば拡張フォルダ / VS Code 側
+    2. **`server/` を空にする** (`update-server.bat`、VS Code 完全終了後) — サイズが健全でも publish 途中の壊れたファイルが混ざれば落ちる
+    3. 空フォルダを開いて同じ `--extensionDevelopmentPath` で起動 — ワークスペース固有要因の除外
+    4. `--disable-extensions` で VS Code を起動してから拡張開発ホストを試す — 他拡張の干渉除外
+  - メモ: 調査用の一時ツール (`_tmp_logcheck`) は削除済み。**コード変更なし** (ビルド・テスト不要)。次回は「単体 F5 の結果」を一次情報として教えてもらうのが最短
+
 - **VS Code で module 名候補を選んでもインスタンスが挿入されない → 修正完了** (ビルド 0 errors、テスト 265 + sv-tests 1028 合格、同梱サーバ publish 更新・実測済み)
   - ユーザ報告: `module名候補→インスタンス挿入がvscodeでは動いてない。RTL Editorでは動作している。`
   - **調査で否定できた原因 (実測)**

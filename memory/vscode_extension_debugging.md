@@ -113,6 +113,36 @@ VS Code がログファイルを開いたままなので、共有読み取りを
 **このとき `svlsp-extension-crash.log` は絶対に作られない**ので、
 crash log を探し続けても無駄（存在しないのが正常）。
 
+### 既知の原因: `server/` に壊れた / 巨大なファイルがある (サイズだけでは判定できない)
+
+**実測 (2026-11-23 23:32 の起動失敗)**: 症状は上記の「肥大化」と**完全に一致**していた
+(`exthost/` なし / `exited with code: 134` / `Loading development extension` の直後に停止 /
+マニフェスト不正なし) が、**サイズは健全だった**:
+
+| 計測 | 値 | 判定 |
+|---|---|---|
+| `server/` | **148 files / 101.8 MB** | 健全 (目安 100〜150 MB / 150 files 以下) |
+| `.pdb` | 0 | OK |
+| `.playwright/` | なし | OK |
+| `runtimes/` | win-arm64, win-x64, win-x86 のみ | OK |
+| 拡張フォルダ全体 | 229 files / 102.2 MB | 健全 |
+| `package.json` | strict JSON / contributes 11 セクション / 重複行 0 | OK |
+| `launch.json` / `code-workspace` | `stopAll: false` / `preLaunchTask` なし | OK (既に対策済み) |
+| Crashpad の dump | 23:32 のクラッシュに対応する dump **なし** | — |
+
+→ **サイズ・鮮度・マニフェスト・起動構成のいずれも正常なのに 134 で落ちる**ケースがある。
+このとき Crashpad の dump も作られないため、ログからは原因を特定できない。
+
+**次に試すこと (この順で)**:
+1. **`Run Extension` 単体で F5** (compound を使わない)。単体で起動すれば compound 側の問題、
+   単体でも落ちれば拡張フォルダ / VS Code 側の問題と切り分けられる
+2. **`server/` を空にする** (`update-server.bat` は VS Code 終了後に実行)。
+   サイズが健全でも、**publish 途中の壊れたファイル**が混ざっていれば落ちる
+3. **別のワークスペースで起動** (`--extensionDevelopmentPath` を同じにして空フォルダを開く)。
+   ワークスペース固有の要因 (巨大ファイル / 監視対象) を除外できる
+4. VS Code を **--disable-extensions で起動**してから拡張開発ホストを試す
+   (他拡張 (copilot-chat / C# Dev Kit) の干渉を除外)
+
 ### 既知の原因: `preLaunchTask` のビルド失敗が compound 起動を巻き添えにする
 
 `Launch: SystemVerilog Language Server (C#)` に `preLaunchTask: build-server` があると、
