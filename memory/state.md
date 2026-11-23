@@ -3,6 +3,27 @@
 
 ## 進行中タスク (最新)
 
+- **パーサ本体 (`Verilog/`) から UI 静的シングルトンを除去 — CodeEditor2 分離 Stage 5** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
+  - ユーザ要求: `vscode extensionをCodeEditorから分離する作業を進めて`
+  - **着手前の実測 (推測ではない)**: `Verilog/` 配下で `CodeEditor2.Global.*` / `CodeEditor2.Controller.*` / `CodeEditor2.Views.*` を**実際に呼んでいたのは 3 箇所だけ**だった (他は `using` 行とコメントアウトのみ)
+    | 箇所 | 呼び出し | 意味 |
+    |---|---|---|
+    | `Items/ModuleInstantiation.cs` L254/256 | `Global.Projects.ContainsKey/[...]` | `// @project <name>` の解決 |
+    | `Items/ModuleInstantiation.cs` L318 | `Controller.AppendLog(..., Colors.Orange)` | `## unfound <module> at <bb>` のログ |
+    | `Items/UdpInstantiation.cs` L186 | `Controller.AppendLog(..., Colors.Orange)` | `## unfound <udp> at <bb>` のログ |
+    - つまり **パーサが editor の static singleton を直叩きしていた**。LSP には `Global.logView` も `Global.Projects` も無いため、ここが分離の実体だった
+  - **契約は既に存在していた (発見)**: `IVerilogProject.ResolveProject(name)` が Stage 3 で追加済みで、editor の `Project` も実装済みだった → `Global.Projects` は**そのまま置換可能**だった
+  - 修正1 (`SystemVerilogCore/Parsing/IVerilogDiagnosticLog.cs` 新規): UI 非依存のログシンク契約 (`WriteLine` / `WriteWarning`)。**ログ行はパース結果に影響しない**ことを doc に明記
+  - 修正2 (`SystemVerilogCore/Projects/IVerilogProject.cs`): `IVerilogDiagnosticLog? Log { get; }` を追加。ログ表示手段が無いホストは null を返して**行を捨てる**
+  - 修正3 (`CodeEditor2/Data/EditorDiagnosticLog.cs` 新規): `Controller.AppendLog` へ委譲するだけの実装 (色・UI スレッドマーシャリングは従来の `Controller` が持つ)。`Project.Log` が遅延生成で返す
+  - 修正4 (`ModuleInstantiation.cs`): `@project` 解決を `((IVerilogProject)word.Project).ResolveProject(...)` に、`sourceProject` の型を具象 `Project` → 契約 `IVerilogProject` に、設定取得を `sourceProject.GetPluginProperty()` → `resolvedProject.Settings as ProjectProperty` に置換
+  - 修正5 (`ModuleInstantiation.cs` / `UdpInstantiation.cs`): `Controller.AppendLog(...)` → `Log?.WriteWarning(...)`
+  - 修正6 (**死んだコードの削除**): `CompletionContext.cs` にあった `// CodeEditor2.Controller.AppendLog(...)` のコメントアウト **22 行**、`ProgramInstantiation.cs` の 1 行を削除 (到達不能な debug ログの残骸で、`CodeEditor2` 参照を数えるときにノイズになっていた)
+  - **実測 (成果)**: `Verilog/` 配下の `CodeEditor2.Global|Controller|Views|NavigatePanel.` の**実呼び出しが 0 件**
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **263 合格** / `~ParseSvTestFile` **1028 合格**
+  - **残る `Verilog/` の `CodeEditor2` 依存 (次の対象)**: `CompletionContext` (基底 `CompletionContext` / `PopupItem` / `AutocompleteItem`) / `ParsedDocument` (`IParsedDocument` / `IParsedDocumentMessagesProvider` / `PopupItem` / `CodeDocument`) / `WordScanner` (`ConcreteDocument` / `Project` / `Data.Item`) / `NameReference`・`SubroutineCall`・`Net.Project` (具象 `Data.Project` 型) / `Items/*Instantiation` (`IParsedDocument`) / `VirtualScopeNameSpace` (`ProjectProperty`)
+  - メモ: この段階で **editor 側の挙動は不変** (同じ文言・同じ色・同じスレッド処理)。`Project.Log` が null になるのは LSP / テストのみ
+
 - **VS Code で variable / port に hover したとき popup の文字に色が付かない → 修正完了** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格、同梱サーバ publish 更新・実測済み)
   - ユーザ報告: `vscodeでvariable/portにhoverしたときのpopupの文字に色がついていません。RtlEditorで動作させたときは色がついています。`
   - **前提の実測 (推測ではない)**: VS Code の hover markdown は**インライン色を原理的に描けない**。`workbench.desktop.main.js` の sanitizer を読み、許可される属性が `href,target,src,alt,title,for,name,role,tabindex,x-dispatch,required,checked,placeholder,type,start,width,height,align` のみで **`style` / `class` が無い**ことを確認 (`<span style="color:...">` は除去される)。色を出せる唯一の経路は **フェンス付きコードブロック + その言語に登録された TextMate grammar**
