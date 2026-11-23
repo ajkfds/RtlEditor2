@@ -3,6 +3,29 @@
 
 ## 進行中タスク (最新)
 
+- **`Verilog/` から editor 型参照を全消し — CodeEditor2 分離 Stage 16c** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
+  - ユーザ要求: `つづけて` (Stage 16b の続き)
+  - **着手前の実測 (`git grep -n "CodeEditor2" -- Verilog/`)**: 実参照は **2 箇所だけ**、残りはアイコンパス文字列と経緯コメントだった
+    | 箇所 | 内容 | 判定 |
+    |---|---|---|
+    | `Verilog/HierarchyConnection.cs` L145 | `getParentModuleInstance(CodeEditor2.Data.File)` | **宣言のみ・呼び出し元ゼロの死んだコード** |
+    | `Verilog/WordScanner.cs` L2085 | `ProjectInterop.AsEditorProject(...)` → `VerilogHeaderInstance.Create` へ | include 解決の実経路 |
+  - 修正1 (`Verilog/HierarchyConnection.cs`): 呼び出し元ゼロの `getParentModuleInstance` を**削除**。editor 型を運ぶだけで消費者のいないコードは依存だけを残すため、型を契約に変えるのではなく消した
+  - 修正2 (`Data/VerilogHeaderInstance.cs`): `IVerilogProject`（契約）を受ける `Create` オーバーロードを新設し、その中で `ProjectInterop.AsEditorProject` により editor 型へ絞る（**ダウンキャストをデータ層に集約**）。既存の editor 型オーバーロードはそのまま
+  - 修正3 (`Verilog/WordScanner.cs`): `wordPointer.ParsedDocument.Project`（契約）をそのまま渡すよう変更。`CodeEditor2.Data.Project` のローカル変数と `ProjectInterop` 呼び出しを削除
+  - **実測 (成果)**: `git grep -n "CodeEditor2" -- Verilog/` の結果、**実参照 0 件**。残るのは
+    - `"CodeEditor2/Assets/Icons/*.svg"` という**アイコンパス文字列**（アセット参照であって型依存ではない）
+    - `// ... CodeEditor2.Data.Project ...` 等の**経緯コメント**
+  - 検証: `RtlEditor2.Desktop.csproj` **0 errors** / `--filter !~ParseSvTestFile` **268 合格** / `~ParseSvTestFile` **1028 合格**
+  - コミット: CodeEditor2VerilogPlugin `8464bfa`、メイン `a5bafcd` (submodule pointer)
+  - **次に残る依存 (実測: 型依存ではなくインターフェース継承経由)**
+    | 依存 | 実態 | 解消の見込み |
+    |---|---|---|
+    | `Data.IVerilogRelatedFile : CodeEditor2.Data.ITextFile` | `Verilog/` が**25 ファイル**で `IVerilogRelatedFile` を使う。型としては plugin 自身の型だが、基底が `ITextFile` なので推移的に Avalonia へ到達する | `ITextFile` 継承を切る大規模リファクタが必要 |
+    | そのうち `Verilog/` が実際に読む `ITextFile` メンバ | `CodeDocument` / `Project` / `RelativePath` / `ID` / `Parent` / `Name` の **6 つだけ** | 契約に 6 つ載せれば切れる見込み |
+  - **判断**: この 6 メンバを契約化する作業は `VerilogFile` / `VerilogModuleInstance` / `InterfaceInstance` / `ImportedPackage` / `VerilogHeaderFile` / `VerilogHeaderInstance` の**基底クラス設計**（`TextFile` 継承の解体）に踏み込むため、独立した Stage として切り出すのが安全。今回の Stage 16b/16c で **`Verilog/` の「型としての editor 依存」は完了**
+=======
+
 - **`DocumentParser` 中継による `ParseMode` 依存の解消 — CodeEditor2 分離 Stage 16b** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
   - ユーザ要求: `pluginVerilog/Verilog以下をAvalonia/CodeEditorと分離したい。DocumentParserからParserの間を中継させることで、ParseModeの問題は回避できるのでは？`
   - **回答 (実測に基づく)**: **回避できる**。`Verilog/` が `DocumentParser` を**型として使っていたのは 2 箇所だけ**で、しかも触っていたのは `CreateDocumentParser` / `ParseAsync` / `ParsedDocument` の 3 メンバだけだった
