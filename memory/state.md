@@ -3,6 +3,23 @@
 
 ## 進行中タスク (最新)
 
+- **`IParsedDocument` を契約アセンブリへ移設 — CodeEditor2 分離 Stage 14** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
+  - ユーザ要求: `続けて`
+  - **着手前の実測**: `CodeEditor2.CodeEditor.IParsedDocument` の中身は **`Key` / `Version` の 2 つだけ** (Stage 10 で `LockedDocument` を削除済み) で、**完全に UI フリー**だった。それにもかかわらず editor アセンブリにあるため、parser が `ParsedDocument : IParsedDocument` と書くために editor を参照していた
+  - 修正1 (`SystemVerilogCore/Parsing/IParsedDocument.cs` 新規): `Key` / `Version` のみの契約を新設
+  - 修正2 (`CodeEditor2/CodeEditor/IParsedDocument.cs`): **別名 (派生インターフェース) をやめて削除**。理由: 派生にすると `ParsedDocument` (契約を直接実装) を `CodeEditor2...IParsedDocument` 型の引数へ渡せず **CS1503 が 13 箇所**出る。別名は「契約 → editor 型」の方向にしか効かない
+  - 修正3 (editor 側 6 ファイル): 参照を `SystemVerilogCore.Parsing.IParsedDocument` に置換 — `Controller` / `CodeEditor/ParsedDocument` / `Parser/DocumentParser` / `Data/ITextFile` / `Data/TextFile` (4 箇所) / `Views/InfoView`
+  - 修正4 (plugin 側 8 ファイル 15 箇所): 同様に置換 — `Verilog/ParsedDocument` / `Parser/VerilogParser` / `Data/{VerilogFile,InstanceTextFile,InterfaceInstance,ImportedPackage,VerilogHeaderFile,VerilogModuleInstance}`
+  - **実測 (成果)**: `Verilog/ParsedDocument.cs` が **`SystemVerilogCore.Parsing.IParsedDocument` を直接実装**するようになり、`IParsedDocument` のための editor 参照が消えた
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **268 合格** / `~ParseSvTestFile` **1028 合格**
+  - **実機確認が必要**: parse 結果の保持型を変えたため、エディタで (1) ファイル編集 → 色付け / 診断更新 (2) Messages ペインの表示 (3) 階層 parse 後のツリー更新 (4) instance の parse 結果解決 を確認
+  - **残る `Verilog/` の `CodeEditor2` 依存 (実質 2 種)**
+    | 依存 | 箇所 | 判断 |
+    |---|---|---|
+    | `IParsedDocumentMessagesProvider` | `ParsedDocument.cs` の実装宣言 1 箇所 | **Messages ペイン (editor 機能) が読む口** — editor 側に残すのが正しい |
+    | `DocumentParser.ParseModeEnum` | `ParsedDocument.cs` / `ModuleInstantiation.cs` / `CommentAnnotationItem.cs` | `CreateDocumentParser` が `override` のため呼び出し側だけ契約 enum にできない |
+    | `CodeEditor2.Data.Project` | `WordScanner.addIncludeFile` 1 箇所 | `IncludeFiles` が editor の `TextFile` 派生を保持するため (設計変更が必要) |
+
 - **mouse-over hint をデータと描画に分離 + `Verilog/` から `PopupItem` を排除 — CodeEditor2 分離 Stage 13** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格、**同梱サーバ publish は要ユーザ作業**)
   - ユーザ要求: `動いてます。つづけて`
   - **着手前の実測**: mouse-over hint (`ParsedDocument.GetPopupItem`) は「メッセージ行 (editor 専用の色 + SVG アイコン)」と「要素ラベル (UI フリー)」の 2 部構成で、**parser が editor の `PopupItem` と Avalonia を直接構築**していた
