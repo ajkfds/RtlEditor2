@@ -3,6 +3,24 @@
 
 ## 進行中タスク (最新)
 
+- **`CompletionContext.CarletPopupItems` を UI フリー契約へ — CodeEditor2 分離 Stage 7** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
+  - ユーザ要求: `つづけて` (Stage 6 の続き)
+  - **着手前の実測 (推測ではない)**: 最大の残塊だった `CarletPopupItems` (`List<PopupItem>`) の**読み取りは editor の 1 箇所だけ** (`CodeCompleteHandler` → `Controller.CodeEditor.OpenPopup`)。`SignatureHelpAdapter` は `CreateString()` しか使っておらず、既存の `IVerilogPopupItem` 契約で足りた
+  - **発見 (死んだコード)**: `CompletionContext.MouseOverPopupItems` は**宣言のみで書き込み・読み取りともゼロ**。mouse-over hint は `ITextFile.GetPopupItem` 経路なので、この リストは使われていなかった → 削除
+  - 修正1 (`CodeEditor2/CodeEditor/CodeComplete/CompletionContext.cs`): `CarletPopupItems` を `List<CodeEditor2.CodeEditor.PopupHint.PopupItem>` → **`List<SystemVerilogCore.Documents.IVerilogPopupItem>`** に変更。`MouseOverPopupItems` を削除 (経緯コメント残置)
+  - 修正2 (`CodeEditor2/Controller_CodeEditor.cs`): `OpenPopup` の引数を契約型リストにし、**契約 → `PopupItem` の変換をここに集約** (`ToPopupItem` helper 新設)。色は `Global.DefaultDrawStyle.ColorPallet[(byte)colorType]` で解決 — 契約の palette index は editor の palette スロットと同一値なので直接引ける。ラベル以外の実装は `CreateString()` + Normal 色でフォールバック (hint が消えない)
+  - 修正3 (parser 側 **21 箇所**): `CarletPopupItems.Add(label.ToPopupItem())` → `CarletPopupItems.Add(label)`。対象は `ParameterValueAssignment` / `ListOfArguments` / `BuiltinMethodCall` / `InterfaceInstance` (7) / `ModuleInstantiation` (4) / `ProgramInstantiation` (4) / `UdpInstantiation` (3)
+  - 修正4 (`CoreBridge/SignatureHelpAdapter.cs`): ループ変数を `PopupItem` → `IVerilogPopupItem` に
+  - **実測 (成果)**: `Verilog/` 配下で `PopupItem` を実際に使うのは **2 箇所だけ**
+    | 箇所 | 理由 |
+    |---|---|
+    | `ParsedDocument.GetPopupItem` | mouse-over hint の組み立て (editor 専用 API) |
+    | `VerilogLabelExtensions.ToPopupItem` / `AppendLabel` | 契約 → `PopupItem` 変換の実装 (editor 専用ヘルパ) |
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **263 合格** / `~ParseSvTestFile` **1028 合格**
+  - **実機確認が必要**: hint 経路の型を変えたため、エディタで (1) module instance の port 入力中に引数 hint が出る (2) function / task 呼び出しの `(` 直後・`,` 直後で hint が出る (3) 色が従来どおり (teal / pink 等) であること (4) VS Code の signature help が従来どおり出ること を確認
+  - メモ: 検証は sv-tests 1028 合格で「パース結果・診断・色分けが不変」を確認済み。hint は parse 結果から生成されるため、生成内容も変わらない (変わったのは**型**と変換の場所だけ)
+  - **残る `Verilog/` の `CodeEditor2` 依存**: `ParsedDocument` (`IParsedDocument` / `IParsedDocumentMessagesProvider` / `PopupItem`) / `WordScanner` (`ConcreteDocument` / `Data.Item` / include の item tree) / `CompletionContext` (基底クラス `CompletionContext` / `AutocompleteItem`) / `Items/*Instantiation` (`IParsedDocument`)
+
 - **`WordScanner.Project` / `ParsedDocument.Project` を契約型へ — CodeEditor2 分離 Stage 6** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
   - ユーザ要求: `つづけて` (Stage 5 の続き)
   - **着手前の実測**: `Project = word.Project` の代入先は**すべて `NamedItem.Project`（既に契約型 `IVerilogProject`）**だった。つまり具象 `Data.Project` は「代入するだけ」で使われており、型を契約にしても挙動が変わらない
