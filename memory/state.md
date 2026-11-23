@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **mouse-over hint をデータと描画に分離 + `Verilog/` から `PopupItem` を排除 — CodeEditor2 分離 Stage 13** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格、**同梱サーバ publish は要ユーザ作業**)
+  - ユーザ要求: `動いてます。つづけて`
+  - **着手前の実測**: mouse-over hint (`ParsedDocument.GetPopupItem`) は「メッセージ行 (editor 専用の色 + SVG アイコン)」と「要素ラベル (UI フリー)」の 2 部構成で、**parser が editor の `PopupItem` と Avalonia を直接構築**していた
+  - 修正1 (`SystemVerilogCore/Documents/VerilogHintContent.cs` 新規): `VerilogHintMessage` (severity + text) / `VerilogHintSeverity` / `VerilogHintContent` (messages + `VerilogLabel`)
+  - 修正2 (`Verilog/ParsedDocument.cs`): `GetPopupItem` → **`GetHintContent`** に変更し、**editor 型を一切生成しない**ように。`using CodeEditor2.CodeEditor.PopupHint` を削除
+  - 修正3 (`Data/VerilogCommon/AutoCompleteHandler.cs`): 描画を `BuildPopupItem` に移設。アイコンと 4 色 (Pink / Orange / LimeGreen / LightCyan) は**パレット外の色** (メッセージはトークンではない) なので editor に残す
+  - 修正4 (**`Verilog/VerilogLabelExtensions.cs` を分割**): UI フリー部 (`AppendText` / `AppendLabel(VerilogLabel)`) だけを残し、editor 専用の `ToPopupItem` / `AppendLabel(PopupItem)` を **`Data/VerilogCommon/PopupItemLabelExtensions.cs`** へ移設。`VerilogLabelExtensions.cs` は parser が使うため、editor 部と同居させると editor 依存が `Verilog/` に戻ってしまう
+  - **実測 (成果)**: `Verilog/` 配下で **`PopupItem` の参照が 0 件**
+  - 回帰テスト新設 3 件 (`HintContentTests`): 要素ラベル (type / 範囲) / メッセージ (severity + text) / 拒否位置 (直前が空白なら null)
+    - **テスト作成中に実測で判明**: 未宣言識別子は `Error` ではなく **`Implicit net declaration` (Warning) + `unused` (Notice)**。想定で書かず実測に合わせた
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **268 合格 (+3)** / `~ParseSvTestFile` **1028 合格**
+  - **publish 未完了 (要ユーザ作業)**: 稼働中の LSP サーバ (**PID 16084**) が `server/*.dll` をロックし `MSB3027/MSB3021` で失敗。**VS Code を完全に終了してから** `RtlEditorVscodeExtension/update-server.bat`
+  - Next (実機確認): publish 更新 → Reload Window → (1) 変数 / ポートの hover に type / bit width が出る (2) エラー / 警告位置に三角アイコン + 色付きメッセージが出る (3) 単語の先頭文字では hint が出ない
+  - **残る `Verilog/` の `CodeEditor2` 依存 (3 ファイル・すべて正当)**
+    | ファイル | 依存 | 判断 |
+    |---|---|---|
+    | `ParsedDocument.cs` | `IParsedDocument` / `IParsedDocumentMessagesProvider` / `DocumentParser` | **editor が parse 結果を保持するための契約** — 消さない |
+    | `WordScanner.cs` | `CodeEditor2.Data.Project` (include の item tree 1 箇所) | `IncludeFiles` が `VerilogHeaderInstance` (editor の `TextFile` 派生) を保持し、Updater / SimulationSetup がそれを読むため、**契約に document を露出させる設計変更が必要** (今回は見送り) |
+    | `ModuleInstantiation.cs` / `CommentAnnotationItem.cs` | `DocumentParser.ParseModeEnum` (完全修飾) | `CreateDocumentParser` が `override` のため、呼び出し側だけ契約 enum にできない |
+
 - **`Verilog.CompletionContext` の基底継承を契約へ — CodeEditor2 分離 Stage 12** (ビルド 0 errors、テスト 265 + sv-tests 1028 合格、同梱サーバ publish 更新)
   - ユーザ要求: `vscode extensionのCodeEditorからの分離をつづけて` (起動できるようになった後の続き)
   - **着手前の実測 (推測ではない)**: 本丸とされていた `Verilog.CompletionContext` の基底クラスを調べたところ、editor の `CompletionContext` の中身は **`CandidateWord` / `CandidateStartIndex` / `AutoCompleteItems` / `CarletPopupItems` の 4 つだけ**で、**すべて UI フリー契約型** (Stage 7/11 で移行済み) だった。`MouseOverPopupItems` は既に削除済み。→ **基底ごと契約へ移設可能**
