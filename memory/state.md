@@ -3,6 +3,23 @@
 
 ## 進行中タスク (最新)
 
+- **`IParsedDocument` への parser 側参照を排除 — CodeEditor2 分離 Stage 8** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
+  - ユーザ要求: `続けて` (Stage 7 の続き)
+  - **着手前の実測**: `Verilog/` 配下で `CodeEditor2.CodeEditor.IParsedDocument` を**実際に型として使っていたのは 5 箇所**で、**いずれも取得直後に `ParsedDocument` へダウンキャスト**していた (`is not ParsedDocument` → `(ParsedDocument)`)。つまり契約型は「表を通すためだけ」で、parser は一度も契約として使っていなかった
+  - 修正1 (`Data/VerilogFile.cs`): **`GetInstancedVerilogParsedDocument(key)` を新設** (`GetInstancedParsedDocument` を `as Verilog.ParsedDocument` で絞るだけ)。テーブル自体は editor 契約を保持し続ける (TextFile が任意プラグインの結果を保持できる)
+  - 修正2 (`Object.cs` / `VirtualInterface.cs` / `ModuleInstantiation.cs` / `ProgramInstantiation.cs` / `UdpInstantiation.cs`): `IParsedDocument` 変数 + ダウンキャストの 4 行を、`ParsedDocument? parsedDocument = source.GetInstancedVerilogParsedDocument(key)` の 1 行に置換。フォールバックは `source.ParsedDocument` (契約型) → **`source.VerilogParsedDocument`** (parser 型) に変更
+  - 修正3 (`Verilog/WordReference.cs`): `ParsedDocument` プロパティの戻り値を契約型 → `ParsedDocument?` に。**ダウンキャストをこの 1 箇所に集約** (全 reader は既に parser 型として使っていた)
+  - **実測 (成果)**: `Verilog/` 配下の `IParsedDocument` 参照は **`ParsedDocument` 自身の実装宣言 4 箇所のみ**
+    | 行 | 内容 |
+    |---|---|
+    | L20-21 | `class ParsedDocument : IParsedDocument, IParsedDocumentMessagesProvider` |
+    | L33 | `IParsedDocumentMessagesProvider.Messages` の明示的実装 |
+    | L74 | `IParsedDocument.LockedDocument` の明示的実装 |
+    - これらは **editor が parse 結果を保持するための契約** (TextFile / Messages ペインが読む) であり、parser 内部の計算には一切使われていない
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **263 合格** / `~ParseSvTestFile` **1028 合格**
+  - メモ: **挙動は不変**。キャスト位置を 5 箇所から 1 箇所へ寄せただけで、判定条件 (`is ParsedDocument`) は同じ
+  - **次の対象**: (1) `WordScanner.ConcreteDocument` (`CodeDocument`) / `ParsedDocument.CodeDocument` / `LockedDocument` — これらは editor の `CodeDocument` を直接持つ (2) `CompletionContext` の基底クラス (`AutoCompleteItems` が `ToolItem`) (3) `WordScanner` include の `Data.Item` / item tree
+
 - **`CompletionContext.CarletPopupItems` を UI フリー契約へ — CodeEditor2 分離 Stage 7** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
   - ユーザ要求: `つづけて` (Stage 6 の続き)
   - **着手前の実測 (推測ではない)**: 最大の残塊だった `CarletPopupItems` (`List<PopupItem>`) の**読み取りは editor の 1 箇所だけ** (`CodeCompleteHandler` → `Controller.CodeEditor.OpenPopup`)。`SignatureHelpAdapter` は `CreateString()` しか使っておらず、既存の `IVerilogPopupItem` 契約で足りた
