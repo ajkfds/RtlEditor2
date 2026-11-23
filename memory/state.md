@@ -3,6 +3,37 @@
 
 ## 進行中タスク (最新)
 
+- **`Verilog/` の未使用 `using CodeEditor2.*` を一括削除 — CodeEditor2 分離 Stage 11** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
+  - ユーザ要求: `続けて` (Stage 10 の続き)
+  - **判定方法 (機械的・推測なし)**: ファイルごとに `CodeEditor2` の出現を全数走査し、**`using` 行以外に出現が無い**ものを未使用と判定
+  - **削除した 5 ファイル**
+    | ファイル | 削除した using |
+    |---|---|
+    | `Verilog/Items/UdpInstantiation.cs` | `CodeEditor2.CodeEditor.CodeComplete` / `CodeEditor2.Data` |
+    | `Verilog/Items/ProgramInstantiation.cs` | `CodeEditor2.CodeEditor.CodeComplete` / `CodeEditor2.Data` |
+    | `Verilog/Items/InterfaceInstance.cs` | `CodeEditor2.Data` |
+    | `Verilog/Items/ModuleInstantiation.cs` | `CodeEditor2.CodeEditor.CodeComplete` / `CodeEditor2.Data` |
+    | `Verilog/ParameterValueAssignment.cs` | `CodeEditor2.CodeEditor.CodeComplete` |
+    | `Verilog/ParsedDocument.cs` | `CodeEditor2.CodeEditor.CodeComplete` (コメント内の言及のみ) |
+  - **`ModuleInstantiation` の `ParseModeEnum`**: `CreateDocumentParser` は editor の別名 enum を要求するため**呼び出しは変更せず**、`using` を外して**完全修飾名**にした (このファイルが editor に依存しないことを明示するため)。コメントで経緯を明記
+  - **実測 (成果)**: `Verilog/` 配下で `using CodeEditor2.*` を持つのは **2 ファイルのみ**
+    | ファイル | 残る理由 |
+    |---|---|
+    | `CompletionContext.cs` | `CompletionContext` 基底クラス / `PopupItem` / `PopupMenu.ToolItem` を実際に使用 (**本丸**) |
+    | `ParsedDocument.cs` | `IParsedDocument` / `IParsedDocumentMessagesProvider` / `PopupItem` / `DocumentParser` を実際に使用 |
+  - 検証: `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **263 合格** / `~ParseSvTestFile` **1028 合格**
+  - メモ: using の削除のみで**挙動は完全に不変**
+  - **`Verilog/` の残存 `CodeEditor2` 実依存 (これで全部)**
+    | 依存 | 箇所 | 性質 |
+    |---|---|---|
+    | `CompletionContext` 基底 / `PopupItem` / `ToolItem` | `CompletionContext.cs` | **本丸** (`AutoCompleteItems` が `ToolItem`) |
+    | `IParsedDocument` / `IParsedDocumentMessagesProvider` | `ParsedDocument.cs` | editor が parse 結果を保持するための契約 |
+    | `PopupItem` | `ParsedDocument.GetPopupItem` / `VerilogLabelExtensions` | editor 専用の hint 組み立て |
+    | `DocumentParser` | `ParsedDocument.cs` / `ModuleInstantiation.cs` (完全修飾) | `CreateDocumentParser` の戻り型 |
+    | `Data.Project` (具象) | `addIncludeFile` の `ProjectInterop` 1 箇所 | include の item tree |
+    | `Data.File` | `HierarchyConnection.cs` | editor 専用クラス |
+  - **次の対象**: `CompletionContext` の契約化 (最大の難所)。`AutoCompleteItems` が editor の `ToolItem` で、候補の適用動作 (`ApplyAsync` の caret 操作) も editor 側にあるため、**契約化 + 適用動作の移設**が不可分
+
 - **`LockedDocument` (書き込み専用の死んだデータ) を契約ごと削除 — CodeEditor2 分離 Stage 10** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
   - ユーザ要求: `続けて` (Stage 9 の続き)
   - **着手前の実測 (全リポジトリ走査)**: `LockedDocument` は
