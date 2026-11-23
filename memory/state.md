@@ -3,6 +3,29 @@
 
 ## 進行中タスク (最新)
 
+- **`Verilog/` (パーサ本体) が Avalonia フリーになった — CodeEditor2 分離 Stage 15** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
+  - ユーザ要求: `pluginVerilogの内容の多くをVerilogCoreに移して、LSPをpluginVerilogから切り離すことは可能？`
+  - **回答のための実測 (推測しない)**
+    | 計測 | 結果 |
+    |---|---|
+    | `Verilog/` の `using Avalonia` / `AjkAvaloniaLibs` | **5 ファイルあったが、すべて `using` 行のみで実使用ゼロ** |
+    | 5 ファイル削除後の `Avalonia` 言及 | **コメントのみ** |
+    | `Verilog/` の `CodeEditor2` 実依存 | **3 種のみ** (`IParsedDocumentMessagesProvider` 1 箇所 / `DocumentParser.ParseModeEnum` 3 ファイル / `Data.Project` 1 箇所) |
+  - **修正**: 未使用の `using Avalonia.Input` (2) / `using Avalonia.Controls` (1) / `using Avalonia.Threading` (2) を削除
+    - `Verilog/CompletionContext.cs` / `DataObjects/Arrays/AssociativeArray.cs` / `Items/BindDirective.cs` / `Items/ModuleInstantiation.cs` / `Items/ProgramInstantiation.cs`
+  - **結論 (可能か / どう進めるか)**
+    - **`Verilog/` は既に「UI フリーなパーサ本体」になっている**。Avalonia 依存はゼロ、`CodeEditor2` 依存は 3 種だけで、いずれも**薄い契約に置き換え可能**
+    - **`pluginVerilog` → `SystemVerilogCore` への「移動」は不要**。`Verilog/` は既に UI フリーなので、**アセンブリを分ける (プロジェクト分割) だけ**で LSP は pluginVerilog から切り離せる。ファイルを 1 つずつ動かす必要はない
+    - **残る 3 種の解消方法 (実測に基づく)**
+      | 依存 | 解消方法 | 難易度 |
+      |---|---|---|
+      | `DocumentParser.ParseModeEnum` (3 ファイル) | `CreateDocumentParser` の引数を契約 enum `VerilogParseMode` に変える (`override` 側も同時に) | 小 |
+      | `IParsedDocumentMessagesProvider` (1 箇所) | メッセージ一覧を契約 (`IReadOnlyList<object>` 相当) に載せる | 小 |
+      | `CodeEditor2.Data.Project` (include 1 箇所) | `IncludeFiles` の型を契約に変える (editor の Updater / SimulationSetup が `VerilogHeaderInstance` を読むため、**両方の設計変更が必要**) | 中 |
+    - **推奨する進め方**: 3 種を解消 → `Verilog/` を新規プロジェクト (`SystemVerilogParser`) へ `git mv` → `CodeEditor2VerilogPlugin` は UI 側だけを残す。**LSP はパーサプロジェクトのみ参照**する形になり、pluginVerilog への依存が消える
+  - 検証: `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **268 合格** / `~ParseSvTestFile` **1028 合格**
+  - メモ: 今回は「実現可能性の実測」と「Avalonia 依存の除去」まで。**プロジェクト分割そのものは未実施** (アセンブリ構成の変更はビルド設定・サブモジュール・publish 経路に波及するため、次段階として切り出すのが安全)
+
 - **`IParsedDocument` を契約アセンブリへ移設 — CodeEditor2 分離 Stage 14** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
   - ユーザ要求: `続けて`
   - **着手前の実測**: `CodeEditor2.CodeEditor.IParsedDocument` の中身は **`Key` / `Version` の 2 つだけ** (Stage 10 で `LockedDocument` を削除済み) で、**完全に UI フリー**だった。それにもかかわらず editor アセンブリにあるため、parser が `ParsedDocument : IParsedDocument` と書くために editor を参照していた
