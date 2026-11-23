@@ -3,6 +3,25 @@
 
 ## 進行中タスク (最新)
 
+- **`WordScanner.Project` / `ParsedDocument.Project` を契約型へ — CodeEditor2 分離 Stage 6** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
+  - ユーザ要求: `つづけて` (Stage 5 の続き)
+  - **着手前の実測**: `Project = word.Project` の代入先は**すべて `NamedItem.Project`（既に契約型 `IVerilogProject`）**だった。つまり具象 `Data.Project` は「代入するだけ」で使われており、型を契約にしても挙動が変わらない
+  - 修正1 (`Verilog/WordScanner.cs`): `Project` を `CodeEditor2.Data.Project` → `SystemVerilogCore.Projects.IVerilogProject` に変更 (`RootParsedDocument.Project` を返すだけ)
+  - 修正2 (`Verilog/ParsedDocument.cs`): `Project` を契約型にし、**`ProjectInterop.AsEditorProject(...)` のダウンキャストを撤去** (Stage 3 で導入した互換層が不要になった)。`ParsedDocument.Message` の `project` 引数 / `Project` プロパティも契約型に
+  - 修正3 (`NameReference` / `SubroutineCall.RandomizeCall` / `Net.Interconnect`): 具象 `Data.Project` 型だったフィールドを契約型に。**いずれも書き込みのみで読み取りゼロ** (`NameReference.project` は完全未使用)
+  - 修正4 (`Items/ProgramInstantiation.cs` / `Items/UdpInstantiation.cs`): `Project sourceProject` ローカルを契約型に
+  - 修正5 (**editor 専用コードにダウンキャストを集約**): `SimulationSetup` (`Global.Projects` を走査する editor 専用クラス) 2 箇所と `WordScanner.addIncludeFile` (`VerilogHeaderInstance.Create` が item tree を組むため具象型必須) で `ProjectInterop.AsEditorProject(...)` を使用。**契約 → 具象の変換点が明示的**になった
+  - 修正6 (`MessageView/MessageNode.cs`): `project` フィールドを契約型に (このノードは現状保持のみ)
+  - **実測 (成果)**: `Verilog/` 配下で `CodeEditor2.Data.Project` を**実際に使うのは 2 箇所だけ**
+    | 箇所 | 理由 |
+    |---|---|
+    | `WordScanner.addIncludeFile` | `VerilogHeaderInstance.Create` が editor の item tree を組む |
+    | `VirtualScopeNameSpace` | `Project is CodeEditor2.Data.Project` で `ProjectProperties` を読む |
+    - 他は**コメントのみ**
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **263 合格** / `~ParseSvTestFile` **1028 合格**
+  - **次の対象**: (1) `VirtualScopeNameSpace` の `ProjectProperties` 直読み → 契約 (`IVerilogProjectSettings`) 経由に (2) `addIncludeFile` の item tree 依存 → `IVerilogItemTree` + `IVerilogItem` で `VerilogHeaderInstance` を作れるようにする (3) `CompletionContext` / `ParsedDocument` の `PopupItem` / `AutocompleteItem` / `IParsedDocument` 依存
+  - メモ: **editor の挙動は不変**。契約型にしても代入先が契約型だったため、パース結果・診断・色は一切変わらない (sv-tests 1028 合格で確認)
+
 - **パーサ本体 (`Verilog/`) から UI 静的シングルトンを除去 — CodeEditor2 分離 Stage 5** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
   - ユーザ要求: `vscode extensionをCodeEditorから分離する作業を進めて`
   - **着手前の実測 (推測ではない)**: `Verilog/` 配下で `CodeEditor2.Global.*` / `CodeEditor2.Controller.*` / `CodeEditor2.Views.*` を**実際に呼んでいたのは 3 箇所だけ**だった (他は `using` 行とコメントアウトのみ)
