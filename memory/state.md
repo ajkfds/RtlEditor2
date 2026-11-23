@@ -3,6 +3,21 @@
 
 ## 進行中タスク (最新)
 
+- **include 経路から `Data.Item` 依存を除去 — CodeEditor2 分離 Stage 9** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
+  - ユーザ要求: `続けて` (Stage 8 の続き)
+  - **着手前の実測**: `WordScanner.addIncludeFile` の `Data.Item` 依存は**1 行の代入と 1 回の ID 読み取りだけ**だった
+    - `vhInstance.Parent = (Data.Item)wordPointer.ParsedDocument.File;` … **item tree の親の設定**
+    - `KeyGenerator(vhInstance.Parent.ID, ...)` … **その親の ID を読むだけ**
+    - つまり parser は「ID が欲しい」だけで、item tree の親が要るわけではなかった
+  - **重要な発見**: その `Parent` は**この時点では常に null だった**。設定するのは `VerilogCommon.Updater.addVerilogHeaderInstance` で、それは `AcceptParsedDocumentAsync` → `UpdateAsync` の**後**に走る。よって旧コードの `vhInstance.Parent.ID` は `NullReferenceException` になり得る順序だった (Parent は `wordPointer.ParsedDocument.File` を `Data.Item` にキャストしたもので、`TextFile` は `Item` 派生なので実際は非 null になり得るが、**キャストできないホストでは `throw` していた**)
+  - 修正1 (`Verilog/WordScanner.cs`): `Parent` の設定と `Parent.ID` の読み取りを削除し、**`wordPointer.ParsedDocument.File.ID` (契約 `IVerilogDocumentFile.ID`) を直接使う**ように変更。コメントで「item tree の親は editor の帳簿 (Updater が設定する) であり parser の責務ではない」旨を明記
+  - 修正2 (`Data/VerilogHeaderInstance.cs`): **未使用の `projectProperty` 変数を削除** (`project.ProjectProperties[...]` を引くだけで一度も読まれていなかった)
+  - **実測 (成果)**: `Verilog/` 配下の `CodeEditor2.Data.Item` 参照が **0 件** (コメントを除く)
+  - 検証: `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **263 合格** / `~ParseSvTestFile` **1028 合格**
+  - **実機確認が必要**: include 経路を触ったため、エディタで (1) `` `include `` したファイルが NavigatePanel に **ヘッダインスタンスとして展開**される (2) include 先のマクロが展開される (3) 階層 parse が従来どおり走る を確認
+  - メモ: `VerilogHeaderInstance.Parent` 自体は残置 (editor の `UpdateAsync` が親の VerilogFile を辿るのに使う)。設定者は `Updater` のみになり、**責務が editor 側に一本化**された
+  - **次の対象**: (1) `WordScanner.ConcreteDocument` / `ParsedDocument.CodeDocument` / `LockedDocument` (editor の `CodeDocument` を直接保持) (2) `CompletionContext` の基底クラス (`AutoCompleteItems` が `ToolItem`)
+
 - **`IParsedDocument` への parser 側参照を排除 — CodeEditor2 分離 Stage 8** (ビルド 0 errors、テスト 263 + sv-tests 1028 合格)
   - ユーザ要求: `続けて` (Stage 7 の続き)
   - **着手前の実測**: `Verilog/` 配下で `CodeEditor2.CodeEditor.IParsedDocument` を**実際に型として使っていたのは 5 箇所**で、**いずれも取得直後に `ParsedDocument` へダウンキャスト**していた (`is not ParsedDocument` → `(ParsedDocument)`)。つまり契約型は「表を通すためだけ」で、parser は一度も契約として使っていなかった
