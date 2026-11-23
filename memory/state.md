@@ -3,7 +3,26 @@
 
 ## 進行中タスク (最新)
 
-- **VS Code 拡張の起動失敗 (exit code 134) → ログ調査完了・原因は特定できず (サイズ等はすべて健全)**
+- **`Verilog.CompletionContext` の基底継承を契約へ — CodeEditor2 分離 Stage 12** (ビルド 0 errors、テスト 265 + sv-tests 1028 合格、同梱サーバ publish 更新)
+  - ユーザ要求: `vscode extensionのCodeEditorからの分離をつづけて` (起動できるようになった後の続き)
+  - **着手前の実測 (推測ではない)**: 本丸とされていた `Verilog.CompletionContext` の基底クラスを調べたところ、editor の `CompletionContext` の中身は **`CandidateWord` / `CandidateStartIndex` / `AutoCompleteItems` / `CarletPopupItems` の 4 つだけ**で、**すべて UI フリー契約型** (Stage 7/11 で移行済み) だった。`MouseOverPopupItems` は既に削除済み。→ **基底ごと契約へ移設可能**
+  - 修正1 (`SystemVerilogCore/Documents/IVerilogPopupItem.cs`): **`VerilogCompletionContext` を新設** (`CandidateWord` / `CandidateStartIndex` / `List<IVerilogAutocompleteItem>` / `List<IVerilogPopupItem>`)
+  - 修正2 (`CodeEditor2/CodeComplete/CompletionContext.cs`): 自前の 4 フィールドを削除し、**`VerilogCompletionContext` を継承するだけの薄い別名**に (editor の全呼び出し元は無変更でコンパイル)
+  - 修正3 (`Verilog/CompletionContext.cs`): 基底を `CodeEditor2...CompletionContext` → **`SystemVerilogCore.Documents.VerilogCompletionContext`** に変更。未使用になった `using CodeEditor2.CodeEditor.CodeComplete` / `PopupHint` を削除
+  - 修正4 (**`ITextFile.GetAutoCompleteItems` の戻り値を契約型に**): これが editor 型を要求していた最後の関門。`ITextFile` / `TextFile` / `ChatInputTextFile` と、plugin 側の override **5 箇所** (`VerilogFile` / `VerilogModuleInstance` / `InterfaceInstance` / `VerilogHeaderInstance` / `ImportedPackage`) を契約型に統一
+  - 修正5 (`CodeCompleteHandler` / `ContractAutocompleteToolItem`): 受け取る型を契約型に
+  - **実測 (成果)**: `Verilog/` 配下で `CodeEditor2` を実際に参照するのは **3 ファイルのみ**
+    | ファイル | 残る依存 | 性質 |
+    |---|---|---|
+    | `ParsedDocument.cs` | `IParsedDocument` / `IParsedDocumentMessagesProvider` / `PopupItem` / `DocumentParser` | editor が parse 結果と mouse-over hint を保持するための契約 |
+    | `WordScanner.cs` | `CodeEditor2.Data.Project` (`addIncludeFile` の `ProjectInterop` 1 箇所) | include の item tree |
+    | `Items/ModuleInstantiation.cs` / `CommentAnnotationItem.cs` | `DocumentParser.ParseModeEnum` (完全修飾) | `CreateDocumentParser` の引数 |
+    - 他は**コメントのみ**
+  - 検証: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `Tests` / `RtlEditor2.Desktop` すべて **0 errors** / `--filter !~ParseSvTestFile` **265 合格** / `~ParseSvTestFile` **1028 合格** / 同梱サーバ publish 更新
+  - **実機確認が必須**: 補完経路の型を変えたため、エディタで (1) 識別子入力中の候補 (2) `.` 直後の member 候補 (3) 候補を選んだときの置換 (4) module 名 → インスタンス挿入 (5) 引数 hint (6) VS Code の補完と signature help を確認
+  - **次の対象**: `ParsedDocument` の `PopupItem` (mouse-over hint の組み立て) を editor 側へ移設すれば、`Verilog/` から `PopupItem` 依存が消える。`IParsedDocument` / `DocumentParser` は editor が parse 結果を保持するために必要なので、**契約を editor 側に残すのが正しい分担** (無理に消さない)
+
+- **VS Code 拡張の起動失敗 (exit code 134) → ログ調査完了・原因は特定できず (サイズ等はすべて健全)** (その後 **`Run Extension` 単体 F5 で起動できることをユーザが確認** → compound 起動側の問題と判明)
   - ユーザ報告: `vscode extensionの起動失敗したのでログ確認して`
   - **一次情報 (実測)**: `%APPDATA%\Code\logs\20261123T191927`
     | 計測 | 結果 |
