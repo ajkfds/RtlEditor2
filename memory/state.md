@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **`wor` を multiple drive するとエラーになる → 修正完了** (ビルド 0 errors、テスト 275 + sv-tests 1028 合格)
+  - ユーザ報告: `wor をmultiple driveしたときにエラー扱いになるのを修正して。worの場合はエラーにしない。`
+  - **根本原因 (`checkContinuousAssignmentConflict` が net 種別を見ていなかった)**: 多重駆動チェックは `DataObject` 単位で重なりを見るだけで、**その net が wired-logic かどうかを判定していなかった**
+    - `Net.NetTypeEnum` には `Wor` / `Wand` / `Trior` / `Triand` が既にあり、`parseNetType` も正しく設定していた (パースは正常)
+    - しかし `Items/ContinuousAssign.cs` の `checkContinuousAssignmentConflict` は `isContinuousAssignmentOverlapped` が true なら**無条件に `AddError`** していた
+    - `wor` / `wand` / `trior` / `triand` は**複数ドライバを wired 関数 (OR / AND) で解決するための net 種別**なので、複数の連続代入は仕様どおり (IEEE 1364-2005 4.4.2 / IEEE 1800-2017 6.6.7)。単一ドライバ制約 (6.5) は `wire` / `tri` などにのみ掛かる
+  - 修正 (`Verilog/Items/ContinuousAssign.cs`): `IsWiredLogicNet(DataObject)` を新設し、重なり検出時の `AddError` を **wired-logic net では出さない**ように変更
+    - 対象は `Wor` / `Wand` / `Trior` / `Triand` の 4 種
+    - **`supply0` / `supply1` は除外** (定数ドライバであって wired logic ではない)
+    - `dataObject.ContinuousAssigned = true` は従来どおり設定 (以降の判定・undriven 判定に必要)
+  - 回帰テスト新設 3 件 (`AssignmentCheckTests`):
+    - `Wor_DrivenByMultipleAssigns_IsNotReported`
+    - `WiredLogicNets_DrivenByMultipleAssigns_AreNotReported` (`wor` / `wand` / `trior` / `triand` の 4 種をループ)
+    - `Wire_DrivenByMultipleAssigns_IsStillReported` (**`wire` は引き続きエラー**であることの確認)
+    - **修正を入れる前は 2 件が `[Error] 'w' has multiple continuous assignments` で失敗**することを実測
+  - 検証: `RtlEditor2.Desktop.csproj` **0 errors** / `--filter !~ParseSvTestFile` **275 合格 (+3)** / `~ParseSvTestFile` **1028 合格**
+  - コミット: CodeEditor2VerilogPlugin `ef45065`、メイン `4c4bd63` (tests)
+  - メモ: `wor` は `unused` notice が別途出るが、これは「一度も読まれていない」ことによる妥当な notice で本件とは無関係
+=======
+
 - **`always_comb` で駆動した変数が `undriven` 扱いになる → 修正完了** (ビルド 0 errors、テスト 272 + sv-tests 1028 合格)
   - ユーザ報告: `always_combによる駆動をおこなったlogicがnot driven扱いになります`
   - **根本原因 (`AssertAssigned()` が `clockDomains != null` の内側にあった)**: `undriven` は `DataObject.AssignedMap` が埋まっているかで判定される。その map を埋める唯一の呼び出しが `AssertAssigned()` で、**代入経路ごとに置かれ方が違っていた**
