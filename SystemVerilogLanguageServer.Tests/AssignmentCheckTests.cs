@@ -270,6 +270,57 @@ namespace SystemVerilogLanguageServer.Tests
         /// was reported as undriven.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// A <c>wor</c> / <c>wand</c> / <c>trior</c> / <c>triand</c> net is a
+        /// wired-logic net: driving it from several continuous assignments is
+        /// exactly what it is for (IEEE 1364-2005 4.4.2 / IEEE 1800-2017 6.6.7),
+        /// so it must not be reported as a multiple drive.
+        /// </summary>
+        [Fact]
+        public async Task Wor_DrivenByMultipleAssigns_IsNotReported()
+        {
+            EnsurePluginRegistered();
+            var messages = await ParseAsync(
+                "module top;\n" +
+                "  wor w;\n" +
+                "  assign w = 1'b0;\n" +
+                "  assign w = 1'b1;\n" +
+                "endmodule\n");
+            Assert.False(HasContaining(messages, "Error", "multiple continuous assignments"),
+                "a wor net may be driven by several assignments (got: " + Describe(messages) + ")");
+        }
+
+        [Fact]
+        public async Task WiredLogicNets_DrivenByMultipleAssigns_AreNotReported()
+        {
+            EnsurePluginRegistered();
+            foreach (string netType in new[] { "wor", "wand", "trior", "triand" })
+            {
+                var messages = await ParseAsync(
+                    "module top;\n" +
+                    "  " + netType + " w;\n" +
+                    "  assign w = 1'b0;\n" +
+                    "  assign w = 1'b1;\n" +
+                    "endmodule\n");
+                Assert.False(HasContaining(messages, "Error", "multiple continuous assignments"),
+                    netType + " may be driven by several assignments (got: " + Describe(messages) + ")");
+            }
+        }
+
+        [Fact]
+        public async Task Wire_DrivenByMultipleAssigns_IsStillReported()
+        {
+            EnsurePluginRegistered();
+            var messages = await ParseAsync(
+                "module top;\n" +
+                "  wire w;\n" +
+                "  assign w = 1'b0;\n" +
+                "  assign w = 1'b1;\n" +
+                "endmodule\n");
+            Assert.True(HasContaining(messages, "Error", "multiple continuous assignments"),
+                "a plain wire must still report a multiple drive (got: " + Describe(messages) + ")");
+        }
+
         [Fact]
         public async Task AlwaysComb_DrivenVariable_IsNotReportedAsUndriven()
         {
