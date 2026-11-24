@@ -70,6 +70,109 @@ public class AutoConnectTests : IDisposable
     }
 
     /// <summary>
+    /// An existing connection that is a bit / part select (<c>AAA[2:1]</c>) must
+    /// survive the form: the row reports it as
+    /// <c>currentConnection</c>, and applying without touching the row writes it
+    /// back unchanged.
+    ///
+    /// <para>
+    /// The row's candidate is the whole signal (<c>AAA</c>), so a UI that
+    /// replaces the current connection with <c>candidates[0]</c> silently drops
+    /// the select. The server must therefore keep the original expression text
+    /// for rows the user did not touch.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AutoConnect_KeepsBitSelectOfAnExistingConnection()
+    {
+        const string text =
+            "module child(input [1:0] d);\n" +
+            "endmodule\n" +
+            "module top;\n" +
+            "  wire [7:0] AAA;\n" +
+            "  child u_child(.d(AAA[2:1]));\n" +
+            "endmodule\n";
+        string uri = WriteFile("ac_sel.sv", text);
+        LspHandler handler = CreateInitializedHandler();
+        DidOpen(handler, uri, text);
+
+        JsonElement result = Request(handler, "rtl/autoConnect", new
+        {
+            textDocument = new { uri },
+            position = new { line = 4, character = 10 },
+        });
+
+        JsonElement port = result.GetProperty("ports")[0];
+        Assert.Equal("d", port.GetProperty("name").GetString());
+        // the row reports the existing connection with its bit select intact
+        Assert.Equal("AAA[2:1]", port.GetProperty("currentConnection").GetString());
+        // and the client is told to keep it: the candidate is the whole signal,
+        // so "accept" must not replace the select
+        Assert.True(port.GetProperty("keepsExistingConnection").GetBoolean(),
+            "an expression connection must be marked as kept");
+    }
+
+    /// <summary>
+    /// A plain signal connection is not marked as kept: the candidate list can
+    /// reproduce it, so accepting a better candidate is meaningful.
+    /// </summary>
+    [Fact]
+    public void AutoConnect_PlainSignalConnection_IsNotMarkedAsKept()
+    {
+        const string text =
+            "module child(input [1:0] d);\n" +
+            "endmodule\n" +
+            "module top;\n" +
+            "  wire [7:0] d;\n" +
+            "  child u_child(.d(d));\n" +
+            "endmodule\n";
+        string uri = WriteFile("ac_plain.sv", text);
+        LspHandler handler = CreateInitializedHandler();
+        DidOpen(handler, uri, text);
+
+        JsonElement result = Request(handler, "rtl/autoConnect", new
+        {
+            textDocument = new { uri },
+            position = new { line = 4, character = 10 },
+        });
+
+        JsonElement port = result.GetProperty("ports")[0];
+        Assert.Equal("d", port.GetProperty("currentConnection").GetString());
+        Assert.False(port.GetProperty("keepsExistingConnection").GetBoolean());
+    }
+
+    /// <summary>
+    /// Applying the form with the port's own current connection keeps the bit
+    /// select in the regenerated instantiation.
+    /// </summary>
+    [Fact]
+    public void AutoConnectApply_KeepsBitSelectWhenTheRowIsKept()
+    {
+        const string text =
+            "module child(input [1:0] d);\n" +
+            "endmodule\n" +
+            "module top;\n" +
+            "  wire [7:0] AAA;\n" +
+            "  child u_child(.d(AAA[2:1]));\n" +
+            "endmodule\n";
+        string uri = WriteFile("ac_sel_apply.sv", text);
+        LspHandler handler = CreateInitializedHandler();
+        DidOpen(handler, uri, text);
+
+        JsonElement result = Request(handler, "rtl/autoConnectApply", new
+        {
+            textDocument = new { uri },
+            position = new { line = 4, character = 10 },
+            selections = new { d = "AAA[2:1]" },
+        });
+
+        Assert.NotEqual(0, result.GetArrayLength());
+        string newText = result[0].GetProperty("newText").GetString() ?? "";
+        Assert.Contains("AAA[2:1]", newText);
+        Assert.DoesNotContain(".d\t( AAA )", newText);
+    }
+
+    /// <summary>
     /// The form lists every port of the instantiated module, with the signal
     /// whose name matches the port (the editor's rule) as the candidate.
     /// </summary>
