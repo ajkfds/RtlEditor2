@@ -3,6 +3,29 @@
 
 ## 進行中タスク (最新)
 
+- **VS Code の autoConnect で既存の bit 選択 (`AAA[2:1]`) が消える → 修正完了** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
+  - ユーザ報告: `autoconnetで接続したときに既存接続中のbit選択(AAA[2:1])のようなもののbit選択が消えます`
+  - **実測 (推測ではない)**: サーバー側は正しかった。`rtl/autoConnect` の `currentConnection` は **`AAA[2:1]` を正しく返していた**
+    | 計測 | 結果 |
+    |---|---|
+    | `currentConnection` | **`AAA[2:1]`** (bit 選択を含む) |
+    | `candidates` | `AAA` (候補は**信号名のみ**で bit 選択を表現できない) |
+    | デスクトップ版 | **正常**。`ConnectionItem.target` を元の式 (`expression.GetLabel()`) で初期化し、`Accept()` を押さない限りそのまま `Complete()` で書き戻す |
+    | VS Code 版 | **`acceptRow` が `results[port] = candidates[0]` で上書き** → `AAA` になり bit 選択が消える |
+  - **根本原因**: 候補は「モジュール内の信号名」なので `AAA[2:1]` を表現できない。`IsSettled` は「既存接続 == 候補[0]」でしか true にならず、`AAA[2:1] != AAA` のため未確定扱いになり、Accept で候補に置き換わっていた
+  - 修正1 (`CoreBridge/AutoConnectModel.cs`): `AutoConnectPort.KeepsExistingConnection` を新設。「既存接続が候補で再現できない (式 / bit 選択 / 該当信号なし)」ことをサーバーが明示する
+  - 修正2 (`CoreBridge/AutoConnectAdapter.cs`): `IsExpressionConnection(current, candidates)` を新設。候補のどれとも一致しない既存接続は **保持対象**とする
+  - 修正3 (`SystemVerilogLanguageServer/Server/LspHandler.AutoConnect.cs`): DTO に `keepsExistingConnection` を追加して転送
+  - 修正4 (`RtlEditorVscodeExtension/autoConnectView.js`): `acceptRow` が `keepsExistingConnection` の行では **`currentConnection` をそのまま保持**するよう変更。表示も `(kept as written)` を出し、候補の矢印を出さない (適用されない候補を暗示しない)
+  - 回帰テスト新設 3 件 (`AutoConnectTests`):
+    - `AutoConnect_KeepsBitSelectOfAnExistingConnection` — `currentConnection` が `AAA[2:1]` で `keepsExistingConnection` が true
+    - `AutoConnect_PlainSignalConnection_IsNotMarkedAsKept` — 素の信号接続は false (候補で置換してよい)
+    - `AutoConnectApply_KeepsBitSelectWhenTheRowIsKept` — そのまま適用すると生成テキストに `AAA[2:1]` が残る
+  - 検証: `RtlEditor2.Desktop.csproj` **0 errors** / `--filter !~ParseSvTestFile` **278 合格 (+3)** / `~ParseSvTestFile` **1028 合格**
+  - コミット: CodeEditor2VerilogPlugin `6af440d` / SystemVerilogLanguageServer `c893e15` / RtlEditorVscodeExtension `a420b63`、メイン `863e680` (tests)
+  - **実機確認が必要**: サーバーと拡張の両方を更新する必要がある (`update-server.bat` + Reload Window)。`AAA[2:1]` で接続したインスタンスで Auto Connect を開き、Accept しても `.d(AAA[2:1])` のままであることを確認
+=======
+
 - **`wor` を multiple drive するとエラーになる → 修正完了** (ビルド 0 errors、テスト 275 + sv-tests 1028 合格)
   - ユーザ報告: `wor をmultiple driveしたときにエラー扱いになるのを修正して。worの場合はエラーにしない。`
   - **根本原因 (`checkContinuousAssignmentConflict` が net 種別を見ていなかった)**: 多重駆動チェックは `DataObject` 単位で重なりを見るだけで、**その net が wired-logic かどうかを判定していなかった**
