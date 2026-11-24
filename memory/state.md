@@ -3,6 +3,34 @@
 
 ## 進行中タスク (最新)
 
+- **`CodeDocument` 依存を契約へ — CodeEditor2 分離 Stage 16d** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
+  - ユーザ要求: `A` (Stage 16c で提示した案A = 色・折りたたみの契約化) を選択
+  - **着手前の実測**: 案A の対象は「色・折りたたみ」ではなく **`pluginVerilog.CodeEditor.CodeDocument`** そのものだった
+    | 計測 | 結果 |
+    |---|---|
+    | `Verilog/` の `CodeEditor.CodeDocument` 参照 | **9 ファイル / 21 箇所** |
+    | 内訳 | **一時バッファ生成 5** / 型宣言 8 / 互換コンストラクタ 4 / 死んだコード 2 / その他 2 |
+    | `CopyColorMarkFrom` の呼び出し元 | **Data 層のみ** (`VerilogFile` / `VerilogModuleInstance` / `InterfaceInstance` / `VerilogHeaderInstance`) = **`Verilog/` の外** |
+    | `Verilog/` が実際に要る `CodeDocument` メンバ | `CreateString` / `GetCharAt` / `Length` / `GetLineAt` / `GetLineStartIndex` / **`GetLineLength`** / `GetWord` の 7 つ。色・折りたたみは契約 `IVerilogTextDocument` が既にカバー |
+  - **発見**: `CopyColorMarkFrom` は `Verilog/` から呼ばれていなかったため、**色テーブルの所有権を移す必要はなかった**。必要なのは「一時バッファを editor 型で作らないこと」だけだった (当初の案A の想定より小さい)
+  - 修正1 (`SystemVerilogCore/Documents/IVerilogTextDocument.cs`): **`GetLineLength(int line)` を契約に追加** (0-based、行末記号を除く)。これが唯一の契約の穴だった
+  - 修正2 (`CodeEditor2/CodeEditor/CodeDocument.cs`): 契約の明示的実装として `GetLineLength` を追加
+  - 修正3 (**`SystemVerilogCore/Documents/PlainTextDocument.cs` 新規**): 文字列ベースの契約専用文書。色・マーク・折りたたみの書き込みは **no-op** (これらのバッファは表示されず即捨てられる)。行頭索引は遅延構築 + キャッシュ
+  - 修正4 (`Verilog/ParsedDocument.cs`): 保持する文書を **`IVerilogTextDocument VerilogDocument`** に変更し、`CodeDocument` は `VerilogDocument as CodeDocument` を返す**互換ビュー**に (Data 層の `CopyColorMarkFrom` 用)。未使用の `getCodeDocument` を削除
+  - 修正5 (`Verilog/WordPointer.cs` / `WordScanner.cs`): `ConcreteDocument` と `concreteDocument` 引数を **`IVerilogTextDocument`** に。契約専用のコンストラクタ 3 種を追加 (editor 型版は互換のため残置)
+  - 修正6 (**一時バッファ生成 5 箇所を `PlainTextDocument` に置換**): `CompletionContext` (部分parse) / `ParsedDocument` ×2 (hint 行・要素) / `WordScanner` ×2 (マクロ展開)
+  - 修正7 (`WordReference.Document` / `IndexReference.Document` / `Enum.getExpressionSourceText` / `SnippetBuilder.GetIndent` / `Expression.Create` / `CompletionContext`) を契約型に。重複していた `ContractDocument` は `Document` の別名に整理
+  - **実測 (成果)**
+    | 計測 | 着手前 | 現在 |
+    |---|---|---|
+    | `Verilog/` の `CodeEditor.CodeDocument` 参照 | 21 | **3** (いずれも editor 側から呼ぶ**互換コンストラクタの引数**) |
+    | プラグインの警告 | 754 | **568** |
+  - 検証: `RtlEditor2.Desktop.csproj` **0 errors** / `--filter !~ParseSvTestFile` **268 合格** / `~ParseSvTestFile` **1028 合格**
+  - コミット: SystemVerilogCore `186b843` / CodeEditor2 `c7e8d26` / CodeEditor2VerilogPlugin `70edcb9` `584d0ae` `a3b5011`、メイン `9f1839a` `1eb1c3d` `c582264`
+  - **残る 3 箇所の性質**: `WordPointer(CodeEditor.CodeDocument, ...)` / `WordScanner(CodeEditor.CodeDocument, ...)` ×2 は **editor 側の呼び出し口**。parser 内部はすべて契約版を使う。消すには editor 側の呼び出し元 (Data 層 / ParseEngine) を契約版へ移す必要がある
+  - Next: エディタ / VS Code で (1) マクロ展開 (`define` / 引数付き) が従来どおり動くこと (2) autocomplete の部分parse が従来どおり候補を出すこと (3) hover hint が従来どおり出ること (4) 色付け・折りたたみが従来どおりであること を確認。**一時バッファを `PlainTextDocument` に変えたため、色付けは「元の文書」に書かれる点が従来と同じか要確認**
+=======
+
 - **`Verilog/` から editor 型参照を全消し — CodeEditor2 分離 Stage 16c** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
   - ユーザ要求: `つづけて` (Stage 16b の続き)
   - **着手前の実測 (`git grep -n "CodeEditor2" -- Verilog/`)**: 実参照は **2 箇所だけ**、残りはアイコンパス文字列と経緯コメントだった
