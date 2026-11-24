@@ -69,6 +69,22 @@ namespace SystemVerilogLanguageServer.Tests
             return string.Join(" | ", parts);
         }
 
+        /// <summary>
+        /// Counts the "undriven" notices. The message text is just
+        /// <c>undriven</c> (the variable name is carried by the reference the
+        /// notice is attached to), so a test must count them rather than look
+        /// for a name.
+        /// </summary>
+        private static int CountUndriven(List<(string Type, string Text)> messages)
+        {
+            int count = 0;
+            foreach (var m in messages)
+            {
+                if (m.Text.Contains("undriven", System.StringComparison.Ordinal)) count++;
+            }
+            return count;
+        }
+
         // ---- 1. unpacked array assigned from a scalar -----------------------
 
         [Fact]
@@ -239,6 +255,78 @@ namespace SystemVerilogLanguageServer.Tests
                 "endmodule\n");
             Assert.True(HasContaining(messages, "Warning", "'a' is assigned from multiple procedural blocks"),
                 "expected the multiple-procedural-blocks warning (got: " + Describe(messages) + ")");
+        }
+
+        /// <summary>
+        /// A variable driven only by <c>always_comb</c> is driven: it must not be
+        /// reported as "undriven".
+        ///
+        /// <para>
+        /// <c>AssertAssigned()</c> (which fills the assigned map that the
+        /// "undriven" notice is derived from) used to sit behind a
+        /// <c>clockDomains != null</c> guard. Only an event control created that
+        /// list, so <c>always_comb</c> / <c>always_latch</c> - which have no
+        /// sensitivity list - never filled the map and every variable they drove
+        /// was reported as undriven.
+        /// </para>
+        /// </summary>
+        [Fact]
+        public async Task AlwaysComb_DrivenVariable_IsNotReportedAsUndriven()
+        {
+            EnsurePluginRegistered();
+            var messages = await ParseAsync(
+                "module top;\n" +
+                "  logic a, b, c;\n" +
+                "  always_comb begin\n" +
+                "    a = b;\n" +
+                "    c = b;\n" +
+                "  end\n" +
+                "  assign b = 1'b1;\n" +
+                "endmodule\n");
+            Assert.Equal(0, CountUndriven(messages));
+        }
+
+        [Fact]
+        public async Task AlwaysComb_NonBlockingDrivenVariable_IsNotReportedAsUndriven()
+        {
+            EnsurePluginRegistered();
+            var messages = await ParseAsync(
+                "module top;\n" +
+                "  logic a, b;\n" +
+                "  always_comb a <= b;\n" +
+                "  assign b = 1'b1;\n" +
+                "endmodule\n");
+            Assert.Equal(0, CountUndriven(messages));
+        }
+
+        [Fact]
+        public async Task AlwaysLatch_DrivenVariable_IsNotReportedAsUndriven()
+        {
+            EnsurePluginRegistered();
+            var messages = await ParseAsync(
+                "module top;\n" +
+                "  logic en, a, b;\n" +
+                "  always_latch if (en) a = b;\n" +
+                "  assign en = 1'b1;\n" +
+                "  assign b = 1'b0;\n" +
+                "endmodule\n");
+            Assert.Equal(0, CountUndriven(messages));
+        }
+
+        [Fact]
+        public async Task AlwaysCombAndInitial_DrivenVariables_AreNotReportedAsUndriven()
+        {
+            EnsurePluginRegistered();
+            // an initial block has no sensitivity list either, so it went through
+            // the same code path
+            var messages = await ParseAsync(
+                "module top;\n" +
+                "  logic a, b, c;\n" +
+                "  always_comb a = b;\n" +
+                "  initial c = b;\n" +
+                "  assign b = 1'b0;\n" +
+                "endmodule\n");
+            Assert.Equal(0, CountUndriven(messages));
         }
 
         [Fact]
