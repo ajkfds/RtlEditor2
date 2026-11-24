@@ -3,6 +3,38 @@
 
 ## 進行中タスク (最新)
 
+- **`always_comb` で駆動した変数が `undriven` 扱いになる → 修正完了** (ビルド 0 errors、テスト 272 + sv-tests 1028 合格)
+  - ユーザ報告: `always_combによる駆動をおこなったlogicがnot driven扱いになります`
+  - **根本原因 (`AssertAssigned()` が `clockDomains != null` の内側にあった)**: `undriven` は `DataObject.AssignedMap` が埋まっているかで判定される。その map を埋める唯一の呼び出しが `AssertAssigned()` で、**代入経路ごとに置かれ方が違っていた**
+    | 代入経路 | 修正前 | 結果 |
+    |---|---|---|
+    | `NonBlockingAssignment` (`<=`) | `clockDomains != null` の内側でのみ `AssertAssigned()` | `always @(posedge clk)` は可、**`always_comb` / `always_latch` / `initial` は不可** |
+    | `BlockingAssignment` (`=`) | **`AssertAssigned()` を一切呼んでいない** (`markProceduralAssignment` は競合検出のみ) | **全経路で不可** |
+    - `clockDomains` リストを生成するのは `EventControl` だけ (`ProceduralTimingControlStatement` が `new List<string>()` して渡す)。`always_comb` / `always_latch` は sensitivity list を持たないため `AlwaysConstruct` から `clockDomains = null` で渡され、`AssertAssigned()` に到達しなかった
+    - つまり「`always @(...)` で駆動した変数だけが driven と認識され、`always_comb` で駆動した変数は全部 undriven」という症状
+  - 修正1 (`Verilog/Statements/NonBlockingAssignment.cs`): `AssertAssigned()` を `clockDomains` の分岐から**外へ出し**、`!word.Prototype && word.CompletionContext == null` で呼ぶように変更。`addEnclosingClockDomains`（sync 検査用）だけが `clockDomains != null` の内側に残る
+  - 修正2 (`Verilog/Statements/BlockingAssignment.cs`): `markProceduralAssignment` で **`lExpression.AssertAssigned()` を呼ぶ**ように追加。これまで競合検出 (`checkProceduralAssignmentConflict`) しかしておらず、blocking 代入は一度も map を埋めていなかった
+  - 回帰テスト新設 4 件 (`AssignmentCheckTests`):
+    - `AlwaysComb_DrivenVariable_IsNotReportedAsUndriven` (blocking)
+    - `AlwaysComb_NonBlockingDrivenVariable_IsNotReportedAsUndriven` (`<=`)
+    - `AlwaysLatch_DrivenVariable_IsNotReportedAsUndriven`
+    - `AlwaysCombAndInitial_DrivenVariables_AreNotReportedAsUndriven`
+    - **修正を stash で戻すと 3 件が `Expected: 0 / Actual: 1〜2` で失敗**することを実証
+    - 注意: `undriven` のメッセージ本文は **`undriven` の 1 語だけ**（変数名は notice の付く参照が持つ）ため、テストは `CountUndriven(...)` で**件数**を見る形にした。最初 `HasContaining(messages, "Notice", "'a'")` と書いて誤って合格していた
+  - 検証: `RtlEditor2.Desktop.csproj` **0 errors** / `--filter !~ParseSvTestFile` **272 合格 (+4)** / `~ParseSvTestFile` **1028 合格**
+  - コミット: CodeEditor2VerilogPlugin `6e69427`、メイン `12c9d5d` (tests)
+  - **作業中に発見した環境問題 (重要)**: 作業中に**外部操作でサブモジュール 5 つが古いコミット / `main` ブランチへ切り替えられ**、ビルドが 182 エラーになった
+    | サブモジュール | 切り替わった先 | 復元先 |
+    |---|---|---|
+    | メインリポジトリ | `main` (2f08346) | `vscode` (34aa8ea) |
+    | `CodeEditor2VerilogPlugin` | `main` (f0ffe70) | `vscode` (a3b5011) |
+    | `CodeEditor2` | `main` (f8392dc) | `c7e8d26` |
+    | `SystemVerilogCore` | `3566e1f` | `186b843` |
+    | `SystemVerilogLanguageServer` | `main` (64fbe9c) | `2003b18` |
+    | `RtlEditorVscodeExtension` | `main` (1e3868b) | `d2ba1b1` |
+    - **`git checkout` ではなく `reflog` を見て復元**した (branch に載っていない detached HEAD のコミットがあるため)。`HoverGrammarTests` の 2 件失敗もこの切り替えが原因で、復元後に解消
+=======
+
 - **`CodeDocument` 依存を契約へ — CodeEditor2 分離 Stage 16d** (ビルド 0 errors、テスト 268 + sv-tests 1028 合格)
   - ユーザ要求: `A` (Stage 16c で提示した案A = 色・折りたたみの契約化) を選択
   - **着手前の実測**: 案A の対象は「色・折りたたみ」ではなく **`pluginVerilog.CodeEditor.CodeDocument`** そのものだった
