@@ -80,7 +80,7 @@ namespace SystemVerilogLanguageServer.Tests
             {
                 if (!projectProperty.Macros.ContainsKey(kvp.Key))
                 {
-                    projectProperty.Macros.Add(kvp.Key, pluginVerilog.Verilog.Macro.Create(kvp.Key, kvp.Value));
+                    projectProperty.Macros.Add(kvp.Key, SystemVerilogCore.Verilog.Macro.Create(kvp.Key, kvp.Value));
                     addedMacros.Add(kvp.Key);
                 }
             }
