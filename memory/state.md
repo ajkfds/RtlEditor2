@@ -3,6 +3,45 @@
 
 ## 進行中タスク (最新)
 
+- **pluginVerilog/Verilog を SystemVerilogCore へ移す Stage A〜G-4 進行中** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
+  - ユーザ要求: `先々pluginVerilog/VerilogをSystemVerilogCoreに移してpluginVerilogは実装の多くをSystemVerilogCoreに委譲する構造にしたい` / `pluginVerilog.Verilog` → **`SystemVerilogCore.Verilog`** ネームスペースへ移す方針
+  - **重要な現状認識 (実測)**: `CodeEditor2VerilogPlugin/Verilog/` は **283 ファイルのまま未移設**。`SystemVerilogCore/Verilog/` にあるのは 8 ファイル (`Rule` / `RuleSet` / `Macro` / `AnnotationCommands` / `RegisterNameSpace` / `WeakReferenceDictionary` / `VerilogRelatedFileReference` / `IVerilogNameSpaceFile`) のみ。**「依存の契約化」は進んだが、移設本体は未実施**
+  - **確立した移設パターン (重要・3 回実証済み)**: 契約は **`ITextFile` / `ITextFile.Items` など既存メンバと衝突しない名前だけを宣言する「加算専用」**にする。plugin 側の File は `ITextFile` 継承を維持したまま契約を実装し、`SystemVerilogCore` 側の型へ処理を委譲する。`ID`→`Id` / `Items`→`ChildItems` / `CodeDocument`→`VerilogTextDocument` / `ProjectProperty`→`ProjectSettings` / `RelativePath`→`FileRelativePath` のように**別名**にする。そうしないと全呼び出し元が CS0229 (曖昧) で壊れる
+  - **完了した Stage**
+    | Stage | 内容 | コミット |
+    |---|---|---|
+    | A | `SystemVerilogCore/Verilog` の未追跡コピー (222 エラー) を削除 | (追跡変更なし) |
+    | B | 誤った `using` (AI / Playwright / DynamicData) を削除 | `3e2ed48` |
+    | C | `WeakReferenceDictionary` を移設 | `33986f2` / `597b114` |
+    | D | `CodeDrawStyle.ColorType` → 契約 `VerilogColorType` へ **187 ファイル / 1238 箇所**を機械置換。`AutocompleteItem` の `Color` を廃止し `colorIndex` から解決 (描画時のみ色が必要と判明) | `902646e` / `d609986` |
+    | F-1 | `IVerilogSourceFile` 新設 (加算専用)。具象 `Data.VerilogFile` キャスト 7 箇所を除去 | `df54f46` / `a97e26a` |
+    | G-1 | `Rule` / `RuleSet` を移設 (YamlDotNet を `SystemVerilogCore` に追加) | `df44a48` / `8853ebc` |
+    | G-2 | `AnnotationCommands` を移設 (全参照がプロパティ経由で型名を名指ししていなかった) | `81561ee` / `4c63240` |
+    | G-3 | `RegisterNameSpace<T>` を `IVerilogNameSpaceFile` 契約経由で移設 | `20581b9` / `3606cd1` |
+    | F-2 | `ParsedDocument` コンストラクタを契約で受け / `include` パスを契約経由 / `CodeDocument` を契約の `CreateSnapshot()` 経由に | 複数 |
+    | G-4 (1) | `IVerilogProjectSettings` に 8 メンバ追加 (`DefinitionNameSpace` / `PackageNameSpace` / `UnitNameSpace` / `Macros` / `AnnotationCommands` / `RuleSet` / `ExtenralModuleLibraryPath` / `ExtenralPrimitiveLibraryPath`) | `33ffe58` / `9479978` |
+    | G-4 (2) | `BuildingBlock.File` を `IVerilogSourceFile` に (派生 7 クラスも)。契約に `Id` 追加 | `27a0426` / `39715b2` |
+    | G-4 (3) | `IVerilogItemList` 新設。`Item.ItemList` が実装、`IVerilogItem.ChildItems` 経由で parsed instance を記録 | `3e5b542` / `68267cf` / `5a03378` / `dd18513` |
+  - **失敗した試み (重要・再挑戦時は注意)**: `ProjectProperty` → `ProjectSettings` の一括置換 (35 ファイル / 154 行) を試みたが **57 エラーで収束せず撤回**
+    - 原因1: 一括置換ツール (`.Get(` → `.GetElement(`) が plugin 側 `RegisterNameSpace<T>` アダプタにも適用され破壊した
+    - 原因2: 契約に無いメンバ (`GetRuleSet` / `GetInstancedBuildingBlock` / `VerilogParsedDocument`) を使う箇所が混在
+    - 教訓: **`RegisterNameSpace<T>` は契約実装と plugin アダプタの 2 層あり、どちらを指すかでメソッドが違う**。機械置換は不可、ファイル単位で契約の不足を確認しながら進めること
+  - **残る阻害要因 (実測 47 ファイル / コメント除く)**
+    | 依存 | ファイル数 | 主な内容 |
+    |---|---|---|
+    | `ProjectProperty` | 35 | `word.ProjectProperty` 経由。契約化済みメンバなら置換可 |
+    | `pluginVerilog.Data` | 21 | `Root.cs` の `Data.VerilogFile` 引数 8 / `RegisterNameSpace` アダプタ / `AutoCompleteItem` / `NameSpace` の `Data.VerilogModuleInstance` / `SnippetBuilder` の `CoreBridge.SnippetTemplate` |
+    | `CodeEditor` | 2 | `WordPointer` / `ParsedDocument` (互換のみ) |
+    | `CoreBridge` | 1 | `SnippetBuilder` (**エディタ専用機能なので plugin 側へ移設すべき**) |
+  - **次の作業候補 (優先順)**
+    1. `SnippetBuilder` を `Data/VerilogCommon/` へ移設 (エディタ専用機能)
+    2. `Root.cs` の `Data.VerilogFile` 引数 8 箇所を契約型へ
+    3. `ProjectProperty` 35 ファイルを **1 ファイルずつ** 契約へ (一括置換は使わない)
+    4. `SystemFunctions` / `SystemTaskParsers` / `GetInstancedBuildingBlock` を契約化 (これで `ProjectProperty` 依存が消える)
+    5. 283 ファイルを `SystemVerilogCore/Verilog` へ `git mv` + `namespace` 一括変更
+
+## 旧: 進行中タスク
+
 - **pluginVerilog/Verilog を SystemVerilogCore へ移す Stage A〜D 完了** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
   - ユーザ要求: `先々pluginVerilog/VerilogをSystemVerilogCoreに移してpluginVerilogは実装の多くをSystemVerilogCoreに委譲する構造にしたい。検討して。` → 段階計画を提示し、`Aから実施して` / Stage D は `D-2` を選択
   - **着手前の実測 (推測ではない)**
