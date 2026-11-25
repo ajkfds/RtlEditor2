@@ -55,15 +55,23 @@
     - **着手前の実測**: 使用箇所は `Verilog/` 内 3 ファイル / 13 箇所 (`DataObjectAnnotation` / `PortAnnotation` / `CommentAnnotationItem`) と `ProjectProperty` の定義のみ。**すべて `ProjectProperty.AnnotationCommands` プロパティ経由**で型名を名指ししていないため、参照側の変更は不要だった
     - plugin 側は `public class AnnotationCommandsClass : AnnotationCommands {}` の**互換 alias** として残置 (既存参照を壊さない)
     - 検証: ビルド **0 errors** / **278 合格** / sv-tests **1028 合格**
+  - **Stage G-3 完了 (`20581b9` / `3606cd1`)**: `RegisterNameSpace<T>` を `SystemVerilogCore.Verilog` へ移設
+    - **ユーザ指示**: `pluginVerilogでITextFile継承するFileを持ってSystemVerilogCoreのInterfaceに実装を委譲するイメージ`
+    - **着手前の実測**: `Register` の実引数はすべて `Data.VerilogFile` (`this` / `file`)。`GetFile` の戻りは `Data.IVerilogRelatedFile`。内部で使うのは `file.VerilogParsedDocument.Root.NamedElements[name]` の**1 操作だけ**だった
+    - **設計**: 契約 `IVerilogNameSpaceFile` を新設し、**`ITextFile` が持たない `FindRootNamedElement(string)` 1 メンバだけ**を宣言 (F-1 と同じ「加算専用」方式。`ITextFile` と衝突する `ID` / `RelativePath` / `Name` / `Project` / `ParsedDocument` は再宣言しない → CS0229 を回避)
+      - `Data.VerilogFile` が `IVerilogNameSpaceFile` を実装し、自身の `VerilogParsedDocument.Root.NamedElements` に委譲。**`ITextFile` 継承は維持**
+      - `SystemVerilogCore.Verilog.RegisterNameSpace<T>` は `WeakReferenceDictionary<string, IVerilogNameSpaceFile>` で弱参照を保持
+      - plugin 側 `RegisterNameSpace<T>` は**薄いアダプタ**に ( `Register` で `as IVerilogNameSpaceFile` / `GetFile` で `as Data.IVerilogRelatedFile` )。既存呼び出し 9 箇所は無変更
+    - 検証: `RtlEditor2.Desktop.csproj` **0 errors** / **278 合格** / sv-tests **1028 合格**
   - **残り (未着手)**
     | Stage | 内容 | 阻害要因 |
     |---|---|---|
-    | **G-3** | `RegisterNameSpace<T>` を移設 | `Data.VerilogFile` 依存 (F-2 待ち) |
     | **G-4** | `ProjectProperty` の契約化 (`IVerilogProjectSettings` 拡張) | **100 箇所以上**。`DefinitionNameSpace` / `PackageNameSpace` / `UnitNameSpace` / `Macros` / `SystemTaskParsers` / `SystemFunctions` / `GetInstancedBuildingBlock` |
     | **G-5** | `Verilog/` 本体の移設 + `namespace SystemVerilogCore.Verilog` | 220 ファイル |
     | **F-2** | `IVerilogRelatedFile` の `ITextFile` 継承を切る（6 クラスの基底設計解体） | **大** (見送り中) |
     | **H** | LSP が plugin を参照しない構成へ | 中 |
   - **ユーザ方針 (確定)**: `pluginVerilog.Verilog` → **`SystemVerilogCore.Verilog`** ネームスペースへ移していく
+  - **確立した移設パターン (重要)**: 契約は **`ITextFile` が持たないメンバだけを宣言する「加算専用」**にする。plugin 側の File は `ITextFile` 継承を維持したまま契約を実装し、`SystemVerilogCore` 側の型へ処理を委譲する。これで CS0229 を踏まずに済む (F-1 / G-3 で実証)
   - メモ: `M SystemVerilogCore` (サブモジュール pointer `186b843` → `a3b64a1`) は**着手前から存在**するずれで本タスク由来ではない
 
 ## 旧: 進行中タスク
