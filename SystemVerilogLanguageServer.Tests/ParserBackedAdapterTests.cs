@@ -256,7 +256,7 @@ endmodule
            EnsurePluginRegistered();
            var candidate = new pluginVerilog.Data.VerilogCommon.AutoCompleteItem(
                pluginVerilog.Data.VerilogCommon.AutoCompleteItem.CompleteType.Keyword,
-               "begin", 4, Avalonia.Media.Colors.White);
+               "begin", 4);
            SystemVerilogCore.Documents.IVerilogAutocompleteItem asContract = candidate;
 
            Assert.Equal("begin", asContract.Label);

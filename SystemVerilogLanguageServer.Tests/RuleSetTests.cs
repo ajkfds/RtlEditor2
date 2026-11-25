@@ -153,7 +153,7 @@ public class RuleSetTests : IDisposable
     [Fact]
     public void ParseYaml_OverridesOnlyTheListedRules()
     {
-        pluginVerilog.RuleSet? ruleSet = pluginVerilog.RuleSet.ParseYaml(
+        SystemVerilogCore.Verilog.RuleSet? ruleSet = SystemVerilogCore.Verilog.RuleSet.ParseYaml(
             "rules:\n" +
             "  - name: ImplicitNetDeclaration\n" +
             "    severity: Notice\n" +
@@ -164,13 +164,13 @@ public class RuleSetTests : IDisposable
             out string? errorMessage);
 
         Assert.NotNull(ruleSet);
-        Assert.Equal(pluginVerilog.Rule.SeverityEnum.Notice,
+        Assert.Equal(SystemVerilogCore.Verilog.Rule.SeverityEnum.Notice,
             ruleSet!.ImplicitNetDeclaretion.Severity);
         // not listed -> built-in default
-        Assert.Equal(pluginVerilog.Rule.SeverityEnum.Warning,
+        Assert.Equal(SystemVerilogCore.Verilog.Rule.SeverityEnum.Warning,
             ruleSet.AssignmentBitwidthMismatch.Severity);
         // invalid severity -> keeps the built-in default
-        Assert.Equal(pluginVerilog.Rule.SeverityEnum.Warning,
+        Assert.Equal(SystemVerilogCore.Verilog.Rule.SeverityEnum.Warning,
             ruleSet.ImplicitModportDirection.Severity);
 
         Assert.NotNull(errorMessage);
@@ -187,17 +187,17 @@ public class RuleSetTests : IDisposable
     public void SaveFile_RoundTrips()
     {
         string path = Path.Combine(_root, "roundtrip.rule.yaml");
-        pluginVerilog.RuleSet original = new();
+        SystemVerilogCore.Verilog.RuleSet original = new();
         original.SaveFile(path);
 
         Assert.True(File.Exists(path));
-        pluginVerilog.RuleSet? loaded = pluginVerilog.RuleSet.LoadFile(path, out string? errorMessage);
+        SystemVerilogCore.Verilog.RuleSet? loaded = SystemVerilogCore.Verilog.RuleSet.LoadFile(path, out string? errorMessage);
         Assert.Null(errorMessage);
         Assert.NotNull(loaded);
 
-        foreach (pluginVerilog.Rule rule in original.GetRules())
+        foreach (SystemVerilogCore.Verilog.Rule rule in original.GetRules())
         {
-            pluginVerilog.Rule? reloaded = loaded!.GetRule(rule.Name);
+            SystemVerilogCore.Verilog.Rule? reloaded = loaded!.GetRule(rule.Name);
             Assert.NotNull(reloaded);
             Assert.Equal(rule.Severity, reloaded!.Severity);
         }
@@ -229,12 +229,12 @@ public class RuleSetTests : IDisposable
         pluginVerilog.ProjectProperty property =
             (pluginVerilog.ProjectProperty)project.PluginProject.ProjectProperties[pluginVerilog.Plugin.StaticID];
 
-        Assert.Equal(pluginVerilog.Rule.SeverityEnum.Error,
+        Assert.Equal(SystemVerilogCore.Verilog.Rule.SeverityEnum.Error,
             property.GetRuleSet("src/top.sv").AssignmentBitwidthMismatch.Severity);
-        Assert.Equal(pluginVerilog.Rule.SeverityEnum.Notice,
+        Assert.Equal(SystemVerilogCore.Verilog.Rule.SeverityEnum.Notice,
             property.GetRuleSet("src/rtl/leaf.sv").AssignmentBitwidthMismatch.Severity);
         // outside src/ there is no .rule.yaml file -> built-in default
-        Assert.Equal(pluginVerilog.Rule.SeverityEnum.Warning,
+        Assert.Equal(SystemVerilogCore.Verilog.Rule.SeverityEnum.Warning,
             property.GetRuleSet("top.sv").AssignmentBitwidthMismatch.Severity);
     }
 
@@ -259,7 +259,7 @@ public class RuleSetTests : IDisposable
         pluginVerilog.ProjectProperty property =
             (pluginVerilog.ProjectProperty)project.PluginProject.ProjectProperties[pluginVerilog.Plugin.StaticID];
 
-        Assert.Equal(pluginVerilog.Rule.SeverityEnum.Error,
+        Assert.Equal(SystemVerilogCore.Verilog.Rule.SeverityEnum.Error,
             property.GetRuleSet("legacy/leaf.sv").AssignmentBitwidthMismatch.Severity);
     }
 
