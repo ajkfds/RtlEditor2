@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **pluginVerilog/Verilog を SystemVerilogCore へ移す Stage A〜G-4 継続中** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
+  - ユーザ要求: `先々pluginVerilog/VerilogをSystemVerilogCoreに移してpluginVerilogは実装の多くをSystemVerilogCoreに委譲する構造にしたい`
+  - **今回の実測で判明した重要事項 (前回の state.md の記述を修正)**
+    - **`SnippetBuilder` は「エディタ専用」ではなかった**: `CoreBridge/SnippetAdapter`（LSP 経路）と `Data/VerilogCommon/EditorSnippets/*`（エディタ経路）の**両方**が使う共有実装。前回の「plugin 側へ移設すべき」は誤り。ただし `Verilog/` にありながら plugin 側の `CoreBridge.SnippetTemplate` を参照していたため、**`Data/VerilogCommon/` へ移設**した (下記)
+    - **`Verilog/` の `CodeEditor2` 参照は実質ゼロ**: 残る 7 ファイルの出現はすべて**コメント**と `"CodeEditor2/Assets/Icons/*.svg"` という**アイコンパス文字列**のみ。型依存は無い
+    - **`ProjectProperty` の一括契約化は不可能 (実測)**: 契約に無い 3 メンバのうち `SystemTaskParsers` / `SystemFunctions` は `Func<WordScanner, NameSpace, ...>`、`GetInstancedBuildingBlock` は `IBuildingBlockInstantiation` を引数に取る。**パーサ型を引数に取るため契約アセンブリへ移せない**（移すと SystemVerilogCore が pluginVerilog に依存する）。前回「一括置換で 57 エラー」だった原因の本体がこれ
+  - **完了した作業 (今回)**
+    | 作業 | 内容 | コミット |
+    |---|---|---|
+    | `Root.cs` + building block 6 種の契約化 | `Data.VerilogFile` / `Data.IVerilogRelatedFile` 引数を `IVerilogSourceFile` へ。`file` は `File` に代入されるだけだった | `575a56c` |
+    | `VerilogParser.File` の契約化 | `WeakReference<VerilogFile>` → `WeakReference<IVerilogSourceFile>`。`if (File is not Data.VerilogFile) throw` を削除 | `575a56c` |
+    | `SnippetBuilder` 移設 | `Verilog/Snippets/` → `Data/VerilogCommon/`。これで `Verilog/` から `CoreBridge` 依存が消滅 | `3e3abc5` |
+  - **`Verilog/` の残存 plugin 依存 (実測)**: `using pluginVerilog.Data` が 4 ファイル (`ParsedDocument` / `WordScanner` / `ModuleInstantiation` / `ProgramInstantiation` / `UdpInstantiation`)。内訳は `ProjectProperty`（契約化不可・上記）と `Data.IVerilogRelatedFile`（include 解決 / item tree で必要）
+  - **次の作業候補 (優先順・実測に基づく)**
+    1. `ProjectProperty` から**パーサ型を引数に取らないメンバだけ**を契約へ寄せるのは既に完了済み。残る 3 メンバは `IVerilogProjectSettings` の**外**に置く別契約（例 `IVerilogSystemTaskTable` を parser 側に定義し、`ProjectProperty` が実装）へ切り出す設計判断が必要
+    2. 283 ファイルを `SystemVerilogCore/Verilog` へ `git mv` + `namespace` 一括変更（`ProjectProperty` を plugin 側に残したままでも、`using pluginVerilog.Data` の 5 ファイルだけ例外扱いにできる）
+    3. `F-2`（`IVerilogRelatedFile` の `ITextFile` 継承を切る）
+
+## 旧: 進行中タスク (Stage A〜G-4 の記録)
+
 - **pluginVerilog/Verilog を SystemVerilogCore へ移す Stage A〜G-4 進行中** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
   - ユーザ要求: `先々pluginVerilog/VerilogをSystemVerilogCoreに移してpluginVerilogは実装の多くをSystemVerilogCoreに委譲する構造にしたい` / `pluginVerilog.Verilog` → **`SystemVerilogCore.Verilog`** ネームスペースへ移す方針
   - **重要な現状認識 (実測)**: `CodeEditor2VerilogPlugin/Verilog/` は **283 ファイルのまま未移設**。`SystemVerilogCore/Verilog/` にあるのは 8 ファイル (`Rule` / `RuleSet` / `Macro` / `AnnotationCommands` / `RegisterNameSpace` / `WeakReferenceDictionary` / `VerilogRelatedFileReference` / `IVerilogNameSpaceFile`) のみ。**「依存の契約化」は進んだが、移設本体は未実施**
