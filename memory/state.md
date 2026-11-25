@@ -3,6 +3,45 @@
 
 ## 進行中タスク (最新)
 
+- **pluginVerilog/Verilog を SystemVerilogCore へ移す Stage A〜D 完了** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
+  - ユーザ要求: `先々pluginVerilog/VerilogをSystemVerilogCoreに移してpluginVerilogは実装の多くをSystemVerilogCoreに委譲する構造にしたい。検討して。` → 段階計画を提示し、`Aから実施して` / Stage D は `D-2` を選択
+  - **着手前の実測 (推測ではない)**
+    | 計測 | 結果 |
+    |---|---|
+    | `SystemVerilogCore/Verilog` | **既に存在していたが未追跡 (`?? Verilog/`)**。plugin 側の単純コピー |
+    | コピーとの差分 | `Primary.cs` の `using Microsoft.Agents.AI;` / `using OpenAI.Realtime;` の 2 行のみ |
+    | その状態でのビルド | **222 エラー** |
+    | `CodeDrawStyle.ColorType` の参照 | **187 ファイル / 1238 箇所** |
+    | `ProjectProperty` の参照 | 33 ファイル。parser が読むのは 8 メンバのみ |
+    | `RuleSet` / `Rule` | `YamlDotNet` 依存 (UI フリー)。`SystemVerilogCore.csproj` はパッケージ参照ゼロ方針 |
+    | `RegisterNameSpace` | `Data.IVerilogRelatedFile` / **`Data.VerilogFile`** (plugin 具象型) に依存 |
+    | `WeakReferenceDictionary` | UI フリー。使用箇所は `RegisterNameSpace` の 1 箇所のみ |
+  - **Stage A (未追跡コピーの削除)**: `git -C SystemVerilogCore clean -fd Verilog` で削除し、plugin 側を唯一の正とした。追跡ファイルの変更なし
+  - **Stage B (誤った using の削除、`3e2ed48`)**: `Primary.cs` (`Microsoft.Agents.AI` / `OpenAI.Realtime`) / `UdpInstantiation.cs` (`OpenAI.Realtime`) / `Delay.cs` (`Microsoft.Playwright`) / `CompletionContext.cs` (`DynamicData.Aggregation`) を削除
+    - **やり直し 1 件**: `Port.cs` の `using DynamicData;` は `ReplaceOrAdd` 拡張メソッドとして**実使用**されており、削除すると CS1061 で失敗 → 戻した (「残骸」と判断したのは実測不足)
+  - **Stage C (`33986f2` / `597b114`)**: `WeakReferenceDictionary` を `SystemVerilogCore/Verilog` へ移設 (`namespace SystemVerilogCore.Verilog`)。
+    - `RuleSet`/`Rule` はユーザ判断で **Stage F と同時**に移設 (YamlDotNet 追加は承認済み)
+    - `RegisterNameSpace` は plugin 具象型依存のため移設不可 (Stage F 待ち)
+  - **Stage D (D-2 選択、`902646e` / `d609986`)**: `CodeDrawStyle.ColorType` → 契約 `VerilogColorType` の一括置換 + `Color` 依存の除去
+    - **D-1**: 一時 C# ツール (`_tmp_recolor`、削除済み) で **187 ファイル / 1238 箇所**を機械置換し、`using SystemVerilogCore.Documents;` を挿入
+    - **D-2**: `CodeDrawStyle.ColorIndex(x)` → `(byte)x`、`Global.CodeDrawStyle.Color(x)` 引数を削除
+    - **D-3 (重要)**: `AutocompleteItem` が持っていた `Color` フィールドを**廃止**。`colorIndex` から `Global.DefaultDrawStyle.ColorPallet` を引く `protected Color Color` プロパティに変更。**`Color` は `CreatePopupMenuItem` の描画でしか使われておらず `colorIndex` と二重管理だった**ため、Avalonia 依存を parser から外せた
+      - パレット外の色 (スニペット行の `Plugin.ThemeColor` = オレンジ) 用に `protected Color? colorOverride` を新設し、`EditorAutoComplete/*` 8 ファイルがそれを使う
+      - `ContractAutocompleteToolItem` の重複 `ColorFor` を削除 (基底に一本化)
+    - **D-4**: plugin の `CodeDrawStyle.ColorType` を**契約 enum の alias** (各メンバーを `VerilogColorType.X` で初期化) に変更し、二重定義を解消
+  - 検証: `RtlEditor2.Desktop.csproj` **0 errors (警告 726 → 36 に減少)** / `--filter !~ParseSvTestFile` **278 合格** / `~ParseSvTestFile` **1028 合格**
+  - コミット: CodeEditor2 `902646e` / CodeEditor2VerilogPlugin `3e2ed48` `597b114` `d609986` / SystemVerilogCore `33986f2`、メイン `3a1fb54` `f996a38` `4732342`
+  - **残り (未着手)**
+    | Stage | 内容 | 阻害要因 |
+    |---|---|---|
+    | **E** | `IVerilogProjectSettings` に parser が読む 8 メンバ (`DefinitionNameSpace` / `PackageNameSpace` / `UnitNameSpace` / `Macros` / `SystemTaskParsers` / `SystemFunctions` / `AnnotationCommands` / `GetInstancedBuildingBlock`) を追加 | 中 |
+    | **F** | `IVerilogRelatedFile` (21 ファイル) の `ITextFile` 継承を切る + `RuleSet`/`Rule`/`RegisterNameSpace` の移設 | **最大の難所** (基底クラス設計の解体) |
+    | **G** | `Verilog/` を `SystemVerilogCore` へ `git mv`、plugin は委譲のみに | 大 |
+    | **H** | LSP が plugin を参照しない構成へ | 中 |
+  - メモ: `M SystemVerilogCore` (サブモジュール pointer `186b843` → `a3b64a1`) は**着手前から存在**するずれで本タスク由来ではない
+
+## 旧: 進行中タスク
+
 - **VS Code の autoConnect で既存の bit 選択 (`AAA[2:1]`) が消える → 修正完了** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
   - ユーザ報告: `autoconnetで接続したときに既存接続中のbit選択(AAA[2:1])のようなもののbit選択が消えます`
   - **実測 (推測ではない)**: サーバー側は正しかった。`rtl/autoConnect` の `currentConnection` は **`AAA[2:1]` を正しく返していた**
