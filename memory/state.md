@@ -3,7 +3,29 @@
 
 ## 進行中タスク (最新)
 
-- **pluginVerilog/Verilog を SystemVerilogCore へ移す Stage A〜G-4 継続中** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
+- **Stage G-4 (4) 完了: `ProjectProperty` の契約化を「別契約への切り出し」で解決** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
+  - ユーザ指示: `その方針ですすめて`（パーサ型を引数に取るメンバを**別契約**へ切り出す方針）
+  - **設計 (なぜ UI フリー契約に載せられないか / どう切り出したか)**
+    - `SystemVerilogCore.Projects.IVerilogProjectSettings` は UI フリーアセンブリにあるため、`WordScanner` / `NameSpace` / `IBuildingBlockInstantiation` を名指しできない
+    - パーサが読む設定のうち **3 メンバだけ**がパーサ型を取る: `SystemTaskParsers` (`Func<WordScanner, NameSpace, SystemTask>`) / `SystemFunctions` (`Func<Variable, WordScanner>`) / `GetInstancedBuildingBlock(IBuildingBlockInstantiation)`
+    - → **`pluginVerilog.Verilog.IVerilogParserSettings`** を新設（`Verilog/` 配下＝パーサと一緒に移設される場所）。UI フリー契約には名前空間・マクロ・注釈・ルールセット・ライブラリパスのみを残す**二層構造**
+    - **メンバ形状を具象クラスと完全一致**させた（名前空間は `RegisterNameSpace<T>` の具象型、テーブルは `IReadOnlyDictionary`）。これにより**呼び出し側のコードを一切変えずに**型だけ差し替えられる
+    - 追加で判明した必要メンバ: `GetRuleSet(string?)`（ディレクトリ単位の `.rule.yaml` 解決）と `AnnotationKeyValueDelimiter`（`@sync:CLK_I` の区切り）
+  - **実装**
+    - 新規 `Verilog/IVerilogParserSettings.cs`（13 メンバ、すべて XML コメント付き）
+    - `ProjectProperty` が両契約を実装。フィールドで持っているメンバ（`Macros` / `RuleSet` / `Extenral*LibraryPath` / `AnnotationKeyValueDelimiter`）と型が違うメンバ（`SystemTaskParsers` / `SystemFunctions`）は明示的実装で転送
+    - パーサ側の型を差し替え: `WordScanner.ProjectProperty` / `ParsedDocument.ProjectProperty` / `NamedItem.ProjectProperty` / `InterfaceInstance.ProjectProperty` / `FunctionCall.ProjectProperty` / `BuiltinMethodCall.ProjectProperty` / `Scope.projectProperty` / `checkPortConnection` 系 5 引数 / `SyncCheck` / 各ローカル変数
+  - **成果 (実測)**: `Verilog/` 配下から **`ProjectProperty` 具象型の参照が 0 件**（`IVerilogParserSettings` 経由のみ）。`ProjectProperty` という名前は残るがすべて契約型
+  - **検証**: `RtlEditor2.Desktop.csproj` 0 errors / `--filter !~ParseSvTestFile` **278 合格** / `~ParseSvTestFile` **1028 合格**
+  - コミット: CodeEditor2VerilogPlugin `7cfc1ce`
+  - **`Verilog/` に残る plugin 依存 (実測・次の対象)**
+    | 依存 | 箇所 | 性質 |
+    |---|---|---|
+    | `Data.IVerilogRelatedFile` | `ParsedDocument` (多数) / `WordPointer` / `WordScanner` / `CompletionContext` / `Object` / `VirtualInterface` / `CommentAnnotationItem` / `VirtualScopeNameSpace` | **`VerilogParsedDocument` / `RelativePath` / `ID` など契約外メンバを読む**。state.md の **F-2**（`ITextFile` 継承を切る大規模リファクタ）に相当し、見送り中 |
+    | `Data.VerilogFile` | `RegisterNameSpace.Register` の引数 1 箇所のみ | plugin アダプタなので残置が正しい |
+  - **次の判断待ち**: 283 ファイルの `SystemVerilogCore/Verilog` への `git mv` + `namespace` 一括変更に進むか。`Data.IVerilogRelatedFile` の 8 ファイルを例外扱いにすれば移設自体は可能
+
+## 旧: 進行中タスク (Stage A〜G-4 の記録)
   - ユーザ要求: `先々pluginVerilog/VerilogをSystemVerilogCoreに移してpluginVerilogは実装の多くをSystemVerilogCoreに委譲する構造にしたい`
   - **今回の実測で判明した重要事項 (前回の state.md の記述を修正)**
     - **`SnippetBuilder` は「エディタ専用」ではなかった**: `CoreBridge/SnippetAdapter`（LSP 経路）と `Data/VerilogCommon/EditorSnippets/*`（エディタ経路）の**両方**が使う共有実装。前回の「plugin 側へ移設すべき」は誤り。ただし `Verilog/` にありながら plugin 側の `CoreBridge.SnippetTemplate` を参照していたため、**`Data/VerilogCommon/` へ移設**した (下記)
