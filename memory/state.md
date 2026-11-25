@@ -39,12 +39,29 @@
     - 実装: `InstanceTextFile` は自身の `ParsedDocument` を返す（インスタンス wrapper は既に 1 インスタンス分の parse 結果）、`VerilogHeaderFile` も同様（ヘッダは parameter override で instance 化されない）
     - 7 箇所を `file.GetInstancedParsedDocument(key) as ParsedDocument` に置換し、キャストを全廃
     - 検証: `RtlEditor2.Desktop.csproj` **0 errors** / `--filter !~ParseSvTestFile` **278 合格** / `~ParseSvTestFile` **1028 合格**
+  - **Stage G-1 完了 (`df44a48` / `8853ebc`)**: `Rule` / `RuleSet` を `SystemVerilogCore.Verilog` へ移設
+    - **着手前の実測 (移設の阻害要因)**
+      | 依存 | 規模 |
+      |---|---|
+      | `ProjectProperty` | **100 箇所以上 / 約 30 ファイル** |
+      | `Data.IVerilogRelatedFile` | 23 ファイル |
+      | `RuleSet` | 8 ファイル |
+      → `ProjectProperty` が最大のため、**依存の小さい型から順に移す**方針へ変更
+    - `SystemVerilogCore.csproj` に **YamlDotNet 18.1.0** を追加 (ユーザ承認済み)。「UI パッケージ参照ゼロ」方針は維持 (純マネージドのみ)
+    - `Verilog/Rule.cs` / `Verilog/RuleSet.cs` を新規作成し、plugin 側を削除
+    - 参照側: `ProjectProperty.cs` は `using Rule = ...` / `using RuleSet = ...` の alias で既存参照を維持。`WordScanner` / `WordReference` も alias + 契約型へ。`Data/RuleFile.cs` / `Parser/RuleFileParser.cs` / `FileTypes/RuleFile.cs` は完全修飾名へ
+    - テスト 2 件更新: `RuleSetTests` の `pluginVerilog.Rule*` → `SystemVerilogCore.Verilog.Rule*` / `ParserBackedAdapterTests` の `AutoCompleteItem` 4 引数 → 3 引数 (D-3 の `Color` 除去に追随)
+  - **Stage G-2 完了 (`81561ee` / `4c63240`)**: `AnnotationCommandsClass` を `SystemVerilogCore.Verilog.AnnotationCommands` へ移設
+    - **着手前の実測**: 使用箇所は `Verilog/` 内 3 ファイル / 13 箇所 (`DataObjectAnnotation` / `PortAnnotation` / `CommentAnnotationItem`) と `ProjectProperty` の定義のみ。**すべて `ProjectProperty.AnnotationCommands` プロパティ経由**で型名を名指ししていないため、参照側の変更は不要だった
+    - plugin 側は `public class AnnotationCommandsClass : AnnotationCommands {}` の**互換 alias** として残置 (既存参照を壊さない)
+    - 検証: ビルド **0 errors** / **278 合格** / sv-tests **1028 合格**
   - **残り (未着手)**
     | Stage | 内容 | 阻害要因 |
     |---|---|---|
-    | **E** | `IVerilogProjectSettings` に parser が読むメンバを追加 | **F/G 待ち**。8 メンバの型 (`RegisterNameSpace<T>` / `Macro` / `AnnotationCommandsClass` / `RuleSet`) がすべて `pluginVerilog.Verilog` 側にあり、先に型を移す必要がある |
-    | **F-2** | `IVerilogRelatedFile` の `ITextFile` 継承を切る（6 クラスの基底設計解体） | **大** (今回は見送り) |
-    | **G** | `Verilog/` を `SystemVerilogCore` へ移設 + `namespace SystemVerilogCore.Verilog` へ変更 | 大 |
+    | **G-3** | `RegisterNameSpace<T>` を移設 | `Data.VerilogFile` 依存 (F-2 待ち) |
+    | **G-4** | `ProjectProperty` の契約化 (`IVerilogProjectSettings` 拡張) | **100 箇所以上**。`DefinitionNameSpace` / `PackageNameSpace` / `UnitNameSpace` / `Macros` / `SystemTaskParsers` / `SystemFunctions` / `GetInstancedBuildingBlock` |
+    | **G-5** | `Verilog/` 本体の移設 + `namespace SystemVerilogCore.Verilog` | 220 ファイル |
+    | **F-2** | `IVerilogRelatedFile` の `ITextFile` 継承を切る（6 クラスの基底設計解体） | **大** (見送り中) |
     | **H** | LSP が plugin を参照しない構成へ | 中 |
   - **ユーザ方針 (確定)**: `pluginVerilog.Verilog` → **`SystemVerilogCore.Verilog`** ネームスペースへ移していく
   - メモ: `M SystemVerilogCore` (サブモジュール pointer `186b843` → `a3b64a1`) は**着手前から存在**するずれで本タスク由来ではない
