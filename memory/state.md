@@ -31,13 +31,22 @@
     - **D-4**: plugin の `CodeDrawStyle.ColorType` を**契約 enum の alias** (各メンバーを `VerilogColorType.X` で初期化) に変更し、二重定義を解消
   - 検証: `RtlEditor2.Desktop.csproj` **0 errors (警告 726 → 36 に減少)** / `--filter !~ParseSvTestFile` **278 合格** / `~ParseSvTestFile` **1028 合格**
   - コミット: CodeEditor2 `902646e` / CodeEditor2VerilogPlugin `3e2ed48` `597b114` `d609986` / SystemVerilogCore `33986f2`、メイン `3a1fb54` `f996a38` `4732342`
+  - **Stage F-1 完了 (`df54f46` / `a97e26a`)**: parser から具象 `Data.VerilogFile` キャストを除去
+    - **着手前の実測**: `IVerilogRelatedFile` は 22 ファイル / 約 100 箇所で使われ、うち**具象型キャストは 7 箇所** (`Object` / `VirtualInterface` / `ModuleInstantiation` / `ProgramInstantiation` / `UdpInstantiation` / `CommentAnnotationItem` / `SnippetBuilder`)。すべて同型:
+      `if (file is not Data.VerilogFile) return null; Data.VerilogFile source = (Data.VerilogFile)file; ... source.GetInstancedVerilogParsedDocument(key)`
+    - **設計 (重要・失敗からの修正)**: 当初 `IVerilogSourceFile` を `IVerilogDocumentFile` から**継承**させたところ **CS0229 (曖昧) が 41 箇所**発生。`ITextFile` と両方が `RelativePath` / `Name` / `Project` / `ParsedDocument` を宣言するため。`state.md` の Stage 3-1 に記録済みの罠と同一だった
+    - **修正**: 契約を**加算専用**に変更。`ITextFile` が持たない `GetInstancedParsedDocument(string)` **1 メンバだけ**を宣言し、継承をやめた。これで曖昧さゼロ
+    - 実装: `InstanceTextFile` は自身の `ParsedDocument` を返す（インスタンス wrapper は既に 1 インスタンス分の parse 結果）、`VerilogHeaderFile` も同様（ヘッダは parameter override で instance 化されない）
+    - 7 箇所を `file.GetInstancedParsedDocument(key) as ParsedDocument` に置換し、キャストを全廃
+    - 検証: `RtlEditor2.Desktop.csproj` **0 errors** / `--filter !~ParseSvTestFile` **278 合格** / `~ParseSvTestFile` **1028 合格**
   - **残り (未着手)**
     | Stage | 内容 | 阻害要因 |
     |---|---|---|
-    | **E** | `IVerilogProjectSettings` に parser が読む 8 メンバ (`DefinitionNameSpace` / `PackageNameSpace` / `UnitNameSpace` / `Macros` / `SystemTaskParsers` / `SystemFunctions` / `AnnotationCommands` / `GetInstancedBuildingBlock`) を追加 | 中 |
-    | **F** | `IVerilogRelatedFile` (21 ファイル) の `ITextFile` 継承を切る + `RuleSet`/`Rule`/`RegisterNameSpace` の移設 | **最大の難所** (基底クラス設計の解体) |
-    | **G** | `Verilog/` を `SystemVerilogCore` へ `git mv`、plugin は委譲のみに | 大 |
+    | **E** | `IVerilogProjectSettings` に parser が読むメンバを追加 | **F/G 待ち**。8 メンバの型 (`RegisterNameSpace<T>` / `Macro` / `AnnotationCommandsClass` / `RuleSet`) がすべて `pluginVerilog.Verilog` 側にあり、先に型を移す必要がある |
+    | **F-2** | `IVerilogRelatedFile` の `ITextFile` 継承を切る（6 クラスの基底設計解体） | **大** (今回は見送り) |
+    | **G** | `Verilog/` を `SystemVerilogCore` へ移設 + `namespace SystemVerilogCore.Verilog` へ変更 | 大 |
     | **H** | LSP が plugin を参照しない構成へ | 中 |
+  - **ユーザ方針 (確定)**: `pluginVerilog.Verilog` → **`SystemVerilogCore.Verilog`** ネームスペースへ移していく
   - メモ: `M SystemVerilogCore` (サブモジュール pointer `186b843` → `a3b64a1`) は**着手前から存在**するずれで本タスク由来ではない
 
 ## 旧: 進行中タスク
