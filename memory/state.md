@@ -3,6 +3,35 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (4) 完了: completion / signature help を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `続けて`
+  - **移設したもの**
+    | 旧 (plugin) | 新 (SystemVerilogCore) |
+    |---|---|
+    | `CoreBridge/CompletionAdapter` | `Completion/CompletionProvider` |
+    | `CoreBridge/SignatureHelpAdapter` | `Completion/SignatureHelpProvider` |
+  - **★ 契約の穴が見つかった: `IVerilogSourceFile.PrepareVerilogTextDocument(text)` を新設**
+    - 部分parse も **識別子チェーン走査 (`GetAutoCompleteTarget`) も `file.CodeDocument` を読む**。
+      UI レスホストはバッファを持たないため、provider 側で使い捨てバッファを作っても**走査が見ない**。
+      → ホストに「parse 済みテキストでバッファを用意させる」契約メソッドを足し、実装は `CreateCodeDocumentForText` (既存バッファのテキストが違えば詰め替え)
+  - **★ 既存バグを発見・修正: `CompletionContext` のフィールド代入順**
+    - `parsedDocument` / `item` / `index` を **バッファ有無チェックの後**に代入していたため、バッファが無いと
+      `AppendAll()` が `parsedDocument.ProjectProperty` で **NRE**。`AppendAll` は parse 結果しか要らないので、
+      **代入をバッファチェックの前に移動**し、コンストラクタに任意のバッファ引数を追加
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (警告 0) / `SystemVerilogLanguageServer` (警告 28) /
+    `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **残る LSP の `pluginVerilog.` 依存 (実測、3 ファイルまで減少)**
+    | ファイル | 件数 | 実体 |
+    |---|---|---|
+    | `Server/InMemorySystemVerilogCore.cs` | 61 | **plugin の item tree 構築** (`VerilogFile` / `VerilogHeaderFile` / `VerilogCommon.Updater`) |
+    | `Server/LspHandler.HierarchyMenu.cs` | 12 | `HierarchyMenuAdapter` / `NavigateNodeMenuAdapter` |
+    | `Program.cs` | 5 | `pluginVerilog.Plugin` の登録 |
+  - **Next (Stage H の残り 2 系統)**
+    1. **メニュー 3 種** — `NavigateNodeMenuAdapter.BuildSimulationSetup` が `Data.SimulationSetup` に依存。
+       「simulation setup の行だけホスト (plugin) に委譲する」形にすればカタログ + アダプタを移設できる見込み
+    2. **本丸**: `InMemorySystemVerilogCore` の plugin item tree 構築。`VerilogCommon.Updater` を契約化しないと外れない
+       (エディタの NavigatePanel と同じコードでツリーを組んでいるため、契約化には `Item` ツリー全体の抽象化が要る)
+
 - **Stage H (3) 完了: auto-connect を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `続けて`
   - **移設したもの**
