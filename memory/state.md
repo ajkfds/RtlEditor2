@@ -3,6 +3,33 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (3) 完了: auto-connect を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `続けて`
+  - **移設したもの**
+    | 旧 (plugin) | 新 (SystemVerilogCore) |
+    |---|---|
+    | `CoreBridge/AutoConnectModel` (+ `AutoConnectPort`) | `AutoConnect/AutoConnectModel` |
+    | `CoreBridge/AutoConnectAdapter` | `AutoConnect/AutoConnectBuilder` |
+  - **★ 実測で分かったこと**: `Build` / `Apply` の **`file` 引数は両方とも未使用**だった (宣言だけで本体から参照ゼロ)。
+    契約型に変えるまでもなく削除でき、`Build(parsedDocument, index)` / `Apply(parsedDocument, index, selections, indent)` になった
+  - **移設の判断**: `NavigateNodeMenuAdapter` は `Data.SimulationSetup` (エディタの item tree 前提) に依存していて
+    移設コストが高いため後回しにし、依存の小さい `AutoConnect` を先に処理した
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (警告 0) / `SystemVerilogLanguageServer` (警告 28) /
+    `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **残る LSP の `pluginVerilog.` 依存 (実測)**
+    | ファイル | 件数 | 実体 |
+    |---|---|---|
+    | `Server/InMemorySystemVerilogCore.cs` | 66 | **plugin の item tree 構築** (`VerilogFile` / `VerilogHeaderFile` / `VerilogCommon.Updater` / アダプタ呼び出し) |
+    | `Server/LspHandler.HierarchyMenu.cs` | 12 | `HierarchyMenuAdapter` / `NavigateNodeMenuAdapter` |
+    | `Program.cs` | 5 | `pluginVerilog.Plugin` の登録 |
+    | `Server/LspHandler.Unimplemented.cs` / `LspHandler.cs` | 1 / 1 | `SignatureHelpAdapter` / `CompletionAdapter` |
+  - **Next (Stage H の残り)**
+    1. **`CompletionAdapter` / `SignatureHelpAdapter`** — `Data.VerilogFile` を要求しているので `IVerilogSourceFile` 化が要る
+       (`PrepareCompletionBuffer` は既に `Data.VerilogFile` を受けるので、そこも契約化する)
+    2. **メニュー 3 種** — `NavigateNodeMenuAdapter` の `BuildSimulationSetup` が `Data.SimulationSetup` に依存。
+       「simulation setup の行だけホスト (plugin) に委譲する」形にすればカタログ + アダプタを移設できる見込み
+    3. **本丸**: `InMemorySystemVerilogCore` の plugin item tree 構築。`VerilogCommon.Updater` を契約化しないと外れない
+
 - **Stage H (2) 完了: snippet / tool menu を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `進めて`
   - **移設したもの (いずれも「UI フリーだが plugin 側にあった」だけ)**
