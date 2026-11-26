@@ -3,6 +3,50 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-6 (1) 完了: `SystemVerilogCore` の UI フリー性を実測で証明 + UI フリーな parse engine を新設** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `SystemVerilogCore が Avalonia 非依存のままか（ProjectReference 追加で循環していないか）の確認` → 続けて `H-1`
+  - **確認結果 1: `SystemVerilogCore` は UI フリー (ビルド済み DLL のアセンブリ参照で証明)**
+    ```
+    assembly references: 9
+      System.Collections / .Concurrent / .ComponentModel.Annotations
+      System.Linq / .Runtime / .Text.Encoding.Extensions / .Text.Json / .Threading
+      YamlDotNet
+    RESULT: UI-free (no Avalonia / editor / plugin references)
+    ```
+    - `SystemVerilogCore.csproj` の `ProjectReference` は **0 件**、パッケージは YamlDotNet のみ
+    - ソース上の `Avalonia` / `CodeEditor2` / `pluginVerilog` の一致は**すべてコメント**（経緯説明）
+  - **確認結果 2: 循環参照なし (一方向)**
+    ```
+    SystemVerilogCore            -> (none)
+    CodeEditor2                  -> AjkAvaloniaLibs, AvaloniaEdit, CodeEditor2Plugin, SystemVerilogCore
+    CodeEditor2VerilogPlugin     -> AjkAvaloniaLibs, CodeEditor2Plugin, CodeEditor2, SystemVerilogCore
+    SystemVerilogLanguageServer  -> SystemVerilogCore, CodeEditor2VerilogPlugin
+    ```
+  - **確認結果 3 (問題の発見): LSP サーバは Avalonia を 33 アセンブリ同梱していた**
+    - `SystemVerilogLanguageServer.dll` の参照に `Avalonia.Base` / `AvaloniaEdit` / `CodeEditor2` / `CodeEditor2VerilogPlugin` が並び、出力に Avalonia 一式 (SkiaSharp 含む) がコピーされる
+    - 原因: サーバが `CoreBridge.ParseEngine`（plugin 内）を使うため plugin → CodeEditor2 → Avalonia へ推移的に到達
+    - **Stage H（LSP が plugin を参照しない構成）は未達**と判明
+  - **H-1 の実装 (UI フリーな parse engine を `SystemVerilogCore` へ)**
+    - 新規 `SystemVerilogCore/Parsing/VerilogParser.cs`: 契約だけで駆動する parser。`ParsedDocument` を組み立てて `Root.ParseCreateAsync` を回す。`RegisterRootElements()` で名前空間登録も行う
+    - 新規 `SystemVerilogCore/Parsing/ParseEngine.cs`: `ParseSystemVerilogAsync` / `ParseInstanceAsync`（旧 `CoreBridge.ParseEngine` の 2 パス解析とインスタンス登録を再現）
+    - 新規 `Documents/IVerilogSourceFileInstanceCache.cs`: インスタンス parse 結果の**書き込み側**契約（読み取りは既存の `IVerilogSourceFile.GetInstancedParsedDocument`）
+    - 新規 `Documents/VerilogColorPalette.cs`: `CodeDrawStyle`（Avalonia 依存）の色を `#RRGGBB` で持つ UI フリーなパレット
+    - `ParsedDocument` に **文書を明示的に受け取るコンストラクタ**を追加（in-memory ホストは自前の文書を持たないため）
+    - `PlainTextDocument` に **所有者ファイルを受け取るオーバーロード**を追加（`File == null` だと診断が全部捨てられるため）
+    - `Data.VerilogFile` が `IVerilogSourceFileInstanceCache` を実装
+    - `LspHandler.Theme.cs` を `VerilogColorPalette` 経由に（`pluginVerilog` 参照が 0 に）
+  - **★ 実測で判明した「移設だけでは足りない」事実**
+    - LSP を新 engine に切り替えると **49 テストが失敗**（診断が出ない / 階層の子が出ない / semantic token が減る）
+    - 原因: 旧 `CoreBridge.ParseEngine` は parse 結果を `VerilogFile.ParsedDocument` に**代入**し、editor の `CodeDocument` に色を書かせていた。新 engine は契約だけを扱うため、その副作用が無い
+    - **判断: LSP の切り替えは撤回**（`pluginVerilog.CoreBridge.ParseEngine` に戻した）。engine 自体は `SystemVerilogCore` に残置し、**挙動一致を検証してから**切り替える段取りにした
+  - **検証**: `SystemVerilogCore` 0 errors / `CodeEditor2VerilogPlugin` 0 errors / `SystemVerilogLanguageServer` 0 errors / `RtlEditor2.Desktop` 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - コミット: SystemVerilogCore / CodeEditor2VerilogPlugin / SystemVerilogLanguageServer / メイン
+  - **Next (LSP を plugin から切り離すために残る作業)**
+    1. **新 engine の挙動一致**: parse 結果を `VerilogFile.ParsedDocument` へ代入する副作用と、editor `CodeDocument` への色書き込みをどう扱うか決める（契約に「結果を保持する」口を足すか、LSP 側で保持するか）
+    2. `LspHandler.Theme.cs` 以外の `pluginVerilog` 依存 119 箇所（`InMemorySystemVerilogCore` 90 / `HierarchyMenu` 12 / `Snippet` 3 / `ToolMenu` 2 / `AutoConnect` 1 / `Unimplemented` 1 / `LspHandler` 3 / `Program` 7）
+       - 大半は `CoreBridge` のアダプタ（Completion / Formatting / SignatureHelp / Snippet / ToolMenu / AutoConnect / ColorSegment / DiagnosticCodeMap）と `Data.VerilogFile` / `VerilogCommon.Updater`
+    3. `Program.cs` の生成物ツール（`HierarchyMenuManifest` / `BadgeIconGenerator` / `HoverGrammar`）— 開発時のみのツールなので別アセンブリへ切り出せば本番経路から外せる
+
 - **Stage G-5 (6) 完了: 283 ファイルを `SystemVerilogCore.Verilog` へ移設完了** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
   - ユーザ指示: `つづけて`（前段で示した移設本体）
   - **★ サブモジュール境界のため `git mv` は使えない**: `CodeEditor2VerilogPlugin` と `SystemVerilogCore` は別リポジトリなので、`git mv` では跨げない。**コピー（新規追加）＋削除**で実施した
