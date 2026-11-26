@@ -3,6 +3,45 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (2) 完了: snippet / tool menu を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `進めて`
+  - **移設したもの (いずれも「UI フリーだが plugin 側にあった」だけ)**
+    | 旧 (plugin) | 新 (SystemVerilogCore) | 備考 |
+    |---|---|---|
+    | `CoreBridge/SnippetTemplate` (+ `SnippetField`) | `Snippets/SnippetTemplate` | `${n}` と平文 + フィールド位置の二重描画。文字列ビルダのみ |
+    | `Data/VerilogCommon/SnippetBuilder` | `Snippets/SnippetBuilder` | **`ProjectProperty` → `IVerilogParserSettings`** / **`Data.IVerilogRelatedFile` → `IVerilogSourceFile`** (どちらも既存契約) |
+    | 各 Snippet クラスの `Build` 6 つ | `Snippets/{AlwaysFF,AutoFormat,ModPort,ModuleInstance,PortConnectionCreate,PortInvert}SnippetBuilder` | クラス自体は `InteractiveSnippet` 派生なので editor に残し、**`Build` だけを出して委譲** |
+    | `CoreBridge/SnippetAdapter` | `Snippets/SnippetProvider` | 名前ディスパッチと wire 形状のみ |
+    | `CoreBridge/ToolMenuCatalog` | `Snippets/ToolMenuCatalog` | 純データ。plugin 側は `ToolId` の const と `All` / `EditorTools` / `Find` を転送する薄いファサードに |
+    | `CoreBridge/ToolMenuAdapter` | `Snippets/ToolMenuBuilder` | 可否判定は `SnippetProvider` に問い合わせる (メニューと実行が食い違わない) |
+  - **★ 移設中に見つけたバグ**: `ModuleInstanceSnippet` の ctor を `base(ToolId.ModuleInstance)` に書き換えてしまい、
+    `IVerilogAutocompleteItem.Label` (基底 `ToolItem.Text` を返す) が **`moduleInstance`** になった。
+    module 名候補が「`leaf`」ではなく「`moduleInstance`」として出る回帰で、テスト
+    `Completion_ModuleNameCandidateExpandsToAnInstantiation` が検出 (`the module name 'leaf' must be offered; got: localparam, logic, moduleInstance`)。
+    **基底の text は module 名が正しい** (候補一覧に出す文字列そのもの) ので元に戻し、理由を doc コメントに明記
+  - **実測 (成果)**
+    | 計測 | Stage H (1) 後 | 現在 |
+    |---|---|---|
+    | `SystemVerilogLanguageServer` のビルド警告 | 291 | **28** |
+    | LSP の `pluginVerilog.` 参照 (ファイル数) | 8 | **5** |
+    | plugin の `CoreBridge` ファイル数 | 20 | **14** |
+  - **残る LSP の `pluginVerilog.` 依存 (実測)**
+    | ファイル | 件数 | 実体 |
+    |---|---|---|
+    | `Server/InMemorySystemVerilogCore.cs` | 72 | **plugin の item tree 構築** (`VerilogFile` / `VerilogHeaderFile` / `VerilogCommon.Updater` / 各アダプタ呼び出し) |
+    | `Server/LspHandler.HierarchyMenu.cs` | 12 | `HierarchyMenuAdapter` / `NavigateNodeMenuAdapter` (UI フリーだが plugin 側) |
+    | `Program.cs` | 5 | `pluginVerilog.Plugin` の登録 |
+    | `Server/LspHandler.AutoConnect.cs` | 1 | `AutoConnectModel` (plugin 側) |
+    | `Server/LspHandler.Unimplemented.cs` / `LspHandler.cs` | 1 / 1 | `SignatureHelpAdapter` / `CompletionAdapter` |
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (警告 0) / `SystemVerilogLanguageServer` (警告 28) / `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **Next (Stage H の残り)**
+    1. **メニュー 3 種** (`HierarchyMenuCatalog` / `NavigateNodeMenuContext` / `NavigateNodeMenuAdapter` / `HierarchyMenuAdapter` / `HierarchyMenuManifest`)
+       - 依存は `NavigateNodeMenuContext.File` の `Data.IVerilogRelatedFile` のみ → **`IVerilogSourceFile` に変えられる**見込み。
+         `HierarchyMenuCatalog.Entry.Handler` が `Action<NavigateNodeMenuContext>` なので、desktop 専用行のハンドラ closure は plugin 側に残す形になる (カタログだけ移設)
+    2. **`AutoConnectModel` / `AutoConnectAdapter`** — 判定ロジックは UI フリー。`AutoConnectModel` は plugin 側 (`LspHandler.AutoConnect` が型として参照)
+    3. **`CompletionAdapter` / `SignatureHelpAdapter`** — `Data.VerilogFile` を要求しているので `IVerilogSourceFile` 化が要る
+    4. **本丸**: `Server/InMemorySystemVerilogCore.cs` の plugin item tree 構築。`VerilogCommon.Updater` (エディタの NavigatePanel と同じコード) を契約化しないと外れない
+
 - **Stage H (1) 完了: 診断 / 色 / hover の補助を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `続けて`
   - **移設した 4 つ (すべて「parse 結果の純関数」だった)**
