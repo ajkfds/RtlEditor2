@@ -3,6 +3,39 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (1) 完了: 診断 / 色 / hover の補助を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `続けて`
+  - **移設した 4 つ (すべて「parse 結果の純関数」だった)**
+    | 旧 (plugin) | 新 (SystemVerilogCore) | 中身 |
+    |---|---|---|
+    | `CoreBridge/DiagnosticCodeMap` | `Diagnostics/DiagnosticCodeMap` | メッセージ文字列 → LSP の `code`。入力が string だけ |
+    | `CoreBridge/ColorSegmentAdapter` | `Diagnostics/ColorSegmentReader` | 契約 `GetColorSpans()` → (index, length, 色)。**戻り値の型を plugin の `CodeDrawStyle.ColorType` → 契約 `VerilogColorType` に変更** |
+    | `CoreBridge/ElementLabelAdapter` | `Documents/ElementLabelReader` | 要素 → hover 用フェンス付きラベル。パレットは既存の `VerilogColorPalette` から取るので **Avalonia 参照が消えた** |
+    | `CoreBridge/HoverGrammar` | `Documents/HoverGrammar` | TextMate grammar の生成 / 検証。同じくパレットを `VerilogColorPalette` から |
+  - **実測 (成果)**
+    | 計測 | 前 | 後 |
+    |---|---|---|
+    | `SystemVerilogLanguageServer` のビルド警告 | **711** | **291** |
+    | LSP の `pluginVerilog.` 参照 (ファイル数) | 8 | **8** (内容は下記へ) |
+    | 生成物 `syntaxes/systemverilog.tmLanguage.json` の差分 | — | **ヘッダコメント 1 行のみ** (生成元のファイル名) |
+  - **残る LSP の `pluginVerilog.` 依存 (実測 `git -C SystemVerilogLanguageServer grep -c`)**
+    | ファイル | 件数 | 実体 |
+    |---|---|---|
+    | `Server/InMemorySystemVerilogCore.cs` | 76 | **plugin の item tree を構築している** (`VerilogFile` / `VerilogHeaderFile` / `VerilogCommon.Updater` / アダプタ呼び出し)。LSP の階層がエディタの NavigatePanel と同じコードで動くための土台で、外すには `Updater` の契約化が要る |
+    | `Server/LspHandler.HierarchyMenu.cs` | 12 | `HierarchyMenuAdapter` / `NavigateNodeMenuAdapter` (UI フリーだが plugin 側にある) |
+    | `Program.cs` | 5 | `HoverGrammar` は解消済み。残りは `pluginVerilog.Plugin` の登録 |
+    | `Server/LspHandler.Snippet.cs` / `ToolMenu.cs` | 3 / 2 | `SnippetAdapter` / `ToolMenuAdapter` (UI フリーだが plugin 側) |
+    | `Server/LspHandler.AutoConnect.cs` / `Unimplemented.cs` / `LspHandler.cs` | 1 / 1 / 1 | `AutoConnectModel` / `SignatureHelpAdapter` / `CompletionAdapter` |
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (警告 0) / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` すべて 0 errors /
+    `dotnet test` **1306 合格 / 0 失敗** / `--check-hover-grammar` → `[ok]`
+  - **Next (Stage H の残り)**: 以下の 3 系統。いずれも「UI フリーだが plugin 側にある」だけなので移設先は `SystemVerilogCore`。
+    1. **snippet 一式** (`SnippetTemplate` / `SnippetField` / `SnippetAdapter` / `SnippetBuilder` / 各 Snippet の `Build` 6 つ)
+       - 阻害要因は 2 つだけ (実測): (a) `SnippetAdapter` / `SnippetBuilder` が `Data.VerilogFile` / `Data.IVerilogRelatedFile` を要求 → **`IVerilogSourceFile` に変えられる** (b) `SnippetBuilder.ResolveModule` が具象 `ProjectProperty` を要求 → **`IVerilogParserSettings` に変えられる** (どちらも既に契約がある)
+       - 各 Snippet クラス自体は `CodeEditor2.Snippets.InteractiveSnippet` 派生なので editor に残し、**`Build` だけを `SystemVerilogCore` の静的クラスへ出す**必要がある (クラスを動かすのではなく実装を出す)
+    2. **メニュー 3 種** (`HierarchyMenuCatalog` / `NavigateNodeMenuContext` / `NavigateNodeMenuAdapter` / `ToolMenuCatalog` / `ToolMenuAdapter`) — 既に UI フリー設計 (コメントで明言) なので移設のみ
+    3. **補完 / signature** (`CompletionAdapter` / `SignatureHelpAdapter`) — `Data.VerilogFile` を要求しているので 1 と同じ契約化が要る
+    - 最後に `Server/InMemorySystemVerilogCore.cs` の plugin item tree 構築 (`Updater` の契約化) が残る。これが Stage H の本丸
+
 - **Stage G-6 (5) 完了: UI フリー engine への切り替えが成立 (LSP は plugin の parse 経路を離脱)** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `Stage G-6を続けて`
   - **★ 前段の「残り 6 件」はすべて解消**。`InMemorySystemVerilogCore` の parse を
