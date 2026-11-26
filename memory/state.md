@@ -3,6 +3,30 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-6 (3): 色の経路を契約へ移設 (切り替えは残り 20 件で未達)** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `続けて`
+  - **やったこと**
+    - `IVerilogTextDocument` に **`GetColorSpans()`** を追加 + `VerilogColorSpan` 構造体（index / length / palette index）
+    - `CodeDocument` が `SetColorAt` で受けた index をそのまま記録して返す（**Avalonia 色の逆引きが不要になった**）
+    - `PlainTextDocument` / `InMemoryCodeDocument` も同様に記録
+    - **`ColorSegmentAdapter` を契約ベースに書き換え**: `parsedDocument.VerilogDocument.GetColorSpans()` を読むだけになり、`CodeDocument.TextColors` と Avalonia 色マッチングが消えた
+    - `InMemoryCodeDocument` に **`Owner`（`IVerilogDocumentFile`）** を追加し、`InMemoryFile` が `IVerilogDocumentFile` を実装（診断がファイルに紐づくように）
+  - **実測 (切り替え時の失敗数の推移)**
+    | 段階 | 失敗テスト数 |
+    |---|---|
+    | 当初 | 69 |
+    | `ParsedDocument` 保持 + ホスト文書 | 24 |
+    | 色経路の契約化 (`GetColorSpans`) | **21** |
+    | `InMemoryFile` の `IVerilogDocumentFile` 実装 | **20** |
+    | 切り替え撤回 | **0** |
+  - **残る 20 件の性格 (実測)**
+    - 大半が「診断が出ない」: bit width mismatch / Size mismatch / floating input / include not found / rule.yaml の severity
+    - 加えて folding range が空 / 完了候補が null / `Hover_IncludesParserDetail` で **NRE** (`DocumentParser` ctor が具象 `CodeDocument.CopyTextOnlyFrom` を呼び、ホスト文書では null)
+    - **結論**: `ColorSegmentAdapter` を契約化しても、**残り 6 アダプタ**（Completion / Formatting / SignatureHelp / Snippet / ToolMenu / AutoConnect）と `DocumentParser` の具象依存が残る限り切り替えは成立しない
+  - **判断**: 切り替えは**撤回**（`pluginVerilog.CoreBridge.ParseEngine`）。今回の契約・実装は**すべて残す**（色経路は完全に UI フリー化できたので、次のアダプタ移設の土台になる）
+  - **検証**: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **Next**: 残り 6 アダプタの契約化。特に `DocumentParser`（editor の parser 基底）が `CodeDocument` を要求する点は、LSP 側で parser を自前で回す（新 engine）前提に切り替えると解消する見込み
+
 - **Stage G-6 (2): UI フリー engine への切り替えは「アダプタ移設が先」と実測で確定** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `続けて`
   - **やったこと**
