@@ -3,6 +3,26 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-6 (2): UI フリー engine への切り替えは「アダプタ移設が先」と実測で確定** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `続けて`
+  - **やったこと**
+    - `IVerilogSourceFileParseCache` 契約を新設（`SetVerilogParsedResult`）。`Data.VerilogFile` が実装し、`ParsedDocument` スロットへ委譲
+    - `ParseEngine.ParseSystemVerilogAsync` に **文書を渡す引数**を追加（ホストの文書に色を書かせるため）
+    - `InMemoryCodeDocument` に **`IVerilogTextDocument` を実装**（`SetColorAt` は色リストへ記録、mark / folding は no-op）
+    - **`SystemVerilogLanguageServer.csproj` に入れ子複製の除外を追加** — `SystemVerilogLanguageServer/SystemVerilogLanguageServer/` という**未追跡の古い複製**が存在し、SDK の既定 glob が両方をコンパイルして **384 エラー（全型の重複定義）** になっていた。`Compile Remove` で除外
+  - **実測 (切り替えの阻害要因が特定できた)**
+    | 段階 | 失敗テスト数 |
+    |---|---|
+    | 当初 (副作用なし) | **69** |
+    | `ParsedDocument` 保持 + ホスト文書を渡す | **24** |
+    | 切り替え撤回 | **0** |
+    - 残る 24 件の内訳: 診断が出ない (bit width / Size mismatch / floating input / include) / semantic token が減る / folding range が空 / badge が null
+    - **根本原因**: plugin の `CoreBridge` アダプタ（Completion / Formatting / SignatureHint / Snippet / ToolMenu / AutoConnect / ColorSegment）が parse 結果を **plugin の具象 `CodeDocument`** 経由で読む（`EditorCodeDocument()`）。ホスト文書で parse すると具象型が null になり、アダプタが空を返す
+  - **判断**: **engine の切り替えは撤回**し、`pluginVerilog.CoreBridge.ParseEngine` に戻した。今回追加した契約・実装・csproj 修正は**そのまま残す**（アダプタ移設後に再度切り替えるための下準備）
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **Next (切り替えの前提条件)**: `CoreBridge` の 7 アダプタを **契約ベース**（`IVerilogTextDocument` / `ColorSegmentAdapter` 相当を `SystemVerilogCore` へ）に移す。これが済めば engine 切り替えだけで LSP の Avalonia 依存が外れる
+  - **メモ**: `SystemVerilogLanguageServer/.gitmodules` と `SystemVerilogLanguageServer/SystemVerilogLanguageServer/` は**未追跡の残留物**（私の作業由来ではない）なのでコミットから除外
+
 - **Stage G-6 (1) 完了: `SystemVerilogCore` の UI フリー性を実測で証明 + UI フリーな parse engine を新設** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `SystemVerilogCore が Avalonia 非依存のままか（ProjectReference 追加で循環していないか）の確認` → 続けて `H-1`
   - **確認結果 1: `SystemVerilogCore` は UI フリー (ビルド済み DLL のアセンブリ参照で証明)**
