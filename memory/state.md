@@ -3,6 +3,37 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (5) 完了: badge icon 生成器を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `つづけて`
+  - **移設**: `CoreBridge/BadgeIconGenerator` (+ `BadgeIconResult`) → `Menus/BadgeIconGenerator`
+    - SVG テキストを読み書きするだけで UI 依存ゼロ。`--write-hierarchy-menu-manifest` が
+      `package.json` と一緒にアイコンを更新するため、LSP から plugin を参照する必要があった
+  - **生成物は不変**: `--check-hierarchy-menu-manifest` → `[ok] package.json is already up to date` +
+    `[ok] badge icons are up to date`
+  - **メニュー 3 種の移設は見送り (実測に基づく判断)**
+    - 対象は `HierarchyMenuCatalog` (700 行) / `NavigateNodeMenuContext` (78) / `NavigateNodeMenuAdapter` (687) /
+      `HierarchyMenuManifest` (985) の **計 約 2,450 行**
+    - **他プラグイン 2 つが `pluginVerilog.CoreBridge.HierarchyMenuCatalog` を直接参照している**
+      (`CodeEditor2IcarusVerilogPlugin/Plugin.cs` 7 箇所 / `CodeEditor2VivadoPlugin/Plugin.cs` 7 箇所) ため、
+      移設すると両プラグインに `SystemVerilogCore` への ProjectReference 追加が要る
+    - `NavigateNodeMenuAdapter.BuildSimulationSetup` が `Data.SimulationSetup` (エディタの item tree 前提) に依存
+    - 実施するなら「カタログの `Entry` を移設 + 委譲」「simulation 行をホストへ委譲」「他プラグインの参照更新」を
+      1 つのまとまった変更として行う必要がある (今回は影響範囲に対して利得が小さいと判断)
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (警告 0) / `SystemVerilogLanguageServer` /
+    `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **残る LSP の `pluginVerilog.` 依存 (実測、3 ファイル / 76 箇所)**
+    | ファイル | 件数 | 実体 |
+    |---|---|---|
+    | `Server/InMemorySystemVerilogCore.cs` | 61 | **plugin の item tree 構築** (`VerilogFile` / `VerilogHeaderFile` / `VerilogCommon.Updater`) |
+    | `Server/LspHandler.HierarchyMenu.cs` | 12 | `HierarchyMenuAdapter` / `NavigateNodeMenuAdapter` |
+    | `Program.cs` | 3 | `HierarchyMenuManifest` (package.json 生成) |
+  - **Next (Stage H の本丸のみ残る)**
+    - `InMemorySystemVerilogCore` の plugin item tree 構築を外す = `VerilogCommon.Updater` (エディタの NavigatePanel と
+      同じコードでツリーを組む) の契約化。`Item` ツリー (`Items` / `ChildItems` / `Name` / `RelativePath`) を
+      契約に載せ、`Updater` を `SystemVerilogCore` へ移す必要があり、**影響が最も大きい**
+    - これが済むと `SystemVerilogLanguageServer.csproj` から `CodeEditor2VerilogPlugin` への参照を外せる
+      (Stage H の当初目的: LSP が Avalonia を同梱しない構成)
+
 - **Stage H (4) 完了: completion / signature help を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `続けて`
   - **移設したもの**
