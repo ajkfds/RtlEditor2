@@ -3,6 +3,36 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-6 (4): 色・折りたたみ・診断の経路を契約へ (切り替えは残り 6 件)** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `続けて`
+  - **★ 決定的なバグを発見・修正**: `InMemoryFile.SetText` が `new InMemoryCodeDocument(text)` で **`Owner` を設定し忘れていた**。`AddError` は `document.File` が null だとメッセージを捨てるため、**編集 (didChange) 後の診断が全部消えていた**。`Owner = this` を追加
+    - これが 20 件 → 7 件の主因（診断系の失敗がまとめて解消）
+  - **実装**
+    - `IVerilogTextDocument` に **`GetFoldRegions()`** を追加 + `VerilogFoldRegion`（start / last / name）
+    - `CodeDocument` が `AppendBlock` で記録して返す。`PlainTextDocument` / `InMemoryCodeDocument` も同様
+    - `GetFoldingRanges` を契約経由に（`doc.Foldings.Foldings` と AvaloniaEdit 型が消えた）
+    - `CollectDiagnostics` / `GetDiagnosticLength` を契約型に（具象 `CodeDocument` の narrowing が消えた）
+  - **実測 (切り替え時の失敗数の推移)**
+    | 段階 | 失敗テスト数 |
+    |---|---|
+    | 当初 | 69 |
+    | `ParsedDocument` 保持 + ホスト文書 | 24 |
+    | 色経路の契約化 | 21 |
+    | `InMemoryFile` の `IVerilogDocumentFile` 実装 | 20 |
+    | **`SetText` の `Owner` 漏れ修正** | **7** |
+    | 折りたたみ + 診断の契約化 | **6** |
+    | 切り替え撤回 | **0** |
+  - **残る 6 件の内訳 (実測・すべて具象文書依存)**
+    | 失敗 | 原因 |
+    |---|---|
+    | `InMemoryCore_CompletionFromRealParser` / `Completion_ModuleNameCandidateExpandsToAnInstantiation` / `InMemoryCore_CompletionNoDotIdentifierCandidates` | `CompletionAdapter` が `parsedDocument.EditorCodeDocument()` を要求 |
+    | `Snippet_PortInvert_FlipsDirectionAndSuffix` | `PortInvertSnippet` が `EditorCodeDocument()` を要求 |
+    | `Hover_IncludesParserDetail` | **NRE**: `DocumentParser`（editor の parser 基底）の ctor が具象 `CodeDocument.CopyTextOnlyFrom` を呼ぶ |
+    | `Diagnostics_CoverTheSpanTheEditorMarks` | `Message.Length` と契約文書の長さの扱いの差（要調査） |
+  - **判断**: 切り替えは**撤回**（`pluginVerilog.CoreBridge.ParseEngine`）。今回の契約・実装・バグ修正は**すべて残す**
+  - **検証**: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **Next**: `CompletionAdapter` / `PortInvertSnippet` を契約化（`EditorCodeDocument()` → `VerilogDocument`）、`DocumentParser` の具象依存解消（LSP は新 engine で parser を回すので、instance parse だけ plugin 経由なのを直す）
+
 - **Stage G-6 (3): 色の経路を契約へ移設 (切り替えは残り 20 件で未達)** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `続けて`
   - **やったこと**
