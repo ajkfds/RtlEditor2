@@ -3,6 +3,37 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-5 (1) 完了: `Verilog/` から `Data.*` 依存を 5 ファイル → 1 ファイルへ削減** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
+  - ユーザ指示: `pluginVerilog/Verilog → SystemVerilogCore.Verilog への移設 をつづけて`
+  - **着手前の実測 (推測ではない)**
+    | 計測 | 結果 |
+    |---|---|
+    | `git grep -ln "pluginVerilog.Data" -- Verilog` | **5 ファイル** (`ParsedDocument` / `WordScanner` / `Items/ModuleInstantiation` / `Items/ProgramInstantiation` / `Items/UdpInstantiation`) |
+    | `git grep -ln "pluginVerilog.CodeEditor" -- Verilog` | **1 ファイル** (`ParsedDocument`) |
+    | 移設対象 | `Verilog/` 配下 283 ファイル |
+  - **今回消した依存と、その根拠**
+    | 依存 | 箇所 | 解消方法 |
+    |---|---|---|
+    | `Data.IVerilogRelatedFile` | `ParsedDocument.File` / `TextFile` / `Message.File` / コンストラクタ / `KeyGenerator` 互換オーバーロード | **契約 `IVerilogSourceFile` へ型を差し替え**。editor 側の消費者 (`EditorContextMenu` / `Plugin` の MessageNodeFactory) が `as Data.IVerilogRelatedFile` で絞る |
+    | `Data.IVerilogRelatedFile` | `WordPointer.VerilogFile` / `WordScanner` のコンストラクタ | 同上 (`IVerilogSourceFile`) |
+    | `pluginVerilog.CodeEditor.CodeDocument` | `ParsedDocument.AddError/Warning/Notice/Hint` の `document.Marks.SetMarkAt` | **契約 `IVerilogTextDocument.SetMarkAt` 経由に変更**。`CodeDocument` プロパティは editor 用の互換ビューとして残置 |
+    | `CodeDocument.GetWord` / `CreateLineString` | `ParsedDocument.getPopupTarget` | `IVerilogTextDocument` + **`WordPointer.FetchNext`** で同じ走査を実装 (`CodeDocument.GetWord` と同一手順) |
+    | `Data.VerilogHeaderInstance.Create` フォールバック | `WordScanner.addIncludeFile` | **削除**。ホストが `IVerilogProject.IncludeFileFactory` を供給する形に一本化 |
+    | `Data.IVerilogRelatedFile` | `WordScanner.diveIntoIncludeFile` / `parsePredefinedFileMacro` | 契約へ (`Id` / `FileRelativePath`) |
+    | `Data.VerilogCommon.AutoCompleteItem` | `UdpInstantiation.ParseAsync` の戻り値 | 契約 `IVerilogAutocompleteItem` へ (両呼び出し元が戻り値を無視することを確認済み) |
+    | `Data.VerilogCommon.AutoCompleteItem` | `ProgramInstantiation` / `UdpInstantiation` の未使用 `using` | 削除 |
+    | `as VerilogFile` / `Data.IVerilogRelatedFile` | `ModuleInstantiation` の base parse 取得 / `CommentAnnotationItem` の `@scope` 対象 | 契約へ (存在チェックと parse 結果参照のみ) |
+  - **契約側の追加 (SystemVerilogCore)**
+    - `IVerilogSourceFile` に **`CreateVerilogDocumentParser` / `AcceptVerilogParsedDocumentAsync` を移設**。この 2 つは editor の `IVerilogRelatedFile` にしか無く、parser が「パラメータ上書きインスタンス」と「`@scope` 対象ファイル」を即時 parse するために必要だった。実装は editor 側で明示的実装の転送を書くだけ (呼び出し 0 箇所変更)
+  - **見つけて直した既存バグ 2 件 (どちらも今回の変更で露見)**
+    1. **`CodeDocument` の `IVerilogTextDocument.GetLineLength` が 1-based 変換をしていなかった**。`GetLineAt` / `GetLineStartIndex` は `-1` / `+1` の変換を持つが `GetLineLength` だけ素通しで、契約経由の行長が 1 行ずれた (hint の `data_bus` ラベルが空になった)。`GetLineLength(line + 1)` に修正
+    2. **マクロ展開用の使い捨てバッファの診断が親へ伝播していた**。`AddError` が `ParsedDocument.File` を見ていたため、`PlainTextDocument` (File == null) のバッファでもメッセージが記録され、`returnHierarchy` が「include errors」を報告した (sv-tests `22.5.1--define-expansion_26`)。**`document.File` を見る**よう修正 (契約の意図どおり「使い捨てバッファは診断を捨てる」)
+  - **エディタ側の配線漏れも発見・修正**: `Data/EditorIncludeFileFactory` は存在したが **`Project.IncludeFileFactoryFactory` に誰も設定していなかった**。parser のフォールバックを消したことで include が全滅するため、`Plugin.Register()` で設定するよう追加
+  - **検証**: `CodeEditor2VerilogPlugin.csproj` 0 errors / `RtlEditor2.Desktop.csproj` 0 errors / `dotnet test` **1306 合格 / 0 失敗** (sv-tests 1028 + その他 278)
+  - コミット: SystemVerilogCore / CodeEditor2 / CodeEditor2VerilogPlugin / メイン
+  - **残り 1 ファイル (`Verilog/Items/ModuleInstantiation.cs`) の阻害要因 (実測)**: `VerilogModuleInstance.Create(moduleInstantiation)` の 1 呼び出しのみ。これは **editor の item 型** (`CodeEditor2.Data.TextFile` を要求し item tree に登録する) で、parser が作るべきものではない。解消には **`IVerilogParserSettings` にホスト工場 (例 `Func<IBuildingBlockInstantiation, IVerilogItem?>? CreateInstanceItem`) を足し、editor が `VerilogModuleInstance.Create` を返す**設計判断が必要 (次段階)
+  - Next: 上記の工場契約を切るか、`Verilog/` 283 ファイルの `git mv` + `namespace` 一括変更に進むか
+
 - **Stage G-4 (4) 完了: `ProjectProperty` の契約化を「別契約への切り出し」で解決** (ビルド 0 errors、テスト 278 + sv-tests 1028 合格)
   - ユーザ指示: `その方針ですすめて`（パーサ型を引数に取るメンバを**別契約**へ切り出す方針）
   - **設計 (なぜ UI フリー契約に載せられないか / どう切り出したか)**
