@@ -239,7 +239,7 @@ public class ToolMenuTests : IDisposable
     public void EditorToolList_KeepsPortInvert_AndDoesNotDuplicateCaseTransforms()
     {
         var ids = new System.Collections.Generic.List<string>();
-        foreach (pluginVerilog.CoreBridge.ToolMenuCatalog.Entry entry
+        foreach (SystemVerilogCore.Snippets.ToolMenuCatalog.Entry entry
                  in pluginVerilog.CoreBridge.ToolMenuCatalog.EditorTools)
         {
             ids.Add(entry.Id);
