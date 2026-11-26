@@ -3,6 +3,29 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-5 (3) 完了: `Verilog/` から `pluginVerilog` の他 namespace 依存が 0 件に** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
+  - ユーザ指示: `お願い`（前段で提示した「互換ビューの consumer を Data 層へ移す」）
+  - **着手前の実測**: `Verilog/ParsedDocument.cs` の `CodeDocument` 互換ビュー (get/set) と `WordPointer` の互換 ctor が最後の editor 依存。consumer は **20 箇所**（ビルドエラーで全数確定）
+  - **実装**
+    - 新規 `Data/VerilogCommon/ParsedDocumentCodeDocumentExtensions.cs`: `EditorCodeDocument()` 拡張 (`VerilogDocument as CodeEditor.CodeDocument`)。**絞り込みを Data 層の 1 箇所に集約**
+    - `Verilog/ParsedDocument.cs` から **`CodeDocument` プロパティを削除**（経緯コメントのみ残置）
+    - consumer 20 箇所を `EditorCodeDocument()` / `VerilogDocument` へ置換:
+      - `Data` 層 3 箇所 (`VerilogFile` / `VerilogModuleInstance` / `InterfaceInstance` の `CopyColorMarkFrom`)
+      - `CoreBridge` 4 箇所 (`ColorSegmentAdapter` / `FormattingAdapter` / `CompletionAdapter` / `SignatureHelpAdapter`)
+      - `EditorSnippets/PortInvertSnippet` / `Parser/VerilogParser` 2 コンストラクタ
+      - **`VerilogParser` は代入もしていた** → `parsedDocument.VerilogDocument = codeDocument` (契約の setter) に変更。読み出しは `EditorCodeDocument()`、null のときはコピーせず新規作成
+      - `SystemVerilogLanguageServer` 3 箇所 (`GetFoldingRanges` / `CollectDiagnostics` / `GetTokenLength`) は `VerilogDocument as CodeEditor2.CodeEditor.CodeDocument` に
+      - テスト 3 箇所 (`HintContentTests`) は `CreateString()` 目的なので **契約 `VerilogDocument` で足りた**
+  - **実測 (成果)**
+    | 計測 | 着手前 | 現在 |
+    |---|---|---|
+    | `Verilog/` → `pluginVerilog.Data` | 0 件 | **0 件** |
+    | `Verilog/` → `pluginVerilog.CodeEditor` | 1 ファイル | **0 件** |
+    | **`Verilog/` → `pluginVerilog` の他 namespace 全体** (`pluginVerilog.(?!Verilog\b)`) | — | **0 件** |
+    | `Verilog/` の `WordPointer` 互換 ctor | 定義あり | **呼び出し元ゼロを実測**（削除は移設時にまとめて） |
+  - **検証**: `CodeEditor2VerilogPlugin.csproj` 0 errors / `RtlEditor2.Desktop.csproj` 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **次の判断**: `Verilog/` は **自分の namespace 宣言 (`namespace pluginVerilog.Verilog...`) 以外に pluginVerilog を参照していない**。283 ファイルの `git mv` + `namespace SystemVerilogCore.Verilog...` 一括変更に進める状態。残る作業は (a) namespace 一括変更 (b) 消えた `pluginVerilog.CodeEditor.CodeDocument` 依存箇所の `using` 整理 (c) 空になった `WordPointer` 互換 ctor の削除
+
 - **Stage G-5 (2) 完了: `Verilog/` から `pluginVerilog.Data` 依存が 0 件に** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
   - ユーザ指示: `A`（前段で提示した「`IVerilogParserSettings` にホスト工場を足す」案）
   - **着手前の実測**: `Verilog/` の `pluginVerilog.Data` 依存は **1 ファイル** (`Verilog/Items/ModuleInstantiation.cs`) の `VerilogModuleInstance.Create(moduleInstantiation)` **1 呼び出しのみ**

@@ -38,7 +38,7 @@ public class HintContentTests
         // One character into the word: the hint refuses a position whose
         // preceding character is a space (the editor's caret is inside the
         // word, which is what this models).
-        int index = parsed!.CodeDocument.CreateString().IndexOf("data_bus", StringComparison.Ordinal) + 1;
+        int index = parsed!.VerilogDocument.CreateString().IndexOf("data_bus", StringComparison.Ordinal) + 1;
         SystemVerilogCore.Documents.VerilogHintContent? content =
             parsed.GetHintContent(index, "data_bus");
 
@@ -65,7 +65,7 @@ public class HintContentTests
             "module top;\n  assign undefined_sig = 1'b0;\nendmodule\n");
         Assert.NotNull(parsed);
 
-        int index = parsed!.CodeDocument.CreateString().IndexOf("undefined_sig", StringComparison.Ordinal) + 1;
+        int index = parsed!.VerilogDocument.CreateString().IndexOf("undefined_sig", StringComparison.Ordinal) + 1;
         SystemVerilogCore.Documents.VerilogHintContent? content =
             parsed.GetHintContent(index, "undefined_sig");
 
@@ -94,7 +94,7 @@ public class HintContentTests
         Assert.NotNull(parsed);
 
         // first character of "sig": the preceding character is a space
-        int index = parsed!.CodeDocument.CreateString().IndexOf("sig", StringComparison.Ordinal);
+        int index = parsed!.VerilogDocument.CreateString().IndexOf("sig", StringComparison.Ordinal);
         Assert.Null(parsed.GetHintContent(index, "sig"));
     }
 
