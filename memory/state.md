@@ -3,6 +3,19 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-5 (5) 完了: `Verilog/` の実コード依存が `RegisterNameSpace`（アダプタ）のみに** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
+  - ユーザ指示: `続けて`（前段で提示した (a) 静的ヘルパの契約化 (b) `NameSpace` の `VerilogModuleInstance` (c) 残るキャスト）
+  - **実装**
+    - **(a) 静的ヘルパ 2 つを契約経由に**: `IVerilogParserSettings` に `AppendKeywordCandidates(...)` / `GetAutoCompleteTarget(...)` を追加し、`ProjectProperty` が `Data.VerilogCommon.AutoCompleteKeyword` / `AutoComplete` へ転送。`CompletionContext` は `parsedDocument.ProjectProperty?.〜` を呼ぶだけになり、**静的クラス名を名指ししなくなった**
+    - **(b) `NameSpace` の `VerilogModuleInstance` を契約へ**: `GetElementFromModuleInstance(Data.VerilogModuleInstance, ...)` → **`GetElementFromInstance(IVerilogSourceFile, instanceName, name, out ...)`** に変更。判定も `elem is Data.VerilogModuleInstance` → `elem is INamedElement && elem is IVerilogSourceFile && VerilogParsedResult != null` に。**契約の「parse 結果を持つ要素」という性質だけで判定できる**ことが分かった
+    - **(c) 残るキャストを契約へ**: `Object.GetSourceClass` / `VirtualInterface.GetSourceInterface` の `Data.IVerilogRelatedFile?` → `IVerilogSourceFile?`（`file.VerilogParsedDocument` → `file.VerilogParsedResult as ParsedDocument`）。`VirtualScopeNameSpace` の `is Data.IVerilogRelatedFile` 2 箇所 → `is IVerilogSourceFile`（`RelativePath` → `FileRelativePath` / `Project` → `VerilogProject` / `ProjectProperty` → `ProjectSettings as IVerilogParserSettings`）
+  - **検証**: `CodeEditor2VerilogPlugin.csproj` 0 errors / `RtlEditor2.Desktop.csproj` 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **実測 (成果)**: `Verilog/` で pluginVerilog の型を実コードで参照するのは **`Verilog/RegisterNameSpace.cs` のみ**（editor 型を呼び出し元に保つためのアダプタなので**残置が正しい**と state.md で既に判断済み）。他はすべて**コメント**（経緯説明）と**同一名前空間ツリー内の `using pluginVerilog.Verilog.*`**
+  - **残っている `using pluginVerilog.Verilog.*` の性質**: 全ファイルが `pluginVerilog.Verilog` 配下の**自己参照**。移設時に `namespace` 一括変更と同時に機械置換できる
+  - **ルート名前空間のファイル 3 つ**（移設時に `SystemVerilogCore` へ移す先を決める必要がある）: `Attribute.cs` / `General.cs` / `VerilogLabelExtensions.cs` は `namespace pluginVerilog`（`pluginVerilog.Verilog` ではない）
+  - コミット: CodeEditor2VerilogPlugin `42c8006` / メイン `5de11a2`
+  - **Next (移設本体)**: 283 ファイルの `git mv` + `namespace pluginVerilog.Verilog*` → `namespace SystemVerilogCore.Verilog*` 一括変更。**`RegisterNameSpace.cs` は plugin 側に残す**（アダプタ）。ルート名前空間の 3 ファイルは `SystemVerilogCore.Verilog` 配下へ入れるか個別判断
+
 - **Stage G-5 (4) 完了: autocomplete 候補を契約型へ + ホスト工場化** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
   - ユーザ指示: `すすめて`
   - **★ 前回記録の訂正 (重要)**: Stage G-5 (3) で「`Verilog/` から `pluginVerilog` の他 namespace 依存が 0 件」と記録したが、**これは誤り**。計測に使った正規表現 `pluginVerilog\.(?!Verilog\b)` は**完全修飾形しか見ておらず**、`pluginVerilog.Verilog` 名前空間からは**親名前空間経由で `Data.X` が解決される**ため、実際には依存が残っていた。正しい計測は `(^|[^A-Za-z_.])Data\.(IVerilogRelatedFile|VerilogModuleInstance|VerilogCommon|VerilogFile|...)`
