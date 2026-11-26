@@ -22,12 +22,12 @@ namespace SystemVerilogLanguageServer.Tests
                     new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
                 file = CreateFile(project, "timescale_comment.sv");
             }
-            pluginVerilog.Verilog.ParsedDocument? parsed =
+            SystemVerilogCore.Verilog.ParsedDocument? parsed =
                 await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
             var messages = new List<string>();
             if (parsed != null)
             {
-                foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
+                foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed.Messages)
                 {
                     messages.Add(m.Text);
                 }

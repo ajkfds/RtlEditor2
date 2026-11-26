@@ -40,13 +40,13 @@ namespace SystemVerilogLanguageServer.Tests
                     new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
                 file = CreateFile(project, "assignment_check_test.sv");
             }
-            pluginVerilog.Verilog.ParsedDocument? parsed =
+            SystemVerilogCore.Verilog.ParsedDocument? parsed =
                 await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
 
             var result = new List<(string, string)>();
             if (parsed == null) return result;
             // Messages is the parser's own type now (no base-class cast needed).
-            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
+            foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed.Messages)
             {
                 result.Add((m.Type.ToString(), m.Text));
             }

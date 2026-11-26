@@ -49,14 +49,14 @@ namespace SystemVerilogLanguageServer.Tests
                     new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
                 file = CreateFile(project, "sync_domain_test.sv");
             }
-            pluginVerilog.Verilog.ParsedDocument? parsed =
+            SystemVerilogCore.Verilog.ParsedDocument? parsed =
                 await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
 
             var result = new List<(string, string)>();
             if (parsed == null) return result;
-            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
+            foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed.Messages)
             {
-                string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
+                string type = m is SystemVerilogCore.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                 result.Add((type, m.Text));
             }
             return result;

@@ -25,14 +25,14 @@ namespace SystemVerilogLanguageServer.Tests
                     new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
                 file = CreateFile(project, "debug_class_param.sv");
             }
-            pluginVerilog.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
+            SystemVerilogCore.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
 
             sb.AppendLine($"=== case: {caseName} ===");
             if (parsed != null)
             {
-                foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
+                foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed.Messages)
                 {
-                    string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
+                    string type = m is SystemVerilogCore.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                     int line = 1 + (m.Index >= 0 && m.Index <= text.Length ? text.Substring(0, m.Index).Count(c => c == '\n') : -1);
                     string snippet = (m.Index >= 0 && m.Index < text.Length) ? text.Substring(m.Index, Math.Min(20, text.Length - m.Index)).Replace("\n", "\\n") : "";
                     sb.AppendLine($"[{type}] index={m.Index} line={line}: {m.Text}  @'{snippet}'");
@@ -40,13 +40,13 @@ namespace SystemVerilogLanguageServer.Tests
                 foreach (var bb in parsed.Root.BuildingBlocks.Values)
                 {
                     sb.AppendLine($"  bb '{bb.Name}' : {bb.GetType().Name}");
-                    foreach (var nb in bb.BuildingBlocks.Values.OfType<pluginVerilog.Verilog.BuildingBlocks.Class>())
+                    foreach (var nb in bb.BuildingBlocks.Values.OfType<SystemVerilogCore.Verilog.BuildingBlocks.Class>())
                     {
                         sb.AppendLine($"    BUILDINGBLOCK class '{nb.Name}' hash={nb.GetHashCode()}: ");
                         foreach (var neItem in nb.NamedElements)
                         {
                             string extra = "";
-                            if (neItem is pluginVerilog.Verilog.DataObjects.Constants.Constants cst)
+                            if (neItem is SystemVerilogCore.Verilog.DataObjects.Constants.Constants cst)
                             {
                                 extra = $"(Defined={cst.Defined},Type={cst.DataType?.GetType().Name})";
                             }
@@ -54,13 +54,13 @@ namespace SystemVerilogLanguageServer.Tests
                         }
                         sb.AppendLine();
                     }
-                    foreach (var ne in bb.NamedElements.Values.OfType<pluginVerilog.Verilog.BuildingBlocks.Class>())
+                    foreach (var ne in bb.NamedElements.Values.OfType<SystemVerilogCore.Verilog.BuildingBlocks.Class>())
                     {
                         sb.AppendLine($"    NAMEDELEM class '{ne.Name}' hash={ne.GetHashCode()}: ");
                         foreach (var neItem in ne.NamedElements)
                         {
                             string extra = "";
-                            if (neItem is pluginVerilog.Verilog.DataObjects.Constants.Constants cst)
+                            if (neItem is SystemVerilogCore.Verilog.DataObjects.Constants.Constants cst)
                             {
                                 extra = $"(Defined={cst.Defined},Type={cst.DataType?.GetType().Name})";
                             }

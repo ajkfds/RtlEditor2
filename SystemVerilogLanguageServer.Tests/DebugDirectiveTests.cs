@@ -24,14 +24,14 @@ namespace SystemVerilogLanguageServer.Tests
                     new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
                 file = CreateFile(project, "debug_directive.sv");
             }
-            pluginVerilog.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
+            SystemVerilogCore.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
 
             sb.AppendLine($"=== case: {caseName} ===");
             if (parsed != null)
             {
-                foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
+                foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed.Messages)
                 {
-                    string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
+                    string type = m is SystemVerilogCore.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                     sb.AppendLine($"[{type}] index={m.Index}: {m.Text}");
                 }
             }

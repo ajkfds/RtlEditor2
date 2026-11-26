@@ -78,7 +78,7 @@ endmodule
 """;
 
             // parse with the real (UI-free) engine
-            pluginVerilog.Verilog.ParsedDocument? parsed =
+            SystemVerilogCore.Verilog.ParsedDocument? parsed =
                 await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
             Assert.NotNull(parsed);
             Assert.NotNull(parsed!.Root);

@@ -1640,7 +1640,7 @@ public class WorkspaceHierarchyTests : IDisposable
         var instanceFile = Assert.IsAssignableFrom<pluginVerilog.Data.InstanceTextFile>(instance);
         Assert.Equal(expectedInstanceName, instanceFile.InstanceName);
 
-        pluginVerilog.Verilog.ParsedDocument? parsed = instanceFile.ParsedDocument as pluginVerilog.Verilog.ParsedDocument;
+        SystemVerilogCore.Verilog.ParsedDocument? parsed = instanceFile.ParsedDocument as SystemVerilogCore.Verilog.ParsedDocument;
         Assert.NotNull(parsed);
         Assert.True(parsed!.Instance,
             $"'{instanceName}' must resolve to an INSTANCE parse (parameter overrides applied), not the plain file parse");
@@ -2102,11 +2102,11 @@ public class WorkspaceHierarchyTests : IDisposable
     {
         InMemoryProject project = core.GetOrCreateProject("default");
         InMemoryFile file = (InMemoryFile)project.FindFile(uri)!;
-        pluginVerilog.Verilog.ParsedDocument? parsed = file.ParsedDocument;
+        SystemVerilogCore.Verilog.ParsedDocument? parsed = file.ParsedDocument;
         if (parsed?.Root == null) return null;
         if (!parsed.Root.BuildingBlocks.TryGetValue(blockName, out var block)) return null;
         if (!block.NamedElements.TryGetValue(parameterName, out var element)) return null;
-        if (element is not pluginVerilog.Verilog.DataObjects.Constants.Constants constant) return null;
+        if (element is not SystemVerilogCore.Verilog.DataObjects.Constants.Constants constant) return null;
         return constant.Expression?.CreateString();
     }
 

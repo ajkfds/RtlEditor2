@@ -3,6 +3,41 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-5 (6) 完了: 283 ファイルを `SystemVerilogCore.Verilog` へ移設完了** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
+  - ユーザ指示: `つづけて`（前段で示した移設本体）
+  - **★ サブモジュール境界のため `git mv` は使えない**: `CodeEditor2VerilogPlugin` と `SystemVerilogCore` は別リポジトリなので、`git mv` では跨げない。**コピー（新規追加）＋削除**で実施した
+  - **実施内容 (一時 C# ツール `_tmp_move`、削除済み)**
+    | 手順 | 内容 | 実測 |
+    |---|---|---|
+    | 1 | `Verilog/**` を `SystemVerilogCore/Verilog/**` へコピー + `namespace pluginVerilog.Verilog` → `SystemVerilogCore.Verilog` | **282 ファイル / 衝突 0** |
+    | 2 | 移設先内の `pluginVerilog.Verilog` 参照を一括置換 | **139 ファイル**、残存参照 **0** |
+    | 3 | 移設先のビルドエラーを解消 | 24 → 0 |
+    | 4 | プラグイン側の旧ファイルを削除 | **282 削除 / 1 残置** |
+    | 5 | プラグイン・Icarus・LSP・テストの参照を `SystemVerilogCore.Verilog` へ | 29 + 2 + 20 ファイル |
+  - **ルート名前空間の 3 ファイル** (`Attribute.cs` / `General.cs` / `VerilogLabelExtensions.cs` は `namespace pluginVerilog`) も `SystemVerilogCore.Verilog` へ入れた
+  - **移設で露見した不整合と対処 (実測に基づく)**
+    | 問題 | 対処 |
+    |---|---|
+    | `WordPointer` の互換 ctor が editor の `CodeDocument` を要求 | **削除**（呼び出し元ゼロを事前実測済み） |
+    | `Port.cs` の未使用 `using DynamicData;` / `ReplaceOrAdd` 拡張 | using 削除 + `List` の index 代入に置換 |
+    | `WordPointer` の `unsafe` ブロック | 中身は `bool[]` の添字のみなので `unsafe` を外した |
+    | `IVerilogNameSpaceFile` に parse 結果が無い | **`ParsedResult`（`IParsedDocument?`）を追加**。名前空間から宣言ファイルを引いて中身を読む経路に必要 |
+    | `ProjectProperty`（plugin 型）へのダウンキャスト | 契約 `IVerilogParserSettings` へ |
+    | `InterfaceInstance` の ctor が `internal` | アセンブリ跨ぎで不可 → `public` に |
+    | `pluginVerilog.Verilog.RegisterNameSpace<T>` アダプタ | **削除**。`ProjectProperty` は移設先の型を直接公開し、editor 側の絞り込みは `VerilogNameSpaceExtensions.GetEditorFile<T>` に集約 |
+    | プラグイン内の裸の `Verilog.X` 参照 | `GlobalUsings.cs` に **`global using Verilog = SystemVerilogCore.Verilog;`** を追加して解決 |
+  - **重要な落とし穴 (記録)**: `pluginVerilog.Verilog` 名前空間を**プラグイン側に残すと、`namespace pluginVerilog` 内の `Verilog.X` が子名前空間を優先して解決し、移設先の型が見えなくなる**。アダプタを `pluginVerilog.Data` へ移して解消した
+  - **成果 (実測)**
+    | 計測 | 結果 |
+    |---|---|
+    | `SystemVerilogCore/Verilog/` | **283 ファイル**（移設 282 + 既存 9） |
+    | プラグインの `Verilog/` | **0 ファイル**（ディレクトリごと消滅） |
+    | ビルド | `SystemVerilogCore` 0 errors / `CodeEditor2VerilogPlugin` 0 errors / `SystemVerilogLanguageServer` 0 errors / `RtlEditor2.Desktop` **0 errors** |
+    | テスト | **1306 合格 / 0 失敗**（sv-tests 1028 含む） |
+  - **検証**: 上記ビルド + テスト
+  - コミット: SystemVerilogCore / CodeEditor2VerilogPlugin / CodeEditor2IcarusVerilogPlugin / SystemVerilogLanguageServer / メイン
+  - **Next (残作業)**: (a) `CodeEditor2VivadoPlugin` など他プラグインの参照確認 (b) `RtlEditorVscodeExtension/server` の publish 更新 (c) `SystemVerilogCore` が本当に Avalonia 非依存のままか（ProjectReference 追加で循環していないか）の確認 (d) `docs`/README の記述更新
+
 - **Stage G-5 (5) 完了: `Verilog/` の実コード依存が `RegisterNameSpace`（アダプタ）のみに** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
   - ユーザ指示: `続けて`（前段で提示した (a) 静的ヘルパの契約化 (b) `NameSpace` の `VerilogModuleInstance` (c) 残るキャスト）
   - **実装**

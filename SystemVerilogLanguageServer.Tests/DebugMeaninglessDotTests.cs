@@ -25,15 +25,15 @@ namespace SystemVerilogLanguageServer.Tests
                     new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
                 file = CreateFile(project, "debug_meaningless.sv");
             }
-            pluginVerilog.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
+            SystemVerilogCore.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
             parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
 
             sb.AppendLine($"=== case: {caseName} ===");
             if (parsed != null)
             {
-                foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
+                foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed.Messages)
                 {
-                    string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
+                    string type = m is SystemVerilogCore.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                     int line = 1 + (m.Index >= 0 && m.Index <= text.Length ? text.Substring(0, m.Index).Count(c => c == '\n') : -1);
                     string snippet = (m.Index >= 0 && m.Index < text.Length) ? text.Substring(m.Index, Math.Min(14, text.Length - m.Index)).Replace("\n", "\\n") : "";
                     sb.AppendLine($"[{type}] index={m.Index} line={line}: {m.Text}  @'{snippet}'");

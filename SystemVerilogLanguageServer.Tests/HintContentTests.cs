@@ -31,7 +31,7 @@ public class HintContentTests
     [Fact]
     public void HintContent_CarriesTheElementLabel()
     {
-        pluginVerilog.Verilog.ParsedDocument? parsed = Parse(
+        SystemVerilogCore.Verilog.ParsedDocument? parsed = Parse(
             "module top;\n  logic [7:0] data_bus;\n  assign data_bus = 8'h00;\nendmodule\n");
         Assert.NotNull(parsed);
 
@@ -61,7 +61,7 @@ public class HintContentTests
     {
         // an undeclared identifier produces an "unfound object" error at its
         // own position
-        pluginVerilog.Verilog.ParsedDocument? parsed = Parse(
+        SystemVerilogCore.Verilog.ParsedDocument? parsed = Parse(
             "module top;\n  assign undefined_sig = 1'b0;\nendmodule\n");
         Assert.NotNull(parsed);
 
@@ -89,7 +89,7 @@ public class HintContentTests
     [Fact]
     public void HintContent_IsNullWhereTheHintIsRefused()
     {
-        pluginVerilog.Verilog.ParsedDocument? parsed = Parse(
+        SystemVerilogCore.Verilog.ParsedDocument? parsed = Parse(
             "module top;\n  logic sig;\nendmodule\n");
         Assert.NotNull(parsed);
 
@@ -101,7 +101,7 @@ public class HintContentTests
     private static readonly object _lock = new();
 
     /// <summary>Parses <paramref name="text"/> with the real parser.</summary>
-    private static pluginVerilog.Verilog.ParsedDocument? Parse(string text)
+    private static SystemVerilogCore.Verilog.ParsedDocument? Parse(string text)
     {
         CodeEditor2.Data.Project project;
         pluginVerilog.Data.VerilogFile file;

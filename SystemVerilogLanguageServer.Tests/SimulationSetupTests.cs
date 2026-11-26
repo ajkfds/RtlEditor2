@@ -67,7 +67,7 @@ namespace SystemVerilogLanguageServer.Tests
             };
             file.SystemVerilog = true;
 
-            pluginVerilog.Verilog.ParsedDocument? parsed =
+            SystemVerilogCore.Verilog.ParsedDocument? parsed =
                 await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
             Assert.NotNull(parsed);
             return file;

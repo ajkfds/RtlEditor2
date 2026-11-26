@@ -42,7 +42,7 @@ namespace SystemVerilogLanguageServer.Tests
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("=== single parse ===");
             sb.AppendLine($"ErrorCount={parsed.ErrorCount}");
-            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
+            foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed.Messages)
             {
                 sb.AppendLine($"[{m.Text}] index={m.Index}");
             }

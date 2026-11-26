@@ -86,7 +86,7 @@ namespace SystemVerilogLanguageServer.Tests
             }
 
             Exception? failure = null;
-            pluginVerilog.Verilog.ParsedDocument? parsed = null;
+            SystemVerilogCore.Verilog.ParsedDocument? parsed = null;
             try
             {
                 parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
@@ -112,7 +112,7 @@ namespace SystemVerilogLanguageServer.Tests
 
             // Messages is the parser's own type now (no base-class cast needed).
             var messages = parsed.Messages;
-            int errorCount = messages.Count(m => m.Type == pluginVerilog.Verilog.ParsedDocument.Message.MessageType.Error);
+            int errorCount = messages.Count(m => m.Type == SystemVerilogCore.Verilog.ParsedDocument.Message.MessageType.Error);
             int allCount = messages.Count;
 
             string diagText = DescribeMessages(messages);
@@ -155,11 +155,11 @@ namespace SystemVerilogLanguageServer.Tests
             }
         }
 
-        private static string DescribeMessages(List<pluginVerilog.Verilog.ParsedDocument.Message> messages)
+        private static string DescribeMessages(List<SystemVerilogCore.Verilog.ParsedDocument.Message> messages)
         {
             if (messages.Count == 0) return "";
             StringBuilder sb = new StringBuilder();
-            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in messages)
+            foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in messages)
             {
                 sb.Append($"\n  [{m.Type}] {m.Index}: {m.Text}");
             }

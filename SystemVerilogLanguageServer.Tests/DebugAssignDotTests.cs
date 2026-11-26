@@ -25,13 +25,13 @@ namespace SystemVerilogLanguageServer.Tests
                     new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
                 file = CreateFile(project, "debug_assign_dot.sv");
             }
-            pluginVerilog.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
+            SystemVerilogCore.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
             parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
 
             sb.AppendLine($"=== case: {caseName} ===");
             if (parsed != null)
             {
-                foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed.Messages)
+                foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed.Messages)
                 {
                     string type = m.Type.ToString();
                     int line = 1 + (m.Index >= 0 && m.Index <= text.Length ? text.Substring(0, m.Index).Count(c => c == '\n') : -1);

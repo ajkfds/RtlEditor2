@@ -24,7 +24,7 @@ namespace SystemVerilogLanguageServer.Tests
                     new pluginVerilog.ProjectProperty(project, new pluginVerilog.ProjectProperty.Setup()));
                 file = CreateFile(project, "debug_nonescaped.sv");
             }
-            pluginVerilog.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
+            SystemVerilogCore.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
 
             sb.AppendLine($"=== case: {caseName} ===");
             if (dumpNames && parsed != null)
@@ -36,9 +36,9 @@ namespace SystemVerilogLanguageServer.Tests
                     sb.AppendLine();
                 }
             }
-            foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed!.Messages)
+            foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed!.Messages)
             {
-                string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
+                string type = m is SystemVerilogCore.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                 int line = 1 + (m.Index >= 0 && m.Index <= text.Length ? text.Substring(0, m.Index).Count(c => c == '\n') : -1);
                 string snippet = (m.Index >= 0 && m.Index < text.Length) ? text.Substring(m.Index, Math.Min(12, text.Length - m.Index)).Replace("\n", "\\n") : "";
                 sb.AppendLine($"[{type}] index={m.Index} line={line}: {m.Text}  @'{snippet}'");
@@ -58,11 +58,11 @@ namespace SystemVerilogLanguageServer.Tests
                 string path = Path.Combine(FindSvTestsRoot(), "chapter-5", "5.6.1--nonescaped-access.sv");
                 (CodeEditor2.Data.Project proj, pluginVerilog.Data.VerilogFile file) = GetProjectAndFile(path);
                 string text = File.ReadAllText(path);
-                pluginVerilog.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
+                SystemVerilogCore.Verilog.ParsedDocument? parsed = await pluginVerilog.CoreBridge.ParseEngine.ParseSystemVerilogAsync(text, file);
                 sb.AppendLine("=== full file ===");
-                foreach (pluginVerilog.Verilog.ParsedDocument.Message m in parsed!.Messages)
+                foreach (SystemVerilogCore.Verilog.ParsedDocument.Message m in parsed!.Messages)
                 {
-                    string type = m is pluginVerilog.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
+                    string type = m is SystemVerilogCore.Verilog.ParsedDocument.Message vm ? vm.Type.ToString() : "?";
                     int line = 1 + (m.Index >= 0 && m.Index <= text.Length ? text.Substring(0, m.Index).Count(c => c == '\n') : -1);
                     string snippet = (m.Index >= 0 && m.Index < text.Length) ? text.Substring(m.Index, Math.Min(12, text.Length - m.Index)).Replace("\n", "\\n") : "";
                     sb.AppendLine($"[{type}] index={m.Index} line={line}: {m.Text}  @'{snippet}'");
