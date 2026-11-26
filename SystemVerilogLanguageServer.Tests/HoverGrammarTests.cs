@@ -9,7 +9,7 @@ namespace SystemVerilogLanguageServer.Tests;
 
 /// <summary>
 /// The extension's hover grammar must be exactly what
-/// <see cref="pluginVerilog.CoreBridge.HoverGrammar"/> generates, must be
+/// <see cref="SystemVerilogCore.Documents.HoverGrammar"/> generates, must be
 /// contributed by the manifest, and must use the parser's palette.
 ///
 /// <para>
@@ -29,8 +29,8 @@ public class HoverGrammarTests
     {
         string root = FindExtensionRoot();
 
-        pluginVerilog.CoreBridge.HoverGrammarResult result =
-            pluginVerilog.CoreBridge.HoverGrammar.Write(root, write: false);
+        SystemVerilogCore.Documents.HoverGrammarResult result =
+            SystemVerilogCore.Documents.HoverGrammar.Write(root, write: false);
 
         Assert.False(result.Failed,
             result.Message + ". Run: dotnet SystemVerilogLanguageServer.dll " +
@@ -58,7 +58,7 @@ public class HoverGrammarTests
             File.ReadAllText(Path.Combine(root, "package.json")));
         JsonElement contributes = manifest.RootElement.GetProperty("contributes");
 
-        string expectedPath = "syntaxes/" + pluginVerilog.CoreBridge.HoverGrammar.FileName;
+        string expectedPath = "syntaxes/" + SystemVerilogCore.Documents.HoverGrammar.FileName;
         string? grammarLanguage = null;
         bool found = false;
         foreach (JsonElement grammar in contributes.GetProperty("grammars").EnumerateArray())
@@ -69,7 +69,7 @@ public class HoverGrammarTests
 
             found = true;
             grammarLanguage = grammar.GetProperty("language").GetString();
-            Assert.Equal(pluginVerilog.CoreBridge.HoverGrammar.ScopeName,
+            Assert.Equal(SystemVerilogCore.Documents.HoverGrammar.ScopeName,
                 grammar.GetProperty("scopeName").GetString());
             Assert.False(grammar.TryGetProperty("injectTo", out _),
                 "the hover grammar must not be injected into another scope");
@@ -103,12 +103,12 @@ public class HoverGrammarTests
     public void Grammar_ColoursComeFromTheParserPalette()
     {
         HashSet<string> palette = new(
-            pluginVerilog.CoreBridge.ElementLabelAdapter.GetPalette().Values,
+            SystemVerilogCore.Documents.ElementLabelReader.GetPalette().Values,
             StringComparer.OrdinalIgnoreCase);
         Assert.NotEmpty(palette);
 
         using JsonDocument grammar = JsonDocument.Parse(
-            pluginVerilog.CoreBridge.HoverGrammar.Build());
+            SystemVerilogCore.Documents.HoverGrammar.Build());
 
         int rules = 0;
         foreach (JsonElement setting in grammar.RootElement.GetProperty("settings").EnumerateArray())
@@ -131,7 +131,7 @@ public class HoverGrammarTests
     public void Grammar_ColoursEveryScopeItEmits()
     {
         using JsonDocument grammar = JsonDocument.Parse(
-            pluginVerilog.CoreBridge.HoverGrammar.Build());
+            SystemVerilogCore.Documents.HoverGrammar.Build());
 
         HashSet<string> coloured = new(StringComparer.Ordinal);
         foreach (JsonElement setting in grammar.RootElement.GetProperty("settings").EnumerateArray())
@@ -157,7 +157,7 @@ public class HoverGrammarTests
     public void Grammar_RegexesCompile()
     {
         using JsonDocument grammar = JsonDocument.Parse(
-            pluginVerilog.CoreBridge.HoverGrammar.Build());
+            SystemVerilogCore.Documents.HoverGrammar.Build());
 
         int checkedRules = 0;
         // Walk the repository's entries (each rule), not the repository object
