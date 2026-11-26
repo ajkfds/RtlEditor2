@@ -3,6 +3,34 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-5 (2) 完了: `Verilog/` から `pluginVerilog.Data` 依存が 0 件に** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
+  - ユーザ指示: `A`（前段で提示した「`IVerilogParserSettings` にホスト工場を足す」案）
+  - **着手前の実測**: `Verilog/` の `pluginVerilog.Data` 依存は **1 ファイル** (`Verilog/Items/ModuleInstantiation.cs`) の `VerilogModuleInstance.Create(moduleInstantiation)` **1 呼び出しのみ**
+  - **設計判断 (なぜ新契約にしたか)**
+    - `VerilogModuleInstance` は editor の item 型 (`CodeEditor2.Data.TextFile` を要求し item tree に登録する) なので parser が名指しできない
+    - 契約 `IVerilogInstanceSource` を新設し、**`IVerilogSourceFile` + `IVerilogItem` の合成**にした
+      - **この 2 つは共通メンバを持たない** (`Id` / `VerilogProject` / `ChildItems` 対 `Name` / `RelativePath` / `Items`) ため、`state.md` に記録済みの **CS0229 (曖昧) を踏まない**。多重継承で 2 度失敗した罠を事前に回避
+      - `IVerilogSourceFile` = 即時 parse 用 (`CreateVerilogDocumentParser` / `AcceptVerilogParsedDocumentAsync`)、`IVerilogItem` = item tree 登録用 (`Name` / `Items`)。parser が必要とする両面をちょうど覆う
+  - **実装**
+    - 新規 `SystemVerilogCore/Projects/IVerilogInstanceSource.cs` (空の合成契約 + 設計理由を doc に明記)
+    - `Verilog/IVerilogParserSettings.cs` に **`CreateInstanceItem(IBuildingBlockInstantiation)`** を追加 (parser 型を引数に取るので UI フリー契約ではなく parser 側の契約に置いた = Stage G-4 (4) の二層構造を踏襲)
+    - `ProjectProperty` が明示的実装で `Data.VerilogModuleInstance.Create` に委譲 (editor 側の唯一の生成点)
+    - `Data.VerilogModuleInstance` が `IVerilogInstanceSource` を実装 (基底 `InstanceTextFile` / `Item` が両面を充足)
+    - `ModuleInstantiation.ParseAsync` は `sourceProjectProperty.CreateInstanceItem(moduleInstantiation)` を呼び、以降は契約経由 (`CreateVerilogDocumentParser` / `AcceptVerilogParsedDocumentAsync` / `ChildItems.AddOrUpdate`)
+  - **実測 (成果)**
+    | 計測 | 着手前 | 現在 |
+    |---|---|---|
+    | `Verilog/` の `pluginVerilog.Data` 依存 | 1 ファイル | **0 件** |
+    | `Verilog/` の `pluginVerilog.CodeEditor` 依存 | 1 ファイル | **1 ファイル** (`ParsedDocument` の互換ビューのみ) |
+    | `Verilog/` の `pluginVerilog.*` 全体 | 5 ファイル | **2 ファイル** |
+  - **検証**: `CodeEditor2VerilogPlugin.csproj` 0 errors / `RtlEditor2.Desktop.csproj` 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **残る `pluginVerilog.CodeEditor` 1 件の実体 (実測)**
+    | 箇所 | 用途 | 解消に必要なこと |
+    |---|---|---|
+    | `ParsedDocument.CodeDocument` (get/set) | `verilogDocument as CodeDocument` の互換ビュー。consumer は `VerilogParser` (代入) / `ColorSegmentAdapter` (`TextColors`) / `FormattingAdapter` (`GetIndentString`) / `PortInvertSnippet` (`CreateString`) / `CompletionAdapter`・`SignatureHelpAdapter` (`CopyTextOnlyFrom`) / `Data` 層 3 箇所 (`CopyColorMarkFrom`) | `CopyColorMarkFrom` / `CopyTextOnlyFrom` が具象型引数、`GetIndentString` は plugin の `CodeDocument` だけが持つ。**すべて editor 側の consumer なので `Data` 層へ寄せられる見込み** |
+    | `WordPointer(CodeEditor.CodeDocument, ...)` 互換 ctor | editor からの呼び出し口 (1 箇所) | 呼び出し元を契約版 ctor に変えれば削除可 |
+  - Next: 上記 `CodeDocument` 互換ビューの consumer を `Data` 層へ移す (これで `Verilog/` の `pluginVerilog.*` 依存が 0 件になり、`git mv` の前提が整う)
+
 - **Stage G-5 (1) 完了: `Verilog/` から `Data.*` 依存を 5 ファイル → 1 ファイルへ削減** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
   - ユーザ指示: `pluginVerilog/Verilog → SystemVerilogCore.Verilog への移設 をつづけて`
   - **着手前の実測 (推測ではない)**
