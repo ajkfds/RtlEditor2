@@ -3,6 +3,43 @@
 
 ## 進行中タスク (最新)
 
+- **Stage G-6 (5) 完了: UI フリー engine への切り替えが成立 (LSP は plugin の parse 経路を離脱)** (ビルド 0 errors、テスト 1306 合格)
+  - ユーザ指示: `Stage G-6を続けて`
+  - **★ 前段の「残り 6 件」はすべて解消**。`InMemorySystemVerilogCore` の parse を
+    `pluginVerilog.CoreBridge.ParseEngine` → **`SystemVerilogCore.Parsing.ParseEngine`** に切り替え
+    (ファイル parse / instance parse の両方)。テストは **278 合格 / 0 失敗**、sv-tests **1028 合格**、全体 **1306 合格**
+  - **解消した 6 件の内訳と、それぞれ何が効いたか**
+    | 失敗 | 解消の理由 |
+    |---|---|
+    | `CompletionAdapter` x3 | 作業バッファの準備を `ParsedDocument.PrepareCompletionBuffer` に集約。従来は「具象 `CodeDocument` からコピー」だったため UI レスホストでバッファが空のままだった。パース結果の契約 (`VerilogDocument.CreateString()`) からテキストを取るようにして解消 |
+    | `Snippet_PortInvert_...` | `PortInvertSnippet.Build` が `EditorCodeDocument()` ではなく契約 `VerilogDocument` を読むように (長さと部分文字列しか要らない) |
+    | `Hover_IncludesParserDetail` の NRE | `IVerilogRelatedFile.CreateCodeDocumentForParse()` を新設し、`VerilogParser` の ctor が「バッファが無い」で例外を投げる代わりに空バッファを作るように。`DocumentParser` の `CopyTextOnlyFrom` も null ガード済み |
+    | `Diagnostics_CoverTheSpanTheEditorMarks` | 変更なしで解消 (診断は契約 `VerilogDocument` 経由で収集済みだった) |
+  - **★ instance parse で診断が全部消えた件 (実測で発見・修正)**
+    - 新 engine の `ParseInstanceAsync` は `PlainTextDocument(text, file as IVerilogDocumentFile)` を作るが、
+      **editor の `VerilogFile` は `IVerilogDocumentFile` ではない** (`RelativePath` / `Name` が別 interface にあり、
+      再宣言すると CS0229)。`as` が null になり、`ParsedDocument.AddHint` の `document.File == null` ガードで
+      **メッセージが全部捨てられた** → `ParameterOverride_DoesNotReportDuplicateParameter` が
+      「`override 5` が 1 回」で失敗 (実測 0 回)
+    - 修正1: `ParseEngine.AsDocumentFile` + `SourceFileIdentity` (Id / RelativePath / Name だけのアダプタ) で包む
+    - 修正2: `ParseInstanceAsync` に **ホスト文書を渡す引数**を追加し、LSP は自分のバッファを渡す
+      (`ParseSystemVerilogAsync` と同じ理由 — バッファがファイルを報告しないと診断が捨てられる)
+  - **マクロ展開バッファの診断が親に漏れる / 落ちる件も同時に修正**
+    - `WordScanner` の 2 箇所 (`parseMacro` / `diveIntoText`) が `new ParsedDocument(..., document)` を渡しておらず、
+      マクロ展開バッファが `file.VerilogTextDocument` を読もうとして **例外** (`DebugMacroDuplicateTests` が失敗)。
+      `PlainTextDocument(macroText, 所有者)` を作って明示的に渡すよう修正
+  - **重複実装の解消**: `pluginVerilog.CoreBridge.ParseEngine` は **`SystemVerilogCore.Parsing.ParseEngine` への薄い委譲** に縮小。
+    2 つの engine は既に挙動が食い違っていた (root 要素の名前空間登録と instance キー登録が片方にしか無い)
+  - **検証**
+    - `dotnet build CodeEditor2VerilogPlugin.csproj` 0 errors / `SystemVerilogLanguageServer.csproj` 0 errors / `RtlEditor2.Desktop.csproj` 0 errors
+    - `dotnet test --filter FullyQualifiedName!~ParseSvTestFile` **278 合格 / 0 失敗**
+    - `dotnet test --filter FullyQualifiedName~ParseSvTestFile` **1028 合格 / 0 失敗**
+    - `dotnet test` (全体) **1306 合格 / 0 失敗**
+  - **Next**: 実機確認 (エディタで色付け・折りたたみ・診断・補完・スニペット・hover が従来どおり)。
+    LSP は `pluginVerilog` をまだ参照している (補完 / スニペット / ツールメニュー / AutoConnect / 階層メニューの
+    アダプタが plugin 側にあるため) ので、Stage H (LSP が plugin を参照しない構成) には
+    それらアダプタの `SystemVerilogCore` 移設が残る
+
 - **Stage G-6 (4): 色・折りたたみ・診断の経路を契約へ (切り替えは残り 6 件)** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `続けて`
   - **★ 決定的なバグを発見・修正**: `InMemoryFile.SetText` が `new InMemoryCodeDocument(text)` で **`Owner` を設定し忘れていた**。`AddError` は `document.File` が null だとメッセージを捨てるため、**編集 (didChange) 後の診断が全部消えていた**。`Owner = this` を追加
