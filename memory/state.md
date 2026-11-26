@@ -3,7 +3,41 @@
 
 ## 進行中タスク (最新)
 
-- **Stage G-5 (3) 完了: `Verilog/` から `pluginVerilog` の他 namespace 依存が 0 件に** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
+- **Stage G-5 (4) 完了: autocomplete 候補を契約型へ + ホスト工場化** (ビルド 0 errors、テスト 1306 合格 (sv-tests 1028 含む))
+  - ユーザ指示: `すすめて`
+  - **★ 前回記録の訂正 (重要)**: Stage G-5 (3) で「`Verilog/` から `pluginVerilog` の他 namespace 依存が 0 件」と記録したが、**これは誤り**。計測に使った正規表現 `pluginVerilog\.(?!Verilog\b)` は**完全修飾形しか見ておらず**、`pluginVerilog.Verilog` 名前空間からは**親名前空間経由で `Data.X` が解決される**ため、実際には依存が残っていた。正しい計測は `(^|[^A-Za-z_.])Data\.(IVerilogRelatedFile|VerilogModuleInstance|VerilogCommon|VerilogFile|...)`
+  - **正しい着手前の残存依存 (実測)**
+    | 依存 | ファイル | 実体 |
+    |---|---|---|
+    | `Data.VerilogCommon.AutoCompleteItem` | 4（実コード） | 自動補完候補の具象型・計 48 箇所 |
+    | `Data.VerilogCommon.AutoComplete` / `AutoCompleteKeyword` | 1 | 候補列挙の静的ヘルパ |
+    | `Data.IVerilogRelatedFile` | 4 | `Object` / `VirtualInterface` / `VirtualScopeNameSpace` / `CompletionContext` |
+    | `Data.VerilogModuleInstance` | 1 | `NameSpace.cs` |
+    | `Data.VerilogFile` | 1 | `RegisterNameSpace.cs`（**アダプタなので残置が正しい**） |
+  - **実装 (今回)**
+    - 新規 `SystemVerilogCore/Documents/VerilogAutocompleteCandidate.cs`: **parser が自前で作れる候補**（label / palette index / kind / icon path）。`InsertText` は既定で `Label`
+    - `IVerilogParserSettings` に **展開を伴う候補のホスト工場**を 2 つ追加:
+      - `CreateModuleInstanceCandidate(moduleName)` — module 名 → インスタンス全体（port 接続・タブストップはホストの関心事）
+      - `CreateKeywordCandidate(keyword)` — block 開始キーワード → `begin`/`end` skeleton
+    - `CompletionContext` の候補生成を **すべて契約型 (`IVerilogAutocompleteItem`)** に統一し、`AddCandidate` / `KindOf` ヘルパへ集約（`CompleteType` の分岐 8 箇所を廃止）
+    - `CompletionContext` のコンストラクタと `item` フィールドを **`IVerilogSourceFile`** に（`item.CodeDocument` → `item.VerilogTextDocument`）
+    - `AutoCompleteHandler.GetAutoCompleteTarget` に **契約版オーバーロード**を追加（`item.CodeDocument` / `VerilogParsedDocument` を使わず契約経由で同じ走査）
+    - `AutoCompleteKeyword.AppendKeywordAutoCompleteItems` に `IVerilogParserSettings?` 引数を追加し、block キーワードは `CreateKeywordCandidate` 経由に。**それ以外のキーワードは `VerilogAutocompleteCandidate` を parser 側で生成**
+    - `ProjectProperty` が 2 つの工場を実装（既存の `EditorAutoComplete.*` / `EditorSnippets.ModuleInstanceSnippet` を返すだけ）
+    - `ListOfArguments` / `ParameterValueAssignment` の候補生成を `VerilogAutocompleteCandidate` に
+  - **検証**: `CodeEditor2VerilogPlugin.csproj` 0 errors / `RtlEditor2.Desktop.csproj` 0 errors / `dotnet test` **1306 合格 / 0 失敗**
+  - **残存依存 (今回の作業後に再実測。コメントを除く実コード)**
+    | 依存 | 箇所 | 性質 |
+    |---|---|---|
+    | `Data.VerilogCommon.AutoComplete` | `CompletionContext` L51 | **候補列挙の静的ヘルパ**。契約版オーバーロードは用意済みだが、呼び出しが静的クラス名を必要とする |
+    | `Data.VerilogCommon.AutoCompleteKeyword` | `CompletionContext` L514 | 同上 |
+    | `Data.VerilogModuleInstance` | `NameSpace.cs` L258 / L324 | `@scope` の instance 解決で**具象型を名指し** |
+    | `Data.IVerilogRelatedFile` | `Object.cs` L20 / `VirtualInterface.cs` L24 / `VirtualScopeNameSpace.cs` L47・L128 | `GetFile` の戻り値のキャスト / `is` パターン |
+    | `Data.VerilogFile` / `Data.IVerilogRelatedFile` | `RegisterNameSpace.cs` | **アダプタなので残置が正しい**（state.md 既出の判断） |
+  - **次の判断**: 残りは (a) 静的ヘルパ 2 つを契約へ寄せる（`IVerilogParserSettings` 経由にする） (b) `NameSpace` の `VerilogModuleInstance` を契約へ (c) `Object` / `VirtualInterface` / `VirtualScopeNameSpace` のキャストを契約へ。ここまでで `Verilog/` の実コード依存が `RegisterNameSpace`（アダプタ）だけになる
+
+- **Stage G-5 (3) 完了: 互換ビューの consumer を Data 層へ移設** (ビルド 0 errors、テスト 1306 合格)
+  - ※ この段で「`pluginVerilog` の他 namespace 依存が 0 件」と記録したが、**計測式の誤りで実際は残っていた** (上記 G-5 (4) 参照)
   - ユーザ指示: `お願い`（前段で提示した「互換ビューの consumer を Data 層へ移す」）
   - **着手前の実測**: `Verilog/ParsedDocument.cs` の `CodeDocument` 互換ビュー (get/set) と `WordPointer` の互換 ctor が最後の editor 依存。consumer は **20 箇所**（ビルドエラーで全数確定）
   - **実装**
