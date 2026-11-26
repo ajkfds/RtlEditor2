@@ -8,7 +8,7 @@ namespace SystemVerilogLanguageServer.Tests;
 /// The tree icons carry the error / warning / dirty overlays as separate SVG
 /// assets, because VS Code's <c>TreeItem.iconPath</c> cannot draw an overlay.
 /// They are generated from the base icons by
-/// <see cref="pluginVerilog.CoreBridge.BadgeIconGenerator"/>, which mirrors
+/// <see cref="SystemVerilogCore.Menus.BadgeIconGenerator"/>, which mirrors
 /// <c>RtlEditorVscodeExtension/scripts/generate-badge-icons.js</c>; these tests
 /// pin that the committed assets are what either generator produces, so a new
 /// base icon or a changed badge cannot ship without its variants.
@@ -25,7 +25,7 @@ public class BadgeIconTests
     {
         string icons = IconsDirectory();
 
-        foreach (string baseName in pluginVerilog.CoreBridge.BadgeIconGenerator.BadgeableIcons)
+        foreach (string baseName in SystemVerilogCore.Menus.BadgeIconGenerator.BadgeableIcons)
         {
             foreach (string variant in new[] { "", "-dark" })
             {
@@ -33,7 +33,7 @@ public class BadgeIconTests
                     File.Exists(Path.Combine(icons, baseName + variant + ".svg")),
                     "missing base icon: " + baseName + variant + ".svg");
 
-                foreach (string badge in pluginVerilog.CoreBridge.BadgeIconGenerator.BadgeNames)
+                foreach (string badge in SystemVerilogCore.Menus.BadgeIconGenerator.BadgeNames)
                 {
                     string file = Path.Combine(icons, baseName + "-" + badge + variant + ".svg");
                     Assert.True(File.Exists(file), "missing badge icon: " + Path.GetFileName(file));
@@ -49,8 +49,8 @@ public class BadgeIconTests
     [Fact]
     public void CommittedIconsAreUpToDate()
     {
-        pluginVerilog.CoreBridge.BadgeIconResult result =
-            pluginVerilog.CoreBridge.BadgeIconGenerator.Generate(IconsDirectory(), write: false);
+        SystemVerilogCore.Menus.BadgeIconResult result =
+            SystemVerilogCore.Menus.BadgeIconGenerator.Generate(IconsDirectory(), write: false);
 
         Assert.False(result.Failed, result.Message);
         Assert.True(result.Changed.Count == 0,
@@ -71,7 +71,7 @@ public class BadgeIconTests
         try
         {
             // copy the base icons only, then generate twice
-            foreach (string baseName in pluginVerilog.CoreBridge.BadgeIconGenerator.BadgeableIcons)
+            foreach (string baseName in SystemVerilogCore.Menus.BadgeIconGenerator.BadgeableIcons)
             {
                 foreach (string variant in new[] { "", "-dark" })
                 {
@@ -80,13 +80,13 @@ public class BadgeIconTests
                 }
             }
 
-            pluginVerilog.CoreBridge.BadgeIconResult first =
-                pluginVerilog.CoreBridge.BadgeIconGenerator.Generate(temp, write: true);
+            SystemVerilogCore.Menus.BadgeIconResult first =
+                SystemVerilogCore.Menus.BadgeIconGenerator.Generate(temp, write: true);
             Assert.False(first.Failed, first.Message);
             Assert.True(first.Written > 0, "the first run must produce the variants");
 
-            pluginVerilog.CoreBridge.BadgeIconResult second =
-                pluginVerilog.CoreBridge.BadgeIconGenerator.Generate(temp, write: true);
+            SystemVerilogCore.Menus.BadgeIconResult second =
+                SystemVerilogCore.Menus.BadgeIconGenerator.Generate(temp, write: true);
             Assert.False(second.Failed, second.Message);
             Assert.Equal(0, second.Written);
             Assert.Empty(second.Changed);
