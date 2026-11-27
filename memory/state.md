@@ -3,6 +3,49 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (14) 完了: 階層ノードメニューを `SystemVerilogCore.Menus` へ移設 (段階 2)** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `LSPのpluginVerilogからの分離作業を進めて`
+  - **移設した 4 ファイル (約 2,600 行、plugin 側は削除のみ)**
+    | 旧 (plugin) | 新 (SystemVerilogCore) | 行数 |
+    |---|---|---|
+    | `CoreBridge/HierarchyMenuCatalog` | `Menus/HierarchyMenuCatalog` | 700 |
+    | `CoreBridge/HierarchyMenuManifest` | `Menus/HierarchyMenuManifest` | 985 |
+    | `CoreBridge/NavigateNodeMenuAdapter` | `Menus/NavigateNodeMenuBuilder` | 687 |
+    | `CoreBridge/NavigateNodeMenuContext` | `Menus/NavigateNodeMenuContext` | 78 |
+    | `CoreBridge/HierarchyMenuAdapter` | **削除** (参照ゼロの互換ファサードだった) | 157 |
+  - **★ 契約の穴が見つかった: simulation setup 行の本文はホスト責務**
+    - 旧 `NavigateNodeMenuAdapter.BuildSimulationSetup` が plugin の `Data.SimulationSetup` を直接呼んでいた
+    - 移設先で `NavigateNodeMenuContext.SimulationSetupText` (デリゲート) を新設し、
+      **「何を集めるか」は catalog、`SimulationSetup` を走らせるのはホスト**に分離
+    - LSP 側は `LspHandler.HierarchyMenu.BuildSimulationSetupText` で実装 (plugin の型に触れるのはここだけ)
+    - この 1 点だけが `pluginVerilog` を残す理由になった (`LspHandler.HierarchyMenu.cs` の 6 箇所)
+  - **他プラグインの参照更新 (ProjectReference 追加が必要だった)**
+    - `CodeEditor2IcarusVerilogPlugin` / `CodeEditor2VivadoPlugin` が `pluginVerilog.CoreBridge.HierarchyMenuCatalog` を
+      直接参照していた (各 7 箇所) → `SystemVerilogCore.Menus.HierarchyMenuCatalog` に変更し、
+      **両 csproj に `SystemVerilogCore` への ProjectReference を追加**
+  - **生成物は不変**: `--check-hierarchy-menu-manifest` → `[ok] package.json is already up to date` + `[ok] badge icons are up to date`
+  - **実測 (成果)**
+    | 計測 | 前 | 後 |
+    |---|---|---|
+    | LSP の `pluginVerilog.` 依存 | **75 箇所 / 3 ファイル** | **66 箇所 / 2 ファイル** |
+    | plugin の `CoreBridge` ファイル数 | 14 | **10** |
+    | `Program.cs` の依存 | 3 | **0** |
+    | `LspHandler.HierarchyMenu.cs` の依存 | 12 | **6** (simulation setup の収集のみ) |
+  - **検証**: `SystemVerilogCore` / `CodeEditor2` / `CodeEditor2VerilogPlugin` / `CodeEditor2IcarusVerilogPlugin` /
+    `CodeEditor2VivadoPlugin` / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` すべて 0 errors /
+    `dotnet test` **1313 合格 / 0 失敗** / `--check-hierarchy-menu-manifest` → `[ok]`
+  - **コミット**: SystemVerilogCore `853e437` / CodeEditor2 `feb3324` / CodeEditor2VerilogPlugin `db76b60` /
+    CodeEditor2IcarusVerilogPlugin `9677a6b` / CodeEditor2VivadoPlugin `3e530e9` /
+    SystemVerilogLanguageServer `00864ca`、メイン `f0776be`
+  - **Next (残る段階 3 = 本丸)**
+    1. `Server/InMemorySystemVerilogCore.cs` の **60 箇所**。内訳は 3 系統:
+       (a) **plugin item tree の構築** (`VerilogFile` / `VerilogHeaderFile` / `Folder` / `CodeDocument`) — include 解決のため
+       (b) **階層 / クリック経路** (`IVerilogRelatedFile` / `VerilogModuleInstance` / `InterfaceInstance` / `ImportedPackage` /
+           `VerilogHeaderInstance` / `VerilogCommon.Updater`)
+       (c) **simulation setup** (`SimulationSetup` を `LspHandler.HierarchyMenu` から呼ぶ 6 箇所)
+    2. (a)(b) を外すには **item tree の契約化**が前提 (state.md 既出の判断)。`SimulationSetup` の移設も同じ前提に依存
+    3. 実機確認 (Stage H (10) の `Updater` 委譲 / (13) の formatting 経路 / (14) のメニュー両ホスト)
+
 - **Stage H (13) 完了: text edit provider を `SystemVerilogCore` へ移設 / Avalonia パッケージ参照を除去** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `plugin参照を完全除去できますか` → `進めて`
   - **★ 無駄な依存を 1 つ発見・除去**: `LspHandler.Theme.cs` の `ToHex(Avalonia.Media.Color)` は
