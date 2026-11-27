@@ -3,6 +3,44 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (6): item ツリーの「内容」を `SystemVerilogCore` へ移設 (規則は完成、LSP の切り替えは未達)** (ビルド 0 errors、テスト 1312 合格)
+  - ユーザ指示: `itemツリーは内容を委譲してSystemVerilogCoreで保持すべきですね`
+  - **方針 (ユーザ指示どおり)**: ツリーの **内容**（子は何か / どの instantiation がどのノードになるか / 既存ノードを再利用できるか）は
+    parse 結果についての規則なので `SystemVerilogCore` に置き、**エディタ側は委譲**する
+  - **実装 (新規 2 ファイル / `SystemVerilogCore/Tree/`)**
+    | 型 | 役割 |
+    |---|---|
+    | `IVerilogTreeNode` | ノードの契約。`Kind` / `Name` / `RelativePath` / **`InstanceKey`** / `ParsedResult` / `Children` |
+    | `IVerilogTreeNodeFactory` | ホストがノードを作る口。`FindChild` / `CreateModuleInstance` / `CreateModuleInstanceArray` / `CreateInterfaceInstance` / `CreateImportedPackage` / `CreateHeader` |
+    | `VerilogTreeBuilder` | **規則そのもの**。`BuildChildren(node, factory, buildingBlockName)` |
+  - **移植した規則 (`VerilogCommon.Updater` から。挙動は変えていない)**
+    1. building block が 1 つのファイル → その block の instantiation を直接子に
+    2. 複数 block のファイル → block ごとに 1 ノード（`addSubItemsMultiBuildingBlock`）
+    3. instance → その instance が parse された block の instantiation を子に（これが階層化の本体）
+    4. package は葉
+    5. include header / imported package は instantiation より先
+    6. instance array (`u[1:0]`) → 要素ごとに 1 ノード
+    7. **既存ノードの再利用は `InstanceKey`（module 名 + parameter override）一致が条件**
+       — 名前だけで再利用すると `child #(.WIDTH(4)) u` と `child u` を取り違える
+  - **回帰テスト 6 件 (`VerilogTreeBuilderTests`、実パーサで検証)**: 単一 block ファイル / instance の入れ子 /
+    package は葉 / 未解決 instantiation はスキップ / instance array は要素ごと / parse 結果なしのノードは子なし
+  - **★ LSP の切り替えは 3 件のテスト失敗で撤回 (実測)**
+    | 失敗 | 原因 |
+    |---|---|
+    | `InstanceNode_ExpandToken_ExpandsToItsChildren` | instance ノードの子を出すには **その instance 自身の parse（parameter override 適用）** が要る。実装は入れたが、親の parse 結果で子を出していたため空になった |
+    | `ReparseAsNestedInstance_AppliesParameterOverrides` | 同上（`u_leaf` が見つからない） |
+    | `HierarchyNodes_CarryPresentationMetadata` | `StartLine` / `StartCharacter`（クリック位置）を descriptor に詰めていなかった（旧 `CreateDescriptor` は instanced module の宣言位置を解決していた） |
+  - **判断**: 規則は `SystemVerilogCore` に**残す**（テスト付き）。LSP の切り替えは撤回し、`InMemorySystemVerilogCore` は
+    従来の `Updater` 経路のまま（テスト 1306 合格に復帰）。切り替えは次段階で
+    「instance の parse を先に行い、その結果をノードに持たせる」＋「descriptor にクリック位置を入れる」を揃えてから行う
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` すべて 0 errors /
+    `dotnet test` **1312 合格 / 0 失敗**（+6）
+  - **Next**
+    1. LSP 切り替えの残り 2 点: (a) instance ノードを **instance として parse** し、その結果で子を出す
+       (b) descriptor に **instanced module の宣言位置**（`StartLine` / `StartCharacter`）を入れる
+    2. エディタ側 (`VerilogCommon.Updater`) を `VerilogTreeBuilder` への委譲に置き換える（現在は二重実装のまま）
+    3. その後 `SystemVerilogLanguageServer.csproj` から plugin 参照を外す (Stage H の当初目的)
+
 - **Stage H (5) 完了: badge icon 生成器を `SystemVerilogCore` へ移設** (ビルド 0 errors、テスト 1306 合格)
   - ユーザ指示: `つづけて`
   - **移設**: `CoreBridge/BadgeIconGenerator` (+ `BadgeIconResult`) → `Menus/BadgeIconGenerator`
