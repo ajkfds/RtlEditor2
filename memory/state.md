@@ -3,6 +3,39 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (17) 完了: 名前空間ファイル契約を実装 (段階 3 の第 3 弾)** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `続けて`
+  - **やったこと**: `InMemoryFile` に **`IVerilogNameSpaceFile`** を実装
+    (`FindRootNamedElement` / `Id` / `ProjectName` / `FileRelativePath` / `ParsedResult`)。
+    `IVerilogNameSpaceFile` は**既に UI フリーな契約**だったので、実装を足すだけで済んだ
+  - **★ 実測で分かったこと (重要・再挑戦時の注意)**: 契約を実装しても
+    **parse の file 引数を契約に置換すると 8 テストが失敗**する
+    | 症状 | 原因 |
+    |---|---|
+    | `ReparseAsInstance_AppliesParameterOverrides` が「instance として parse されない」 | instance parse の結果が **plugin 側のキャッシュ表**に入らない |
+    | `ParameterOverride_DoesNotReportDuplicateParameter` が `8` のまま (期待 `5`) | instance キーが一致せず、宣言時の既定値で読まれる |
+    | `BitWidthMismatch_IsWarning` / `ParameterOverride_DrivesPortWidthCheck` | 同上 (override が効かないので幅チェックが成立しない) |
+    | `InstanceClick_RegistersInstanceParsedDocuments` | 同上 |
+    - **原因**: parse は与えられた file を **そのまま名前空間へ登録**する。読み手
+      (snippet の module 解決 / definition / `InstanceTextFile` の instance キャッシュ key) は
+      登録された file を **plugin の `IVerilogRelatedFile` に絞り込む**ため、
+      ホスト自身のオブジェクトを登録すると**すべての lookup が外れる**
+    - **対処**: `FileRelativePath` を plugin 側の値に揃える修正は**採用** (キーのずれを防ぐ)。
+      parse の file 引数は plugin の `VerilogFile` に戻した (理由をコード内に明記)
+    - **教訓**: 契約を満たすだけでは足りない。**「誰が登録され、誰が読むか」の同一性**まで
+      揃えないと、名前空間経由の解決が静かに壊れる
+  - **実測 (成果)**: LSP の `pluginVerilog.` 依存は **45 箇所のまま** (この段は契約実装が主で、
+    呼び出し箇所は減らない)。ただし **parse の file 引数を契約化する前提が整った**
+    (残る阻害要因は「登録オブジェクトの同一性」1 点に絞れた)
+  - **検証**: `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` 0 errors /
+    `dotnet test` **1313 合格 / 0 失敗**
+  - **コミット**: SystemVerilogLanguageServer `443dc3c` `2d0f5a7`、メイン `582a993` `9f53865`
+  - **Next (残る 39 箇所 / 前提の整理)**
+    1. **登録オブジェクトの同一性**: 名前空間に登録される file を「ホスト自身」にしても
+       読み手が解決できるようにする = **読み手側の絞り込み (`as IVerilogRelatedFile`) を契約へ**。
+       これが済めば parse の file 引数 (約 10 箇所) を契約化できる
+    2. plugin item tree 構築 (約 14) / Updater 経路 (3) / simulation setup (6) は引き続き残る
+
 - **Stage H (16) 完了: provider を契約経由に (段階 3 の第 2 弾)** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
   - **やったこと**: `InMemoryFile` に **`IVerilogSourceFile` / `IVerilogSourceFileParseCache` /
