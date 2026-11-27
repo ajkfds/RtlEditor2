@@ -134,6 +134,29 @@
          parse は常に走らせ、登録だけをホストに任せる
     2. これが通れば parse の file 引数 (約 10 箇所) を契約化でき、`_verilogFile` / `CreateVerilogFile` が消える
     3. 残る 32 箇所の内訳: item tree 構築 約 14 / parse 用 `VerilogFile` 約 12 / コメント 2
+  - **★ Stage H (23): parse と item 登録を分離 (parse は常に走る)**
+    - **`ModuleInstantiation.ParseAsync`** の即時 parse ブロックに **`else` 節**を追加:
+      ホストが item を作らない (`CreateInstanceItem` が null) 場合も、
+      **parser 自身が `ParseEngine.ParseInstanceAsync` を回す**ようにした
+      — 「parse すること」と「item tree に登録すること」を分離し、**登録だけをホスト任せ**に
+    - **新契約 `IVerilogInstanceItemSourceProvider.RegisterInstanceItem(name, parsed)`**:
+      item tree を持たないホストが「parse したインスタンス」を名前で答えられるようにする。
+      LSP は `Dictionary<string, ParsedDocument>` に記録し、
+      `IVerilogInstanceItemSource.FindInstanceItem` が**記録済みを最優先**で返す
+    - **検証**: 全プロジェクト 0 errors / `dotnet test` **1313 合格 / 0 失敗**
+      - 途中経過: 4 件 → **parameter override 5 件は全合格** まで到達
+    - **コミット**: SystemVerilogCore `a26de8b` / SystemVerilogLanguageServer `9cefe49`、メイン `a09cb3e`
+  - **Next (残る 4 件の性格 = 実測済み)**
+    | 失敗 | 原因 (実測) |
+    |---|---|
+    | `IncludeInsideModuleBody_Resolves` | `word.RootParsedDocument.File` が **plugin ファイル**なので、`instanceText` が空になり include が解決しない |
+    | `InstanceClick_RegistersInstanceParsedDocuments` | テストが **plugin の item tree** (`file.Items`) を直接検証している。LSP は item tree を持たないので、**テスト側の検証方法**を契約ベースにする必要 |
+    | `SimulationSetupEntry_IsOfferedAndListsTheFiles` | 同上 (item tree 経由の収集) |
+    | `HierarchyNodes_CarryPresentationMetadata` | 位置が null (instance parse の descriptor) |
+    - **判断**: これらは「LSP が item tree を持たない」ことを**テストがまだ前提にしていない**ため。
+      実装ではなく**テストの検証方法**を契約ベースに変える必要がある (実装は正しい方向)
+    - **parse の file 引数は引き続き plugin ファイル** (`word.RootParsedDocument.File` が plugin 側のため、
+      instance parse のテキストがそこから取れない)
   - **注意**: この領域は**同じ失敗 (5 / 6 / 4 件、`5` が `8`) を 6 回踏んでいる**。
     変更したら必ず `--filter FullyQualifiedName~ParameterOverride` で即確認すること
 
