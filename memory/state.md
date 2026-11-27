@@ -3,6 +3,45 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (18) 完了: parse の file 引数の阻害要因を二分探索で確定 + instance キャッシュを契約化** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `続けて`
+  - **★ 二分探索で確定した事実 (推測ではなく実測)**
+    - `ParseSystemVerilogAsync` の **file 引数だけ**を `this` (InMemoryFile) に変えると
+      `ParameterOverride_DoesNotReportDuplicateParameter` が `5` 期待に対し **`8`** を返して失敗する。
+      **この 1 引数を戻すと 1313 全合格に復帰**する
+    - つまり阻害要因は「名前空間の契約」ではなく **登録されるオブジェクトの同一性** 1 点
+    - 理由: parse は与えられた file を**そのまま** `DefinitionNameSpace` / `PackageNameSpace` /
+      `UnitNameSpace` に登録する。読み手は登録された file を **plugin の `IVerilogRelatedFile` に絞り込む**
+      (`Data/VerilogNameSpaceExtensions.GetEditorFile` 1 箇所 + `InstanceTextFile` のキャッシュ key)。
+      ホスト自身のオブジェクトを登録すると、その絞り込みが全部外れる
+    - **この理由をコード内コメントに明記** (再挑戦時に同じ回り道をしないため)
+  - **今回の成果: instance キャッシュの無効化を契約へ**
+    - `IVerilogSourceFileInstanceCache` に **`ClearInstanceParsedDocuments()`** を追加
+      (editor 側は既存メソッドの明示的実装、LSP 側は `ParseFile` へ委譲)
+    - `InMemorySystemVerilogCore` の `(textFile as pluginVerilog.Data.VerilogFile)?.ClearInstancedParsedDocuments()`
+      を契約経由に置換
+  - **実測 (成果)**
+    | 計測 | 前 | 後 |
+    |---|---|---|
+    | LSP の `pluginVerilog.` 依存 | **45 箇所 / 2 ファイル** | **44 箇所 / 2 ファイル** |
+    | うち `InMemorySystemVerilogCore.cs` | 39 | **38** |
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (0 errors) /
+    `SystemVerilogLanguageServer` (0 errors) / `RtlEditor2.Desktop` 0 errors /
+    `dotnet test` **1313 合格 / 0 失敗**
+  - **コミット**: SystemVerilogCore `0b397ac` / CodeEditor2VerilogPlugin `3721660` /
+    SystemVerilogLanguageServer `8d6db77` `0128187`、メイン `25687ff` `141bb45`
+  - **★ 残り 38 箇所はすべて「item tree / 名前空間の同一性」に由来する (実測で分類済み)**
+    | 系統 | 箇所 | 除去に必要なこと |
+    |---|---|---|
+    | **plugin item tree 構築** (`VerilogFile` / `VerilogHeaderFile` / `CodeDocument` / `Plugin().Register()` / `ProjectProperty`) | 約 14 | include 解決が `IVerilogIncludeFileFactory` 経由なので**既に契約化済み**。残るのは「item を作る」こと自体 = **ホストが item tree を持たない設計**にする必要 |
+    | **parse 用 `VerilogFile`** (`_verilogFile` / `CreateVerilogFile` / `GetPluginVerilogFile` / `GetPluginFileForUri`) | 約 15 | **上記の同一性 1 点**が解ければまとめて外れる |
+    | **Updater 経路** (`VerilogCommon.Updater`) | 3 | item tree 自体の契約化 |
+    | **simulation setup** | 6 | `SimulationSetup` の契約化 (本丸) |
+    | コメント / doc | 2 | 変更不要 |
+  - **判断**: これ以上進めるには **「LSP が plugin の item tree を持たない」設計変更** (include 解決を
+    ホスト非依存にする + `SimulationSetup` の契約化) が必要で、**段階 3 の本丸そのもの**。
+    個別の契約追加では削れない領域に到達した
+
 - **Stage H (17) 完了: 名前空間ファイル契約を実装 (段階 3 の第 3 弾)** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
   - **やったこと**: `InMemoryFile` に **`IVerilogNameSpaceFile`** を実装
