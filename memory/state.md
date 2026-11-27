@@ -3,6 +3,31 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (7): LSP のツリー切り替えを再試行 → 原因を特定 (修正 1 点、緑に復帰)** (ビルド 0 errors、テスト 1312 合格)
+  - ユーザ指示: `続けて`
+  - **今回入れた修正 (撤回した G-6 の 3 件のうち 2 件は解消)**
+    1. **instance ノードを instance として parse する** (`EnsureInstanceNodeParsed` → `ParseInstanceNode`)
+       — `ParseEngine.ParseInstanceAsync` に **その instance のパラメータ上書き** を渡し、結果をノードに保持
+    2. **クリック位置を descriptor に入れる** — `InstancedBuildingBlock.NameReference` から
+       instanced module の宣言位置を `StartLine` / `StartCharacter` に（旧 `CreateDescriptor` と同じ規則）
+  - **★ 残る失敗 10 件の原因を特定 (実測)**
+    - 症状はすべて「instance の子が空」= `u_leaf` が出ない
+    - **原因**: `InMemoryFile` の `RelativePath` は **`mem://top.sv`**（in-memory の id）で、
+      `InMemoryTreeNodeFactory` が `RelativePath` から `InMemoryFile` を引き直す `FindFileByRelativePath` が
+      **一致せず null** → `TryResolve` が null → `CreateModuleInstance` が null → ノードが作られない
+    - つまり **ノードが「どのファイルから来たか」をパスで引き直しているのが誤り**。ファイル実体を持たせるべき
+  - **修正方針 (次回 1 点で足りる見込み)**
+    - `InMemoryTreeNode` に **`InMemoryFile? SourceFile`** を持たせ、`InMemoryTreeNodeFactory` が
+      生成時に設定する。`EnsureInstanceNodeParsed` / `TryResolve` はパス引き直しをやめて `SourceFile` を使う
+    - `FindFileByRelativePath` は実ファイル（ディスク上のワークスペース）用のフォールバックとして残す
+  - **判断**: 原因が 1 点に絞れたので、緑（1312 合格）に戻した状態で記録し、次回その 1 点を入れる
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` すべて 0 errors /
+    `dotnet test` **1312 合格 / 0 失敗**
+  - **Next**
+    1. `InMemoryTreeNode.SourceFile` を追加し、factory が設定 / 消費側はパス引き直しをやめる → 切り替え再試行
+    2. エディタ側 (`VerilogCommon.Updater`) を `VerilogTreeBuilder` への委譲に置き換える（現在は二重実装のまま）
+    3. その後 `SystemVerilogLanguageServer.csproj` から plugin 参照を外す (Stage H の当初目的)
+
 - **Stage H (6): item ツリーの「内容」を `SystemVerilogCore` へ移設 (規則は完成、LSP の切り替えは未達)** (ビルド 0 errors、テスト 1312 合格)
   - ユーザ指示: `itemツリーは内容を委譲してSystemVerilogCoreで保持すべきですね`
   - **方針 (ユーザ指示どおり)**: ツリーの **内容**（子は何か / どの instantiation がどのノードになるか / 既存ノードを再利用できるか）は
