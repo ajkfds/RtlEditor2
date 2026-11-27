@@ -3,6 +3,42 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (16) 完了: provider を契約経由に (段階 3 の第 2 弾)** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `続けて`
+  - **やったこと**: `InMemoryFile` に **`IVerilogSourceFile` / `IVerilogSourceFileParseCache` /
+    `IVerilogSourceFileInstanceCache`** を実装させ、provider 呼び出し 4 箇所から
+    `_verilogFile ??= CreateVerilogFile()` を除去
+    | 呼び出し | 前 | 後 |
+    |---|---|---|
+    | `CompletionProvider.GetCompletionItems` | plugin `VerilogFile` | **契約** |
+    | `SignatureHelpProvider.GetSignatures` | plugin `VerilogFile` | **契約** |
+    | `SnippetProvider.GetSnippets` | plugin `VerilogFile` | **契約** |
+    | `ToolMenuBuilder.Build` | plugin `VerilogFile` | **契約** |
+  - **★ 試して撤回した変更 (重要・再挑戦時の注意)**
+    - `ParseEngine.ParseSystemVerilogAsync` / `ParseInstanceAsync` の **file 引数も契約に置換**したところ
+      **48 テストが失敗**した (階層が全滅 / 全モジュールが `unfound module`)
+    - **原因**: parse は building block をプロジェクトの名前空間へ登録するが、その登録は
+      **`IVerilogNameSpaceFile` (plugin 側の `FindRootNamedElement`)** を要求する。
+      契約だけを満たすファイルを渡すと**登録が黙ってスキップ**され、他ファイルから解決できなくなる
+    - **対処**: file 引数は plugin の `VerilogFile` のまま戻した (理由をコメントに明記)。
+      **契約化するには名前空間登録の契約化が前提** (未着手)
+  - **実測 (成果)**
+    | 計測 | 前 | 後 |
+    |---|---|---|
+    | LSP の `pluginVerilog.` 依存 | **49 箇所 / 2 ファイル** | **45 箇所 / 2 ファイル** |
+    | うち `InMemorySystemVerilogCore.cs` | 43 | **39** |
+  - **検証**: `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` 0 errors /
+    `dotnet test` **1313 合格 / 0 失敗**
+  - **コミット**: SystemVerilogLanguageServer `34334ab`、メイン `04fbfd7`
+  - **Next (残る 39 箇所)**
+    | 系統 | 箇所 | 除去に必要なこと |
+    |---|---|---|
+    | **名前空間登録の契約化** | — | **最優先の前提**。`IVerilogNameSpaceFile` (plugin) を契約化すれば parse の file 引数も契約にできる |
+    | plugin item tree 構築 | 約 14 | `VerilogFile` / `VerilogHeaderFile` / `CodeDocument` / `Plugin().Register()` / `ProjectProperty` |
+    | parse 用 `VerilogFile` | 約 10 | 上記の前提が解ければまとめて外れる |
+    | Updater 経路 | 3 | item tree 自体の契約化 |
+    | simulation setup | 6 | `SimulationSetup` の契約化 (本丸) |
+
 - **Stage H (15) 完了: 階層ノードを契約化 (段階 3 の第 1 弾)** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
   - **★ 契約の穴: 階層のノード種別が editor の具象型 switch だった**
