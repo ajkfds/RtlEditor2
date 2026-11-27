@@ -3,6 +3,36 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (10) 完了: エディタ側 `Updater` を `VerilogTreeBuilder` への委譲に置換 (二重実装の解消)** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `続けて`
+  - **★ 二重実装が解消**: `VerilogCommon.Updater` が **466 行 → 120 行**。規則は `SystemVerilogCore.Tree.VerilogTreeBuilder` のみ
+  - **新規 2 ファイル (`Data/VerilogCommon/EditorTreeNodeFactory.cs`)**
+    | 型 | 役割 |
+    |---|---|
+    | `EditorTreeNodeFactory` | editor の「ノードとは何か」の答え。`VerilogModuleInstance.Create` / `CreateArray` / `InterfaceInstance.Create` / block 自身の instantiation / `ImportedPackage.Create` / `VerilogHeaderInstance`（parser が作ったものをそのままノードに） |
+    | `EditorTreeNode` | `Data.Item` を `IVerilogTreeNode` に適合させる薄いアダプタ。`InstanceKey` は `VerilogModuleInstance.Key` / `InterfaceInstance.Key` |
+  - **`Updater` の新しい役割**: ビルダーが返した子を **editor の `Item.Items` に反映するだけ**
+    - `EditorTreeNodeFactory` でノード生成 → `SemaphoreSlim` で **原子的に swap** → 置き換えた item を `Dispose`
+    - 従来の「再利用して選択状態を保つ」挙動は、ビルダーが `InstanceKey` 一致で既存ノードを返し、
+      factory が `Items.TryGetValue` で拾う形で維持
+  - **実測 (成果)**
+    | 計測 | 前 | 後 |
+    |---|---|---|
+    | `Updater.cs` | 466 行 | **120 行** |
+    | ツリー規則の実装 | **2 つ**（editor / LSP） | **1 つ**（`SystemVerilogCore`） |
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (警告 84) / `SystemVerilogLanguageServer` /
+    `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1313 合格 / 0 失敗**
+  - **★ 実機確認が必要 (sv-tests では検出不可)**: エディタで
+    (1) NavigatePanel の展開（ファイル / module instance / interface / package / include header）
+    (2) instance array の要素が個別に出る
+    (3) 複数 building block のファイルで block ごとにノードが出る
+    (4) 編集 → 保存 → ツリー更新（dirty バッジ / エラーバッジ）
+    (5) instance を選択 → 展開 → パラメータ上書きが反映された子
+  - **Next**
+    1. 上記の実機確認
+    2. `SystemVerilogLanguageServer.csproj` から `CodeEditor2VerilogPlugin` 参照を外す（残る plugin 依存は
+       `InMemorySystemVerilogCore` の item tree 構築 63 / `LspHandler.HierarchyMenu` 12 / `Program.cs` 3）
+
 - **Stage H (9) 完了: building block ノードの生成をホストへ開放** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
   - **★ 契約の穴**: `VerilogTreeBuilder` が **`ModuleInstantiation` を自前で組み立てていた**（複数 block ファイルの
