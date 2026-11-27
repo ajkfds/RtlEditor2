@@ -56,15 +56,37 @@
         クリック経路が「インスタンスではない」と判定する
     - **結論**: parse の file 引数を契約化するには、**先に item tree 自体を契約化する**
       (= 階層を editor の `Updater` に依存させない) 必要がある。順序が逆では通らない
-  - **Next (順序が確定した)**
-    1. **item tree の契約化** (= 階層構築を `SystemVerilogCore` 側で完結させる)。
-       `VerilogTreeBuilder` + `IVerilogTreeNodeFactory` は既にあるので、**LSP 側に UI フリーな
-       ノード実装**を持たせ、`Updater` 経由をやめるのが筋
-    2. これが済めば parse の file 引数 (約 10 箇所) を契約化でき、`_verilogFile` / `CreateVerilogFile` が不要になる
-    3. 残る simulation setup (6) は item tree 契約化の後
+  - **★ Stage H (20): item tree の抽象化を実施 (ユーザ指示 `item treeの抽象化を避けて分離はできないのは明らかです。進めて`)**
+    - **分かったこと**: 階層の**一覧**は既に `VerilogTreeBuilder` 経由だった。`Updater` 依存は
+      **クリック経路 (`RebuildAsInstance`) と `PrepareItemTree` の 3 箇所だけ**だった
+    - **実装**: `RebuildAsInstance` を builder に切り替え
+      - `InMemoryTreeNode.InstantiatingItem` を新設 (`IBuildingBlockInstantiation?` を返す。
+        `ModuleInstantiation` / `InterfaceInstantiation` を switch せずに済む)
+      - `InMemoryFile.CreateTreeNode()` を新設 (一覧とクリックで同じ根を使う)
+      - `GetFileForUri` を新設 (URI → `InMemoryFile`)
+      - **`GetUpdatedChildren` を削除** (呼び出し元がゼロになった)
+    - **実測 (成果)**
+      | 計測 | 前 | 後 |
+      |---|---|---|
+      | LSP の `pluginVerilog.` 依存 | **44 箇所** | **34 箇所** |
+      | `VerilogCommon.Updater` 依存 | 3 | **1** (`PrepareItemTree` = simulation setup 用) |
+    - **★ 重要な実測**: この後 **parse の file 引数を `this` にすると失敗が 5 件 → 1 件に減った**
+      - 残る 1 件 (`ParameterOverride_DrivesPortWidthCheck`): **親の再 parse 中**に
+        `ModuleInstantiation.ParseAsync` → `CreateInstanceItem` → `VerilogModuleInstance.Create` が
+        **editor の `TextFile` を要求**するため、契約だけのファイルではインスタンスが作れない
+      - つまり **item tree の抽象化は正しい方向で、効果も出ている**。残りは
+        **`CreateInstanceItem` (parser がホストにインスタンス item を作らせる口)** の扱い 1 点
+    - **検証**: 全プロジェクト 0 errors / `dotnet test` **1313 合格 / 0 失敗**
+    - **コミット**: SystemVerilogLanguageServer `43e7bfc` `d8452e2`、メイン `221fc5a` `b064bf6`
+  - **Next (残り 1 点)**
+    1. **`CreateInstanceItem` を「インスタンス item を作らない」方向に変える**
+       — 一覧もクリックも builder で辿れるようになったので、parser が editor item を作る必要は
+       **階層のためには無くなった**。残る用途は `SimulationSetup` が `file.Items` を読むことだけなので、
+       **`SimulationSetup` を契約化すれば `CreateInstanceItem` ごと不要にできる**見込み
+    2. これが済めば parse の file 引数 (約 10 箇所) を契約化でき、`_verilogFile` / `CreateVerilogFile` が消える
+    3. 残る 34 箇所の内訳: item tree 構築 約 14 / parse 用 `VerilogFile` 約 12 / simulation setup 6 / コメント 2
   - **注意**: この領域は**同じ失敗 (5 件 / `5` が `8` になる) を 4 回踏んでいる**。
-    変更したら必ず `--filter FullyQualifiedName~ParameterOverride` で即確認すること。
-    **parse の file 引数は item tree 契約化まで触らない** (順序を守る)
+    変更したら必ず `--filter FullyQualifiedName~ParameterOverride` で即確認すること
 
 - **Stage H (18) 完了: parse の file 引数の阻害要因を二分探索で確定 + instance キャッシュを契約化** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
