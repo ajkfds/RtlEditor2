@@ -31,15 +31,26 @@
   - **検証**: `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` 0 errors /
     `dotnet test` **1313 合格 / 0 失敗**
   - **コミット**: CodeEditor2VerilogPlugin `dda9bd2` / SystemVerilogLanguageServer `80b057d`、メイン `d6a5f80`
-  - **Next (次にやること = 1 点だけ)**
-    1. **`InMemoryFile.VerilogProject` を workspace プロジェクトに揃える**
-       (現状は共有 `ParserProjectStub`。`InMemoryProject` 自身が `IVerilogProject` を実装しているので、
-       それを返せばキーの先頭が一致する見込み)。ただし `ProjectSettings` は `ParserProjectStub` の
-       `ProjectProperty` を返す必要があるため、**「Project は InMemoryProject、Settings は stub の property」**
-       という組み合わせが成立するか要検証
-    2. これが通れば **parse の file 引数 (約 10 箇所) を契約化**でき、`_verilogFile` / `CreateVerilogFile` の
-       大部分が不要になる
+  - **★ 追加検証 (同じセッション内で実施したが通らなかった 2 案・記録)**
+    | 試したこと | 結果 | 分かったこと |
+    |---|---|---|
+    | `VerilogProject` を **workspace プロジェクト** (`ProjectOwner`) に変更 | 5 件失敗のまま | **キーの先頭は原因ではない**。むしろ読み手 (`InstanceTextFile.Project`) は plugin プロジェクトなので、ここを変えると**新たに不一致を作る**。**`ParseFile.VerilogProject` のままが正しい** (戻した) |
+    | `RegisterInstanceParsedDocument` の書き込み先を明示的に `ParseFile` に固定 | 5 件失敗のまま | 書き込み先は既に `ParseFile` 経由だった。**書き込み側は原因ではない** |
+    - **真因 (実測で確定)**: 読み手 `InstanceTextFile.ParsedDocument` は **`SourceTextFile` (plugin の
+      `VerilogFile`) の表**を引く。一方 parse に `this` を渡すと、結果は **`this` の表**に入る
+      (契約の `GetInstancedParsedDocument` が `ParseFile` へ委譲するため、**`this` 経由で書いても
+      `ParseFile` の表に入る**はずだが、実測では読み手が別インスタンスを見ている)
+    - **結論**: この 1 点は**同一インスタンス性**の問題で、契約の追加では解けない。
+      `InstanceTextFile.SourceTextFile` が指す plugin `VerilogFile` と、`ParseFile` が返す plugin
+      `VerilogFile` が**同一オブジェクトであることを保証する**設計 (item tree 経由の解決をやめる) が必要
+  - **Next (次にやること)**
+    1. **`InMemoryFile` が parse に渡す plugin `VerilogFile` と、読み手が使う `VerilogFile` を同一にする**
+       — 現状 `CreateVerilogFile` は item tree 登録済みのものを優先するが、`ParseFile` 経由の解決と
+       `InstanceTextFile.SourceTextFile` が同じ実体を指しているかは未検証。ここを実測で詰める
+    2. それが通れば **parse の file 引数 (約 10 箇所) を契約化**できる
     3. 残る item tree 構築 (約 14) / Updater (3) / simulation setup (6) は別系統
+  - **注意**: この領域は**同じ失敗 (5 件 / `5` が `8` になる) を 3 回踏んでいる**。
+    変更したら必ず `--filter FullyQualifiedName~ParameterOverride` で即確認すること
 
 - **Stage H (18) 完了: parse の file 引数の阻害要因を二分探索で確定 + instance キャッシュを契約化** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
