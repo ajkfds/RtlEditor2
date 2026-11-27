@@ -3,6 +3,39 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (8) 完了: LSP の RTL Hierarchy を `VerilogTreeBuilder` 経由に切り替え成功** (ビルド 0 errors、テスト 1312 合格)
+  - ユーザ指示: `お願いします`
+  - **★ 決定的だった原因 (前段の予測どおり 1 点)**: `InMemoryFile.RelativePath` は **`mem://top.sv`**（in-memory の id）で、
+    factory が `RelativePath` から `InMemoryFile` を引き直す `FindFileByRelativePath` が一致せず null →
+    `TryResolve` が null → `CreateModuleInstance` が null → **ノードが作られない**（子が空）
+    - 修正: **`InMemoryTreeNode.SourceFile`（`InMemoryFile` 実体）を持たせ**、`EnsureInstanceNodeParsed` は
+      パス引き直しをやめて `SourceFile` を使う。パス引き直しは実ファイル（ディスク上）用のフォールバックに降格
+  - **★ 2 つ目の原因 (実測で追加発見)**: `GetInstancedBuildingBlock()` は **パラメータ上書き済みの parse** を引くため、
+    上書きの無い instantiation では `KeyGenerator(file, module, {})` と `KeyGenerator(file, null, null)` が食い違い
+    **null を返す**（解決できる module でもノードが消える）
+    - 修正: factory に **definition namespace 経由のフォールバック**を追加（エディタの instance 生成と同じ規則）
+  - **前段で解消した 2 点 (再掲)**: (a) instance ノードを **instance として parse**（`ParseEngine.ParseInstanceAsync` に
+    override を渡す）(b) **クリック位置**を `InstancedBuildingBlock.NameReference` から descriptor に入れる
+  - **実測 (成果)**
+    | 計測 | 前 | 後 |
+    |---|---|---|
+    | LSP の階層テスト | 10 失敗 | **0 失敗（1312 合格）** |
+    | `InMemorySystemVerilogCore` の `Updater` 経路 | 使用 | **未使用**（ビルダー経由） |
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` /
+    `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1312 合格 / 0 失敗**
+  - **残る LSP の `pluginVerilog.` 依存 (実測、3 ファイル / 78 箇所)**
+    | ファイル | 件数 | 実体 |
+    |---|---|---|
+    | `Server/InMemorySystemVerilogCore.cs` | 63 | **plugin の item tree 構築** (`RegisterPluginItem` / `VerilogFile` / `VerilogHeaderFile`) — 階層はもう使っていないが、include 解決と `VerilogCommon.Updater` を使う他経路が残る |
+    | `Server/LspHandler.HierarchyMenu.cs` | 12 | `HierarchyMenuAdapter` / `NavigateNodeMenuAdapter` |
+    | `Program.cs` | 3 | `HierarchyMenuManifest` (package.json 生成) |
+  - **Next**
+    1. `InMemorySystemVerilogCore` の plugin item tree 構築を外す。**階層はビルダー経由になったので、残る用途は
+       include 解決 (`WordScanner` の item tree 参照) と `SimulationSetup`**。include は既に `IVerilogItemTree` 契約経由なので、
+       `RegisterPluginItem` を `InMemoryItemTree` に寄せられるか実測する
+    2. エディタ側 (`VerilogCommon.Updater`) を `VerilogTreeBuilder` への委譲に置き換える（現在は二重実装のまま）
+    3. その後 `SystemVerilogLanguageServer.csproj` から plugin 参照を外す (Stage H の当初目的)
+
 - **Stage H (7): LSP のツリー切り替えを再試行 → 原因を特定 (修正 1 点、緑に復帰)** (ビルド 0 errors、テスト 1312 合格)
   - ユーザ指示: `続けて`
   - **今回入れた修正 (撤回した G-6 の 3 件のうち 2 件は解消)**
