@@ -3,6 +3,33 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (13) 完了: text edit provider を `SystemVerilogCore` へ移設 / Avalonia パッケージ参照を除去** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `plugin参照を完全除去できますか` → `進めて`
+  - **★ 無駄な依存を 1 つ発見・除去**: `LspHandler.Theme.cs` の `ToHex(Avalonia.Media.Color)` は
+    **呼び出し元ゼロの死んだヘルパ**（パレットは既に `VerilogColorPalette.ToHex` 経由）。
+    これがサーバが Avalonia 型を名指ししていた**唯一の箇所**だった
+    - 削除により `AvaloniaUI.DiagnosticsSupport` **パッケージ参照ごと除去**（同梱サーバに Avalonia を引き込む経路が 1 本消えた）
+  - **`FormattingAdapter` → `SystemVerilogCore.Completion.FormattingProvider`**
+    - 旧実装は indent を plugin の具象 `CodeDocument.GetIndentString` から取っていた → **`SnippetBuilder.GetIndent`（契約経由）** に
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (警告 0) / `SystemVerilogLanguageServer` (警告 292) /
+    `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1313 合格 / 0 失敗**
+  - **残る LSP の `pluginVerilog.` 依存 (実測 3 ファイル / 75 箇所)**
+    | ファイル | 件数 | 実体 |
+    |---|---|---|
+    | `Server/InMemorySystemVerilogCore.cs` | 60 | plugin item tree 構築 / クリック経路 / `SimulationSetup` |
+    | `Server/LspHandler.HierarchyMenu.cs` | 12 | `HierarchyMenuAdapter` / `NavigateNodeMenuAdapter` |
+    | `Program.cs` | 3 | `HierarchyMenuManifest` |
+  - **★ 完全除去の見積り (実測ベース・4 段階)**
+    | # | 対象 | 規模 | 備考 |
+    |---|---|---|---|
+    | 1 | `FormattingAdapter` | 小 | **完了** |
+    | 2 | メニュー 3 種 (`HierarchyMenuCatalog` 700 / `NavigateNodeMenuAdapter` 687 / `HierarchyMenuManifest` 985 / `NavigateNodeMenuContext` 78 / `HierarchyMenuAdapter` 157) | **約 2,600 行** | `BuildSimulationSetup` が `Data.SimulationSetup` 依存 → simulation 行の本文だけホストへ委譲する形が要る。**加えて Icarus / Vivado プラグインが `HierarchyMenuCatalog` を直接参照**（各 7 箇所）→ 両方に `SystemVerilogCore` の ProjectReference 追加 |
+    | 3 | `SimulationSetup` (1,287 行) | **大（本丸）** | `Data.Item` / `Data.IVerilogRelatedFile` / `CodeEditor2.Data.Project` / **`Global.Projects` 直参照** / `Controller.AppendLog` に依存。item ツリーの完全契約化が前提 |
+    | 4 | `.csproj` から plugin 参照を外す | 小 | 1〜3 の完了後 |
+  - **Next**
+    1. 段階 2（メニュー移設）に着手するか、段階 3（`SimulationSetup`）を先に設計するかの判断
+    2. 実機確認（Stage H (10) の `Updater` 委譲 / (13) の formatting 経路）
+
 - **Stage H (11) 完了: 階層一覧が `Updater` を経由しなくなった** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
   - **変更**: `GetHierarchyChildren` / `GetTreeNodeChildren` が **`VerilogTreeBuilder` を直接呼ぶ**ように
