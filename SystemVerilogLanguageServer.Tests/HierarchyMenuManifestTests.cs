@@ -36,21 +36,21 @@ public class HierarchyMenuManifestTests
         List<string> commands = CommandIds(contributes);
         List<string> submenus = SubmenuIds(contributes);
 
-        foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
-                 in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
+        foreach (SystemVerilogCore.Menus.HierarchyMenuCatalog.Entry entry
+                 in SystemVerilogCore.Menus.HierarchyMenuCatalog.All)
         {
             // desktop-only rows are not part of the extension manifest
-            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
+            if ((entry.Hosts & SystemVerilogCore.Menus.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
 
             if (entry.IsSubmenu)
             {
-                string expected = pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(entry.Id);
+                string expected = SystemVerilogCore.Menus.HierarchyMenuManifest.SubmenuId(entry.Id);
                 Assert.True(submenus.Contains(expected),
                     "package.json has no submenu contribution for '" + entry.Id + "' (" + expected + ")");
                 continue;
             }
 
-            string commandId = pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId(entry.Id);
+            string commandId = SystemVerilogCore.Menus.HierarchyMenuManifest.CommandId(entry.Id);
             Assert.True(commands.Contains(commandId),
                 "package.json has no command contribution for '" + entry.Id + "' (" + commandId + ")");
         }
@@ -82,31 +82,31 @@ public class HierarchyMenuManifestTests
         JsonObject menus = contributes["menus"]?.AsObject()
             ?? throw new Xunit.Sdk.XunitException("package.json has no menus object");
 
-        foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
-                 in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
+        foreach (SystemVerilogCore.Menus.HierarchyMenuCatalog.Entry entry
+                 in SystemVerilogCore.Menus.HierarchyMenuCatalog.All)
         {
             // A row declared for the desktop editor only is deliberately absent
             // from package.json (the extension cannot run it), so it must not be
             // expected here either.
-            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
+            if ((entry.Hosts & SystemVerilogCore.Menus.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
 
             string target = entry.IsSubmenu
-                ? pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(entry.Id)
-                : pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId(entry.Id);
+                ? SystemVerilogCore.Menus.HierarchyMenuManifest.SubmenuId(entry.Id)
+                : SystemVerilogCore.Menus.HierarchyMenuManifest.CommandId(entry.Id);
             string property = entry.IsSubmenu ? "submenu" : "command";
 
             // A submenu's children live in the menu named after the submenu;
             // everything else lives in the tree's context menu.
-            string? parentId = pluginVerilog.CoreBridge.HierarchyMenuCatalog.ParentOf(entry.Id)?.Id;
+            string? parentId = SystemVerilogCore.Menus.HierarchyMenuCatalog.ParentOf(entry.Id)?.Id;
             string menuName = string.IsNullOrEmpty(parentId)
-                ? pluginVerilog.CoreBridge.HierarchyMenuManifest.ViewItemContextMenu
-                : pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(parentId!);
+                ? SystemVerilogCore.Menus.HierarchyMenuManifest.ViewItemContextMenu
+                : SystemVerilogCore.Menus.HierarchyMenuManifest.SubmenuId(parentId!);
 
             JsonArray? rows = menus[menuName]?.AsArray();
             Assert.True(rows != null,
                 $"package.json has no menus[\"{menuName}\"] for '{entry.Id}'");
 
-            foreach ((string contextValue, pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo applies) in NodeKinds)
+            foreach ((string contextValue, SystemVerilogCore.Menus.HierarchyMenuCatalog.AppliesTo applies) in NodeKinds)
             {
                 bool shouldAppear = (entry.Targets & applies) != 0;
                 bool appears = false;
@@ -132,19 +132,19 @@ public class HierarchyMenuManifestTests
     public void PackageJson_DoesNotFlattenSubmenuChildren()
     {
         JsonObject contributes = ReadContributes();
-        JsonArray rows = contributes["menus"]?[pluginVerilog.CoreBridge.HierarchyMenuManifest.ViewItemContextMenu]?.AsArray()
+        JsonArray rows = contributes["menus"]?[SystemVerilogCore.Menus.HierarchyMenuManifest.ViewItemContextMenu]?.AsArray()
             ?? throw new Xunit.Sdk.XunitException("package.json has no menus.view/item/context");
 
-        foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
-                 in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
+        foreach (SystemVerilogCore.Menus.HierarchyMenuCatalog.Entry entry
+                 in SystemVerilogCore.Menus.HierarchyMenuCatalog.All)
         {
-            if (pluginVerilog.CoreBridge.HierarchyMenuCatalog.ParentOf(entry.Id) == null) continue;
-            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
+            if (SystemVerilogCore.Menus.HierarchyMenuCatalog.ParentOf(entry.Id) == null) continue;
+            if ((entry.Hosts & SystemVerilogCore.Menus.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
             // a nested submenu opens its own flyout, so it is a row of the
             // parent menu - but it must still be a `submenu`, never a command
             string target = entry.IsSubmenu
-                ? pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(entry.Id)
-                : pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId(entry.Id);
+                ? SystemVerilogCore.Menus.HierarchyMenuManifest.SubmenuId(entry.Id)
+                : SystemVerilogCore.Menus.HierarchyMenuManifest.CommandId(entry.Id);
 
             foreach (JsonNode? row in rows)
             {
@@ -167,14 +167,14 @@ public class HierarchyMenuManifestTests
 
         // a submenu contribution exists for the catalog's grouping entry
         Assert.True(submenus.Contains(
-            pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId(
-                pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.Simulation)));
+            SystemVerilogCore.Menus.HierarchyMenuManifest.SubmenuId(
+                SystemVerilogCore.Menus.HierarchyMenuCatalog.MenuId.Simulation)));
 
         // the child is a command, not another submenu row
         List<string> commands = CommandIds(contributes);
         Assert.True(commands.Contains(
-            pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId(
-                pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.SimulationSetup)));
+            SystemVerilogCore.Menus.HierarchyMenuManifest.CommandId(
+                SystemVerilogCore.Menus.HierarchyMenuCatalog.MenuId.SimulationSetup)));
     }
 
     /// <summary>
@@ -188,12 +188,12 @@ public class HierarchyMenuManifestTests
         string[] ids = ReadHierarchyJsIds();
 
         List<string> expected = new();
-        foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
-                 in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
+        foreach (SystemVerilogCore.Menus.HierarchyMenuCatalog.Entry entry
+                 in SystemVerilogCore.Menus.HierarchyMenuCatalog.All)
         {
             if (entry.IsSubmenu) continue;
             // only the rows VS Code actually offers get a generated command
-            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
+            if ((entry.Hosts & SystemVerilogCore.Menus.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
             expected.Add(entry.Id);
         }
         expected.Sort(StringComparer.Ordinal);
@@ -203,11 +203,11 @@ public class HierarchyMenuManifestTests
         Assert.Equal(expected.ToArray(), actual);
     }
 
-    private static readonly (string ContextValue, pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo Applies)[] NodeKinds =
+    private static readonly (string ContextValue, SystemVerilogCore.Menus.HierarchyMenuCatalog.AppliesTo Applies)[] NodeKinds =
     {
-        ("rtlFolder", pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo.Folder),
-        ("rtlFile", pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo.File),
-        ("rtlInstance", pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo.Instance),
+        ("rtlFolder", SystemVerilogCore.Menus.HierarchyMenuCatalog.AppliesTo.Folder),
+        ("rtlFile", SystemVerilogCore.Menus.HierarchyMenuCatalog.AppliesTo.File),
+        ("rtlInstance", SystemVerilogCore.Menus.HierarchyMenuCatalog.AppliesTo.Instance),
     };
 
     private static JsonObject ReadContributes()

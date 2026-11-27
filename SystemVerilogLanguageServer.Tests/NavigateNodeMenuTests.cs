@@ -1,6 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
-using pluginVerilog.CoreBridge;
+// The menu's implementation (catalog + builder) lives in the UI-free assembly
+// now, so the language server and the editor walk the same list. The alias keeps
+// the test's call sites reading like the editor's renderer.
+using SystemVerilogCore.Menus;
+using NavigateNodeMenuAdapter = SystemVerilogCore.Menus.NavigateNodeMenuBuilder;
 using Xunit;
 
 namespace SystemVerilogLanguageServer.Tests;

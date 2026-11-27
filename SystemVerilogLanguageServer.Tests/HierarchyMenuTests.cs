@@ -88,12 +88,12 @@ public class HierarchyMenuTests : IDisposable
         JsonElement entries = result.GetProperty("entries");
         Assert.True(entries.GetArrayLength() > 0, "the instance menu must not be empty");
 
-        foreach (pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry entry
-                 in pluginVerilog.CoreBridge.HierarchyMenuCatalog.All)
+        foreach (SystemVerilogCore.Menus.HierarchyMenuCatalog.Entry entry
+                 in SystemVerilogCore.Menus.HierarchyMenuCatalog.All)
         {
-            if ((entry.Targets & pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo.Instance) == 0) continue;
+            if ((entry.Targets & SystemVerilogCore.Menus.HierarchyMenuCatalog.AppliesTo.Instance) == 0) continue;
             // Rows declared for the desktop editor only are not served to VS Code
-            if ((entry.Hosts & pluginVerilog.CoreBridge.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
+            if ((entry.Hosts & SystemVerilogCore.Menus.HierarchyMenuCatalog.Hosts.VsCode) == 0) continue;
             // A submenu only groups rows. The native VS Code menu renders it as
             // a flyout; a QuickPick cannot nest, so rtl/hierarchyMenu lists its
             // children (prefixed with the submenu label) instead of the
@@ -114,7 +114,7 @@ public class HierarchyMenuTests : IDisposable
         foreach (JsonElement e in entries.EnumerateArray())
         {
             if (e.GetProperty("id").GetString()
-                == pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.SimulationSetup) hasNested = true;
+                == SystemVerilogCore.Menus.HierarchyMenuCatalog.MenuId.SimulationSetup) hasNested = true;
         }
         Assert.True(hasNested, "the submenu's child row must be listed in the QuickPick");
     }
@@ -148,7 +148,7 @@ public class HierarchyMenuTests : IDisposable
         foreach (JsonElement entry in menu.GetProperty("entries").EnumerateArray())
         {
             if (entry.GetProperty("id").GetString()
-                != pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.SimulationSetup) continue;
+                != SystemVerilogCore.Menus.HierarchyMenuCatalog.MenuId.SimulationSetup) continue;
             offered = true;
             Assert.True(entry.GetProperty("enabled").GetBoolean(),
                 "simulation setup must be enabled for a parsed module file");
@@ -157,7 +157,7 @@ public class HierarchyMenuTests : IDisposable
 
         JsonElement invoked = Request(handler, "rtl/hierarchyMenuInvoke", new
         {
-            id = pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.SimulationSetup,
+            id = SystemVerilogCore.Menus.HierarchyMenuCatalog.MenuId.SimulationSetup,
             kind = "file",
             uri = topUri,
             label = "top",
@@ -180,7 +180,7 @@ public class HierarchyMenuTests : IDisposable
 
         JsonElement result = Request(handler, "rtl/hierarchyMenuInvoke", new
         {
-            id = pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.CopyInstancePath,
+            id = SystemVerilogCore.Menus.HierarchyMenuCatalog.MenuId.CopyInstancePath,
             kind = "instance",
             instancePath = "u_mid.u_leaf",
         });
@@ -201,7 +201,7 @@ public class HierarchyMenuTests : IDisposable
         foreach (JsonElement entry in menu.GetProperty("entries").EnumerateArray())
         {
             if (entry.GetProperty("id").GetString()
-                != pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.CopyInstancePath) continue;
+                != SystemVerilogCore.Menus.HierarchyMenuCatalog.MenuId.CopyInstancePath) continue;
             Assert.False(entry.GetProperty("enabled").GetBoolean());
             Assert.False(string.IsNullOrEmpty(entry.GetProperty("reason").GetString()));
             return;
@@ -222,8 +222,8 @@ public class HierarchyMenuTests : IDisposable
         foreach (JsonElement entry in menu.GetProperty("entries").EnumerateArray())
         {
             string id = entry.GetProperty("id").GetString() ?? string.Empty;
-            Assert.NotEqual(pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.SimulationSetup, id);
-            Assert.NotEqual(pluginVerilog.CoreBridge.HierarchyMenuCatalog.MenuId.CopyInstancePath, id);
+            Assert.NotEqual(SystemVerilogCore.Menus.HierarchyMenuCatalog.MenuId.SimulationSetup, id);
+            Assert.NotEqual(SystemVerilogCore.Menus.HierarchyMenuCatalog.MenuId.CopyInstancePath, id);
         }
     }
 
@@ -235,13 +235,13 @@ public class HierarchyMenuTests : IDisposable
     public void Register_AddsAnEntryFromAnotherPlugin()
     {
         const string id = "testPluginRunSomething";
-        pluginVerilog.CoreBridge.HierarchyMenuCatalog.Register(
-            new pluginVerilog.CoreBridge.HierarchyMenuCatalog.Entry
+        SystemVerilogCore.Menus.HierarchyMenuCatalog.Register(
+            new SystemVerilogCore.Menus.HierarchyMenuCatalog.Entry
             {
                 Id = id,
                 Label = "Run Something",
                 Detail = "added by a plugin",
-                Targets = pluginVerilog.CoreBridge.HierarchyMenuCatalog.AppliesTo.Instance,
+                Targets = SystemVerilogCore.Menus.HierarchyMenuCatalog.AppliesTo.Instance,
                 Group = 99,
             });
 
@@ -260,7 +260,7 @@ public class HierarchyMenuTests : IDisposable
         }
         finally
         {
-            pluginVerilog.CoreBridge.HierarchyMenuCatalog.Unregister(id);
+            SystemVerilogCore.Menus.HierarchyMenuCatalog.Unregister(id);
         }
     }
 }

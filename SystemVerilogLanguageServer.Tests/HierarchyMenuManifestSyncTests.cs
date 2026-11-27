@@ -9,7 +9,7 @@ namespace SystemVerilogLanguageServer.Tests;
 
 /// <summary>
 /// <c>package.json</c> must contain exactly the rows
-/// <see cref="pluginVerilog.CoreBridge.HierarchyMenuManifest"/> generates, in
+/// <see cref="SystemVerilogCore.Menus.HierarchyMenuManifest"/> generates, in
 /// the same menus. A drift here is invisible in C# and only shows up as a wrong
 /// VS Code menu, so it is checked mechanically.
 /// </summary>
@@ -24,8 +24,8 @@ public class HierarchyMenuManifestSyncTests
     {
         string path = Path.Combine(FindExtensionRoot(), "package.json");
 
-        pluginVerilog.CoreBridge.PackageJsonWriteResult result =
-            pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(path, write: false);
+        SystemVerilogCore.Menus.PackageJsonWriteResult result =
+            SystemVerilogCore.Menus.HierarchyMenuManifest.WriteToPackageJson(path, write: false);
 
         Assert.False(result.Failed, result.Message);
         Assert.False(result.Changed,
@@ -45,13 +45,13 @@ public class HierarchyMenuManifestSyncTests
         File.WriteAllText(temp, original);
         try
         {
-            pluginVerilog.CoreBridge.PackageJsonWriteResult first =
-                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: true);
+            SystemVerilogCore.Menus.PackageJsonWriteResult first =
+                SystemVerilogCore.Menus.HierarchyMenuManifest.WriteToPackageJson(temp, write: true);
             Assert.False(first.Failed, first.Message);
 
             string afterFirst = File.ReadAllText(temp);
-            pluginVerilog.CoreBridge.PackageJsonWriteResult second =
-                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: true);
+            SystemVerilogCore.Menus.PackageJsonWriteResult second =
+                SystemVerilogCore.Menus.HierarchyMenuManifest.WriteToPackageJson(temp, write: true);
             Assert.False(second.Failed, second.Message);
             Assert.False(second.Changed, "the second write must not change anything");
             Assert.Equal(afterFirst, File.ReadAllText(temp));
@@ -81,22 +81,22 @@ public class HierarchyMenuManifestSyncTests
             for (int i = commands.Count - 1; i >= 0; i--)
             {
                 if (commands[i]?["command"]?.GetValue<string>()
-                    == pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId("copyPath"))
+                    == SystemVerilogCore.Menus.HierarchyMenuManifest.CommandId("copyPath"))
                 {
                     commands.RemoveAt(i);
                 }
             }
             JsonObject menus = root["contributes"]!["menus"]!.AsObject();
-            menus.Remove(pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId("add"));
+            menus.Remove(SystemVerilogCore.Menus.HierarchyMenuManifest.SubmenuId("add"));
 
             File.WriteAllText(temp, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
-            pluginVerilog.CoreBridge.PackageJsonWriteResult check =
-                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: false);
+            SystemVerilogCore.Menus.PackageJsonWriteResult check =
+                SystemVerilogCore.Menus.HierarchyMenuManifest.WriteToPackageJson(temp, write: false);
             Assert.True(check.Changed, "a stale package.json must be reported as out of date");
 
-            pluginVerilog.CoreBridge.PackageJsonWriteResult repaired =
-                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: true);
+            SystemVerilogCore.Menus.PackageJsonWriteResult repaired =
+                SystemVerilogCore.Menus.HierarchyMenuManifest.WriteToPackageJson(temp, write: true);
             Assert.False(repaired.Failed, repaired.Message);
             Assert.True(repaired.Changed);
 
@@ -105,8 +105,8 @@ public class HierarchyMenuManifestSyncTests
             // formatting is whatever the caller had - which is why this checks
             // for stability rather than for byte equality with the original.)
             string afterRepair = File.ReadAllText(temp);
-            pluginVerilog.CoreBridge.PackageJsonWriteResult recheck =
-                pluginVerilog.CoreBridge.HierarchyMenuManifest.WriteToPackageJson(temp, write: false);
+            SystemVerilogCore.Menus.PackageJsonWriteResult recheck =
+                SystemVerilogCore.Menus.HierarchyMenuManifest.WriteToPackageJson(temp, write: false);
             Assert.False(recheck.Changed, recheck.Message);
             Assert.Equal(afterRepair, File.ReadAllText(temp));
 
@@ -119,11 +119,11 @@ public class HierarchyMenuManifestSyncTests
                 if (id != null) repairedCommandIds.Add(id);
             }
             Assert.Contains(
-                pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandId("copyPath"),
+                SystemVerilogCore.Menus.HierarchyMenuManifest.CommandId("copyPath"),
                 repairedCommandIds);
             Assert.True(
                 repairedRoot["contributes"]!["menus"]!.AsObject()
-                    .ContainsKey(pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId("add")),
+                    .ContainsKey(SystemVerilogCore.Menus.HierarchyMenuManifest.SubmenuId("add")),
                 "the dropped submenu must be restored");
 
             // and the extension's own rows are still there
@@ -148,7 +148,7 @@ public class HierarchyMenuManifestSyncTests
     {
         string root = FindExtensionRoot();
         JsonNode generated = JsonNode.Parse(
-            pluginVerilog.CoreBridge.HierarchyMenuManifest.ToJson())!;
+            SystemVerilogCore.Menus.HierarchyMenuManifest.ToJson())!;
         JsonNode package = JsonNode.Parse(
             File.ReadAllText(Path.Combine(root, "package.json")))!;
 
@@ -180,26 +180,26 @@ public class HierarchyMenuManifestSyncTests
     public void GeneratedManifest_KeepsSubmenuChildrenOutOfViewItemContext()
     {
         JsonNode generated = JsonNode.Parse(
-            pluginVerilog.CoreBridge.HierarchyMenuManifest.ToJson())!;
+            SystemVerilogCore.Menus.HierarchyMenuManifest.ToJson())!;
         JsonObject menus = generated["menus"]!.AsObject();
 
         foreach (KeyValuePair<string, JsonNode?> menu in menus)
         {
-            if (menu.Key == pluginVerilog.CoreBridge.HierarchyMenuManifest.ViewItemContextMenu) continue;
+            if (menu.Key == SystemVerilogCore.Menus.HierarchyMenuManifest.ViewItemContextMenu) continue;
             // a submenu id is not a command target of the tree's menu
             Assert.DoesNotContain(
-                pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandPrefix,
+                SystemVerilogCore.Menus.HierarchyMenuManifest.CommandPrefix,
                 menu.Key);
         }
 
         // the tree's own menu opens the flyouts
         JsonArray viewItemContext = menus[
-            pluginVerilog.CoreBridge.HierarchyMenuManifest.ViewItemContextMenu]!.AsArray();
+            SystemVerilogCore.Menus.HierarchyMenuManifest.ViewItemContextMenu]!.AsArray();
         bool opensAdd = false;
         foreach (JsonNode? row in viewItemContext)
         {
             if (row?["submenu"]?.GetValue<string>()
-                == pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuId("add")) opensAdd = true;
+                == SystemVerilogCore.Menus.HierarchyMenuManifest.SubmenuId("add")) opensAdd = true;
         }
         Assert.True(opensAdd, "view/item/context must open the Add submenu");
     }
@@ -225,10 +225,10 @@ public class HierarchyMenuManifestSyncTests
                 string? submenu = obj["submenu"]?.GetValue<string>();
                 bool isGenerated =
                     (command != null && command.StartsWith(
-                        pluginVerilog.CoreBridge.HierarchyMenuManifest.CommandPrefix,
+                        SystemVerilogCore.Menus.HierarchyMenuManifest.CommandPrefix,
                         StringComparison.Ordinal))
                     || (submenu != null && submenu.StartsWith(
-                        pluginVerilog.CoreBridge.HierarchyMenuManifest.SubmenuPrefix,
+                        SystemVerilogCore.Menus.HierarchyMenuManifest.SubmenuPrefix,
                         StringComparison.Ordinal));
                 if (!isGenerated) continue;
             }
