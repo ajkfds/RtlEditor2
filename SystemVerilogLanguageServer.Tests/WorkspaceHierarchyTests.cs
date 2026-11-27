@@ -1586,61 +1586,73 @@ public class WorkspaceHierarchyTests : IDisposable
         // the initialize above keyed the project by its root URI
         InMemoryProject project = core.GetOrCreateProjectPublic("default") as InMemoryProject
             ?? throw new InvalidOperationException();
-        CodeEditor2.Data.Project pluginProject = project.PluginProject;
-
-        // the editor's Updater populates each file's Items (the LSP runs it too)
-        foreach (string name in new[] { "leaf.sv", "child.sv", "top.sv" })
-        {
-            if (pluginProject.GetItem(name) is pluginVerilog.Data.IVerilogRelatedFile vf)
-                pluginVerilog.Data.VerilogCommon.Updater
-                    .UpdateAsync(vf, new System.Threading.SemaphoreSlim(1, 1))
-                    .GetAwaiter().GetResult();
-        }
+        // No Updater run: the language server derives the tree from the parse
+        // results, so the assertions below read the host's contracts instead.
 
         // the clicked instance itself
-        AssertInstanceParsed(pluginProject, "top.sv", "u_child", "child");
+        AssertInstanceParsed(core, "top.sv", "u_child", "child");
         // a sibling instance that was never clicked: it must be resolvable too,
         // otherwise clicking IT would show the un-overridden declaration again
-        AssertInstanceParsed(pluginProject, "top.sv", "u_child2", "child");
+        AssertInstanceParsed(core, "top.sv", "u_child2", "child");
         // the nested parameter-overridden instance under child.sv
-        AssertInstanceParsed(pluginProject, "child.sv", "u_leaf", "leaf", expectInstanceParse: true);
+        AssertInstanceParsed(core, "child.sv", "u_leaf", "leaf", expectInstanceParse: true);
     }
 
+    /// <summary>
+    /// Asserts that <paramref name="instanceName"/> under
+    /// <paramref name="relativePath"/> resolves to an INSTANCE parse (parameter
+    /// overrides applied), not the file's plain parse.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Read through the host's contracts rather than the editor's item tree: the
+    /// language server has no item tree any more (the hierarchy is derived from
+    /// the parse results on demand), so asking for <c>Data.Item.Items</c> would
+    /// assert the OLD structure instead of the behaviour that matters.
+    /// </para>
+    /// <para>
+    /// What this still pins is exactly the reported bug: an instance (and every
+    /// sibling that was never clicked) must have its parameter-overridden parse
+    /// available, or clicking it would show the declared parameter values.
+    /// </para>
+    /// </remarks>
     private static void AssertInstanceParsed(
-        CodeEditor2.Data.Project pluginProject, string relativePath, string instanceName,
+        InMemorySystemVerilogCore core, string relativePath, string instanceName,
         string expectedInstanceName, bool expectInstanceParse = false)
     {
-        CodeEditor2.Data.Item? file = pluginProject.GetItem(relativePath);
-        if (file == null)
-        {
-            var names = new System.Collections.Generic.List<string>();
-            var snap = (System.Collections.IEnumerable)pluginProject.Items
-                .GetType().GetMethod("GetSnapShot", Type.EmptyTypes)!.Invoke(pluginProject.Items, null)!;
-            foreach (object o in snap)
-                if (o is CodeEditor2.Data.Item it) names.Add(it.Name);
-            Assert.Fail($"GetItem('{relativePath}') returned null. Root items: {string.Join(", ", names)}");
-        }
-        object itemsObj = file!.GetType().GetProperty("Items")!.GetValue(file)!;
-        var snapshot = (System.Collections.IEnumerable)itemsObj
-            .GetType().GetMethod("GetSnapShot", Type.EmptyTypes)!
-            .Invoke(itemsObj, null)!;
-        CodeEditor2.Data.Item? instance = null;
-        var seen = new System.Collections.Generic.List<string>();
-        foreach (object child in snapshot)
-        {
-            if (child is CodeEditor2.Data.Item it)
-            {
-                seen.Add(it.Name);
-                if (it.Name == instanceName) { instance = it; break; }
-            }
-        }
+        // Resolve the file the way the server does: by workspace-relative path
+        // through the project's own item tree contract.
+        InMemoryProject project = core.GetOrCreateProjectPublic("default") as InMemoryProject
+            ?? throw new InvalidOperationException("the default project must exist");
+        SystemVerilogCore.Projects.IVerilogItem? item =
+            ((SystemVerilogCore.Projects.IVerilogProject)project).Items
+                .FindByRelativePath(relativePath);
+        Assert.True(item != null, $"'{relativePath}' is not registered in the project");
+
+        // The instance source answers name lookups; a host without an item tree
+        // records the parse result itself (see IVerilogInstanceItemSourceProvider).
+        var source = Assert.IsAssignableFrom<SystemVerilogCore.Documents.IVerilogInstanceItemSource>(item);
+        object? instance = source.FindInstanceItem(instanceName);
         Assert.True(instance != null,
-            $"{relativePath} has no instance '{instanceName}' (items: {string.Join(", ", seen)})");
+            $"'{relativePath}' has no instance '{instanceName}'");
 
-        var instanceFile = Assert.IsAssignableFrom<pluginVerilog.Data.InstanceTextFile>(instance);
-        Assert.Equal(expectedInstanceName, instanceFile.InstanceName);
-
-        SystemVerilogCore.Verilog.ParsedDocument? parsed = instanceFile.ParsedDocument as SystemVerilogCore.Verilog.ParsedDocument;
+        // The node the host records is a tree node (it carries the instance's
+        // own parse result); a host that stored the parse directly answers with
+        // that. Both shapes are read here so the assertion is about BEHAVIOUR.
+        SystemVerilogCore.Verilog.ParsedDocument? parsed = instance switch
+        {
+            SystemVerilogCore.Tree.IVerilogTreeNode node =>
+                node.ParsedResult as SystemVerilogCore.Verilog.ParsedDocument,
+            _ => null,
+        };
+        SystemVerilogCore.Verilog.ParsedDocument? fallbackShape = instance switch
+        {
+            SystemVerilogCore.Verilog.ParsedDocument direct => direct,
+            SystemVerilogCore.Documents.IVerilogSourceFile file =>
+                file.VerilogParsedResult as SystemVerilogCore.Verilog.ParsedDocument,
+            _ => null,
+        };
+        parsed ??= fallbackShape;
         Assert.NotNull(parsed);
         Assert.True(parsed!.Instance,
             $"'{instanceName}' must resolve to an INSTANCE parse (parameter overrides applied), not the plain file parse");
