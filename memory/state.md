@@ -3,6 +3,27 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (9) 完了: building block ノードの生成をホストへ開放** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `続けて`
+  - **★ 契約の穴**: `VerilogTreeBuilder` が **`ModuleInstantiation` を自前で組み立てていた**（複数 block ファイルの
+    「block 自身」ノード用）。これは **editor のデータモデルを UI フリー側が決めている**状態で、
+    item tree を持たないホストは同じ形を作れない
+  - **修正**: `IVerilogTreeNodeFactory.CreateBuildingBlockNode(parent, block)` を新設し、
+    「block 自身を表すノード」の生成をホストへ委譲（`CreateSelfInstantiation` を削除）
+    - LSP は「block 自身のインスタンス」としてモデル化（editor と同じ形なので子の入れ子も同じ）
+  - **回帰テスト追加 (`MultiBuildingBlockFile_ListsOneNodePerBlock`)**: package + module 2 つのファイルで
+    **3 ノード**（block ごと）が作られることを assert
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` /
+    `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1313 合格 / 0 失敗**（+1）
+  - **Next (エディタ側の委譲化が次の本丸)**
+    - `VerilogCommon.Updater` (466 行) は**まだ独自実装のまま**（LSP は既にビルダー経由）。
+      委譲に置き換えるには `IVerilogTreeNodeFactory` の editor 実装が必要:
+      `CreateModuleInstance` → `VerilogModuleInstance.Create`、`CreateModuleInstanceArray` → `CreateArray`、
+      `CreateInterfaceInstance` → `InterfaceInstance.Create`、`CreateBuildingBlockNode` → block 自身の instantiation から
+      `VerilogModuleInstance.Create`、`CreateImportedPackage` → `ImportedPackage.Create`、
+      `CreateHeader` → `VerilogHeaderInstance`（既存の再利用ロジック含む）
+    - その後 `SystemVerilogLanguageServer.csproj` から plugin 参照を外す
+
 - **Stage H (8) 完了: LSP の RTL Hierarchy を `VerilogTreeBuilder` 経由に切り替え成功** (ビルド 0 errors、テスト 1312 合格)
   - ユーザ指示: `お願いします`
   - **★ 決定的だった原因 (前段の予測どおり 1 点)**: `InMemoryFile.RelativePath` は **`mem://top.sv`**（in-memory の id）で、
