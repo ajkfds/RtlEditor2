@@ -105,15 +105,36 @@
     - **検証**: 全プロジェクト 0 errors / `dotnet test` **1313 合格 / 0 失敗**
     - **コミット**: SystemVerilogCore `7973ccc` / CodeEditor2VerilogPlugin `fc31b9e` /
       SystemVerilogLanguageServer `6e095b2` `d43d40d`、メイン `c975923` `d68d52e`
-  - **Next (残り 1 点 + 32 箇所)**
-    1. **`CreateInstanceItem` を LSP で null にする** — 契約上 null は正当
-       (「item tree を持たないホストは null を返す」と doc に明記済み)。
-       ただし現状 LSP は **plugin の `ProjectProperty` をそのまま settings として使っている**ため、
-       null を返すには **LSP 専用の `IVerilogParserSettings` 実装**が必要
-       (plugin の `ProjectProperty` を包み、`CreateInstanceItem` だけ null を返す)。
-       これが通れば parse の file 引数 (約 10 箇所) を契約化できる
-    2. 残る 32 箇所の内訳: item tree 構築 約 14 / parse 用 `VerilogFile` 約 12 / コメント 2
-  - **注意**: この領域は**同じ失敗 (5 件 / `6` 件 / `5` が `8` になる) を 5 回踏んでいる**。
+  - **★ Stage H (22): settings ラッパーを実装 (`CreateInstanceItem` を null に)**
+    - **新規 `Server/InMemoryParserSettings.cs`**: plugin の `ProjectProperty` を包み、
+      `IVerilogParserSettings` の 15 メンバを転送。**`CreateInstanceItem` だけ null を返す**
+      (契約 doc に「item tree を持たないホストは null」と明記済み = 契約違反ではない)
+    - `InMemoryProject.Settings` がこのラッパーを返すようにした (キャッシュして同一インスタンス)
+    - **★ 実測: これだけでは parse の file 引数を契約化できなかった (6 → 4 件失敗)**
+      | 失敗 | 症状 |
+      |---|---|
+      | `IncludeInsideModuleBody_Resolves` | module 本体の `` `include `` が解決しない |
+      | `SimulationSetupEntry_IsOfferedAndListsTheFiles` | `files (1)` で `leaf.sv` 欠落 |
+      | `InstanceClick_RegistersInstanceParsedDocuments` | `top.sv has no instance 'u_child'` |
+      | `HierarchyNodes_CarryPresentationMetadata` | 位置が null |
+      - **原因**: `ModuleInstantiation.ParseAsync` の **`CreateInstanceItem` が null を返すと、
+        インスタンスの即時 parse ブロック全体がスキップされる**
+        (`instance != null && baseParser != null` の中に parse と `AcceptVerilogParsedDocumentAsync` がある)
+      - **試した修正**: `else` 節で parser 自身に `ParseEngine.ParseInstanceAsync` を回させる実装を入れた
+        → **6 → 4 件に減少**したが緑にならず、`baseFile` (plugin ファイル) 経由では
+        `InMemoryFile` 側のキャッシュに載らないため**原理的に届かない**と判断して撤回
+    - **検証**: 全プロジェクト 0 errors / `dotnet test` **1313 合格 / 0 失敗**
+    - **コミット**: SystemVerilogLanguageServer `6c7165f`、メイン `4c369a1`
+  - **Next (設計判断が必要)**
+    1. **`ModuleInstantiation.ParseAsync` の即時 parse ブロックを「ホスト非依存」に組み直す** —
+       現状は「ホストが item を作る」ことが parse の前提になっている。
+       **item を作らずに parse だけ行う経路**を第一級にすれば、`CreateInstanceItem` は
+       **エディタの表示都合だけ**のフックになる (LSP は null のままでよい)
+       - 具体的には「instance の parse」と「item tree への登録」を分離し、
+         parse は常に走らせ、登録だけをホストに任せる
+    2. これが通れば parse の file 引数 (約 10 箇所) を契約化でき、`_verilogFile` / `CreateVerilogFile` が消える
+    3. 残る 32 箇所の内訳: item tree 構築 約 14 / parse 用 `VerilogFile` 約 12 / コメント 2
+  - **注意**: この領域は**同じ失敗 (5 / 6 / 4 件、`5` が `8`) を 6 回踏んでいる**。
     変更したら必ず `--filter FullyQualifiedName~ParameterOverride` で即確認すること
 
 - **Stage H (18) 完了: parse の file 引数の阻害要因を二分探索で確定 + instance キャッシュを契約化** (ビルド 0 errors、テスト 1313 合格)
