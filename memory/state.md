@@ -3,6 +3,44 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (19) 完了: 本丸に着手 — instance 解決を契約化 / 残る阻害要因を cache key 1 点に特定** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `進めて`
+  - **今回の成果: 2 つの読み手を契約化 (editor 側、挙動は不変)**
+    | 箇所 | 前 | 後 |
+    |---|---|---|
+    | `ProjectProperty.GetInstancedBuildingBlock` | `DefinitionNameSpace.GetFile(...) as Data.VerilogFile` | **`as IVerilogSourceFile`** |
+    | `InstanceTextFile.ParsedDocument` | `SourceVerilogFile?.GetInstancedParsedDocument(key)` | **`SourceTextFile as IVerilogSourceFile`** |
+    - どちらも「登録されたファイルを plugin 具象型に絞り込む」箇所で、ホスト自身のオブジェクトが登録されると
+      解決できなくなる原因だった。契約経由にしても editor の挙動は不変 (全 1313 合格)
+  - **★ 二分探索で残る阻害要因を 1 点に特定 (実測)**
+    - 上記 2 つを契約化した後も、**parse の file 引数を `this` にすると 5 テストが失敗**する
+      (`ParameterOverride_DoesNotReportDuplicateParameter` が `8` のまま など)
+    - **原因 = instance parse の CACHE KEY の食い違い**
+      - 読み手 (`InstanceTextFile`) のキーは `ParsedDocument.KeyGenerator(source, name, overrides)` で、
+        先頭に **`source.VerilogProject?.Name`** が入る
+      - `InstanceTextFile.VerilogProject` は **workspace プロジェクト** (名前 = フォルダ名) を返す
+      - 一方 `InMemoryFile` の `IVerilogSourceFile.VerilogProject` は **共有 `ParserProjectStub`**
+        (名前は `"lsp"`) を返す → **キーが一致せず、override 付きの結果が見つからない**
+    - **対処**: parse の file 引数は plugin の `VerilogFile` に戻した (理由をコード内コメントに明記)。
+      **契約化の前提は「`InMemoryFile.VerilogProject` を workspace プロジェクトに揃える」こと** 1 点に絞れた
+  - **実測 (成果)**
+    | 計測 | 前 | 後 |
+    |---|---|---|
+    | LSP の `pluginVerilog.` 依存 | 44 箇所 | **44 箇所** (この段は editor 側の契約化が主) |
+    | **editor 側の「具象型への絞り込み」** | 2 箇所 | **0** |
+  - **検証**: `CodeEditor2VerilogPlugin` / `SystemVerilogLanguageServer` / `RtlEditor2.Desktop` 0 errors /
+    `dotnet test` **1313 合格 / 0 失敗**
+  - **コミット**: CodeEditor2VerilogPlugin `dda9bd2` / SystemVerilogLanguageServer `80b057d`、メイン `d6a5f80`
+  - **Next (次にやること = 1 点だけ)**
+    1. **`InMemoryFile.VerilogProject` を workspace プロジェクトに揃える**
+       (現状は共有 `ParserProjectStub`。`InMemoryProject` 自身が `IVerilogProject` を実装しているので、
+       それを返せばキーの先頭が一致する見込み)。ただし `ProjectSettings` は `ParserProjectStub` の
+       `ProjectProperty` を返す必要があるため、**「Project は InMemoryProject、Settings は stub の property」**
+       という組み合わせが成立するか要検証
+    2. これが通れば **parse の file 引数 (約 10 箇所) を契約化**でき、`_verilogFile` / `CreateVerilogFile` の
+       大部分が不要になる
+    3. 残る item tree 構築 (約 14) / Updater (3) / simulation setup (6) は別系統
+
 - **Stage H (18) 完了: parse の file 引数の阻害要因を二分探索で確定 + instance キャッシュを契約化** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
   - **★ 二分探索で確定した事実 (推測ではなく実測)**
