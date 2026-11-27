@@ -3,6 +3,45 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (15) 完了: 階層ノードを契約化 (段階 3 の第 1 弾)** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `続けて`
+  - **★ 契約の穴: 階層のノード種別が editor の具象型 switch だった**
+    - `InMemorySystemVerilogCore` が `VerilogModuleInstance` / `InterfaceInstance` /
+      `ImportedPackage` / `VerilogHeaderInstance` を **switch で判別**し、アイコン・詳細・
+      展開可否・クリック時の parameter override を取り出していた (4 種類 × 5 箇所)
+    - 新契約 **`SystemVerilogCore.Documents.IVerilogHierarchyNode`** を新設:
+      `HierarchyNodeKind` / `HierarchyNodeName` / `InstantiatingItem` / `HierarchyParameterOverrides`
+    - `InstanceTextFile` に既定実装、4 つのノード型が override (kind と名前だけ)
+    - **メンバ名を変えた理由**: `InstanceName` / `ParameterOverrides` は editor の基底が既に持つため、
+      再宣言すると CS0229 (曖昧) になる (state.md に記録済みの罠)
+  - **置き換えた箇所 (6 メソッド)**: `GetInstantiatingItem` / `DescribeItem` / `ResolveItemIcon` /
+    `ResolveItemBadge` / `ResolveItemIconColor` / `RebuildAsInstance` の switch
+  - **★ 2 つ目: `EnsureInstanceParsed` を契約経由に**
+    - `CreateDocumentParser(ParseModeEnum)` → **`CreateVerilogDocumentParser(VerilogParseMode)`**、
+      `AcceptParsedDocumentAsync` → **`AcceptVerilogParsedDocumentAsync`**
+    - `CheckDirty` / `ReparseRequested` はホスト都合なので `IVerilogRelatedFile` のまま残置 (理由をコメント化)
+  - **★ 3 つ目: 階層ルートのノード生成が plugin item を 2 文字のために引いていた**
+    - `GetHierarchyChildren` の `pluginFile.Name` / `RelativePath` → `InMemoryFile` から直接
+      (同じ値。`RegisterPluginItem` がこの相対パスでツリーを key しているため)
+  - **実測 (成果)**
+    | 計測 | 前 | 後 |
+    |---|---|---|
+    | LSP の `pluginVerilog.` 依存 | **66 箇所 / 2 ファイル** | **49 箇所 / 2 ファイル** |
+    | うち `InMemorySystemVerilogCore.cs` | 60 | **43** |
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (0 errors) /
+    `SystemVerilogLanguageServer` (0 errors) / `RtlEditor2.Desktop` すべて 0 errors /
+    `dotnet test` **1313 合格 / 0 失敗**
+  - **コミット**: SystemVerilogCore `327126f` / CodeEditor2VerilogPlugin `ea3d10e` /
+    SystemVerilogLanguageServer `47096c8` `be90afa`、メイン `1d3fe84` `24d045e`
+  - **Next (残る 43 箇所の内訳)**
+    | 系統 | 箇所 | 内容 | 除去に必要なこと |
+    |---|---|---|---|
+    | **plugin item tree 構築** | 約 14 | `VerilogFile` / `VerilogHeaderFile` / `CodeDocument` の生成、`Plugin().Register()` / `ProjectProperty` | include 解決が `IVerilogItemTree` 契約経由なので、**ホスト側で item を作らせず parse 時に解決する**設計変更 |
+    | **Updater 経路** | 3 | `VerilogCommon.Updater.UpdateAsync` (階層の子 / クリック経路 / `PrepareItemTree`) | **item tree 自体の契約化** (editor の `Data.Item.Items` が前提) |
+    | **parse 用 `VerilogFile`** | 約 18 | `_verilogFile ??= CreateVerilogFile()` が 7 箇所、`GetPluginVerilogFile` / `GetPluginFileForUri` ほか | `IVerilogSourceFile` を満たす **UI フリーなソースファイル実装**を LSP 側に持つ (現在は editor の `VerilogFile` を借りている) |
+    | **simulation setup** | 6 | `SimulationSetup.Create` / `GetAllFiles` / `GetAbsolutePath` | `SimulationSetup` の契約化 (段階 3 の本丸) |
+    | コメント / doc | 2 | 経緯説明 | 変更不要 |
+
 - **Stage H (14) 完了: 階層ノードメニューを `SystemVerilogCore.Menus` へ移設 (段階 2)** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `LSPのpluginVerilogからの分離作業を進めて`
   - **移設した 4 ファイル (約 2,600 行、plugin 側は削除のみ)**
