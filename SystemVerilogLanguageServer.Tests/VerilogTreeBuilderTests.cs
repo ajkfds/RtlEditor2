@@ -128,6 +128,22 @@ namespace SystemVerilogLanguageServer.Tests
                 };
             }
 
+            /// <summary>Records the blocks a multi-block file listed directly.</summary>
+            public List<string> CreatedBuildingBlocks { get; } = new();
+
+            public IVerilogTreeNode? CreateBuildingBlockNode(
+                IVerilogTreeNode parent,
+                SystemVerilogCore.Verilog.BuildingBlocks.BuildingBlock block)
+            {
+                CreatedBuildingBlocks.Add(block.Name);
+                return new TestNode
+                {
+                    Kind = VerilogTreeNodeKind.ModuleInstance,
+                    Name = block.Name,
+                    BuildingBlockName = block.Name,
+                };
+            }
+
             public IVerilogTreeNode? CreateImportedPackage(IVerilogTreeNode parent, string packageName)
             {
                 CreatedPackages.Add(packageName);
@@ -274,6 +290,46 @@ namespace SystemVerilogLanguageServer.Tests
 
             Assert.Single(children);
             Assert.Equal("u_leaf", children[0].Name);
+        }
+
+        /// <summary>
+        /// A file with several building blocks lists one node per block, so a
+        /// DUT-plus-testbench file shows both. Each node stands for the block
+        /// itself (the host builds it), which is where its instantiations nest.
+        /// </summary>
+        [Fact]
+        public async Task MultiBuildingBlockFile_ListsOneNodePerBlock()
+        {
+            CodeEditor2.Data.Project project = CreateProject();
+            pluginVerilog.Data.VerilogFile file = CreateFile(project, "multi.sv", "multi.sv");
+            SystemVerilogCore.Verilog.ParsedDocument parsed = await ParseAsync(
+                """
+                package mypkg;
+                endpackage
+                module a;
+                endmodule
+                module b;
+                endmodule
+                """, project, file);
+
+            TestFactory factory = new();
+            TestNode root = new()
+            {
+                Kind = VerilogTreeNodeKind.File,
+                Name = "multi.sv",
+                RelativePath = "multi.sv",
+                ParsedResult = parsed,
+            };
+
+            IReadOnlyList<IVerilogTreeNode> children =
+                VerilogTreeBuilder.BuildChildren(root, factory, null);
+
+            // Every block gets a node (the package too: it is one of the file's
+            // building blocks, and the tree shows it as a leaf node).
+            Assert.Equal(3, factory.CreatedBuildingBlocks.Count);
+            Assert.Contains("a", factory.CreatedBuildingBlocks);
+            Assert.Contains("b", factory.CreatedBuildingBlocks);
+            Assert.NotEmpty(children);
         }
 
         /// <summary>
