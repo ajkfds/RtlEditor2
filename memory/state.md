@@ -78,14 +78,42 @@
         **`CreateInstanceItem` (parser がホストにインスタンス item を作らせる口)** の扱い 1 点
     - **検証**: 全プロジェクト 0 errors / `dotnet test` **1313 合格 / 0 失敗**
     - **コミット**: SystemVerilogLanguageServer `43e7bfc` `d8452e2`、メイン `221fc5a` `b064bf6`
-  - **Next (残り 1 点)**
-    1. **`CreateInstanceItem` を「インスタンス item を作らない」方向に変える**
-       — 一覧もクリックも builder で辿れるようになったので、parser が editor item を作る必要は
-       **階層のためには無くなった**。残る用途は `SimulationSetup` が `file.Items` を読むことだけなので、
-       **`SimulationSetup` を契約化すれば `CreateInstanceItem` ごと不要にできる**見込み
-    2. これが済めば parse の file 引数 (約 10 箇所) を契約化でき、`_verilogFile` / `CreateVerilogFile` が消える
-    3. 残る 34 箇所の内訳: item tree 構築 約 14 / parse 用 `VerilogFile` 約 12 / simulation setup 6 / コメント 2
-  - **注意**: この領域は**同じ失敗 (5 件 / `5` が `8` になる) を 4 回踏んでいる**。
+  - **★ Stage H (21): `SimulationSetup` を契約化 / `Updater` 依存をゼロに**
+    - **新契約 `IVerilogInstanceItemSource`** (`Documents/IVerilogSourceFileInstanceCache.cs` 内):
+      `object? FindInstanceItem(string name)`。`SimulationSetup` が `file.Items` を 3 箇所で読んでいた
+      のを契約経由に (`VerilogFile` は自身の `Items` を返すだけ、LSP は builder の子を返す)
+    - **`PrepareItemTree` を無害化** (LSP は builder から答えるので準備不要) →
+      **`VerilogCommon.Updater` 依存が 3 → 0**
+    - **実測 (成果)**
+      | 計測 | 前 | 後 |
+      |---|---|---|
+      | LSP の `pluginVerilog.` 依存 | **34 箇所** | **32 箇所** |
+      | `VerilogCommon.Updater` 依存 | 3 | **0** |
+    - **★ parse の file 引数を `this` にすると 6 件失敗 (新たに判明)**
+      | 失敗 | 症状 |
+      |---|---|
+      | `IncludeInsideModuleBody_Resolves` | module 本体の `` `include `` が解決しない (`illegal file`) |
+      | `SimulationSetupEntry_IsOfferedAndListsTheFiles` | `files (1)` で `leaf.sv` が欠落 |
+      | `InstanceClick_RegistersInstanceParsedDocuments` | `top.sv has no instance 'u_child' (items: )` |
+      | `BitWidthMismatch_IsWarning` / `ParameterOverride_DrivesPortWidthCheck` | override が効かない |
+      | `HierarchyNodes_CarryPresentationMetadata` | 位置が null |
+      - **原因は 1 点**: `ModuleInstantiation.ParseAsync` の **`CreateInstanceItem`** が
+        editor の `VerilogModuleInstance.Create` を呼び、**`TextFile` を要求**する。
+        契約だけのファイルでは item が作られず、**その後の `ChildItems.AddOrUpdate` /
+        `AcceptVerilogParsedDocumentAsync` が丸ごとスキップ**される
+        (インスタンスの即時 parse が走らない = include も override も効かない)
+    - **検証**: 全プロジェクト 0 errors / `dotnet test` **1313 合格 / 0 失敗**
+    - **コミット**: SystemVerilogCore `7973ccc` / CodeEditor2VerilogPlugin `fc31b9e` /
+      SystemVerilogLanguageServer `6e095b2` `d43d40d`、メイン `c975923` `d68d52e`
+  - **Next (残り 1 点 + 32 箇所)**
+    1. **`CreateInstanceItem` を LSP で null にする** — 契約上 null は正当
+       (「item tree を持たないホストは null を返す」と doc に明記済み)。
+       ただし現状 LSP は **plugin の `ProjectProperty` をそのまま settings として使っている**ため、
+       null を返すには **LSP 専用の `IVerilogParserSettings` 実装**が必要
+       (plugin の `ProjectProperty` を包み、`CreateInstanceItem` だけ null を返す)。
+       これが通れば parse の file 引数 (約 10 箇所) を契約化できる
+    2. 残る 32 箇所の内訳: item tree 構築 約 14 / parse 用 `VerilogFile` 約 12 / コメント 2
+  - **注意**: この領域は**同じ失敗 (5 件 / `6` 件 / `5` が `8` になる) を 5 回踏んでいる**。
     変更したら必ず `--filter FullyQualifiedName~ParameterOverride` で即確認すること
 
 - **Stage H (18) 完了: parse の file 引数の阻害要因を二分探索で確定 + instance キャッシュを契約化** (ビルド 0 errors、テスト 1313 合格)
