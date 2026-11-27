@@ -3,6 +3,32 @@
 
 ## 進行中タスク (最新)
 
+- **Stage H (11) 完了: 階層一覧が `Updater` を経由しなくなった** (ビルド 0 errors、テスト 1313 合格)
+  - ユーザ指示: `続けて`
+  - **変更**: `GetHierarchyChildren` / `GetTreeNodeChildren` が **`VerilogTreeBuilder` を直接呼ぶ**ように
+    - `GetUpdatedChildren`（editor `Updater` 経由）は**クリック経路 (`RebuildAsInstance`) 専用**に縮小
+      — instance path を plugin item で辿る必要があり、item が parameter override と instantiating reference を運ぶため
+    - `PrepareItemTree` は `Updater` を残す（ノードメニューの simulation setup が `file.Items` を読むため）
+  - **実測 (残る LSP の `pluginVerilog.` 依存は変わらず 3 ファイル)**
+    | ファイル | 件数 | 実体 |
+    |---|---|---|
+    | `Server/InMemorySystemVerilogCore.cs` | 63 | **plugin item tree 構築** (`RegisterPluginItem` / `VerilogFile` / `VerilogHeaderFile`) と、クリック経路 / simulation setup の plugin item 参照 |
+    | `Server/LspHandler.HierarchyMenu.cs` | 12 | `HierarchyMenuAdapter` / `NavigateNodeMenuAdapter` |
+    | `Program.cs` | 3 | `HierarchyMenuManifest` |
+  - **★ 判断: plugin 参照の完全除去は「item tree の契約化」が前提 (未着手・要判断)**
+    - 残る用途は 3 つで、いずれも **plugin の具象 item** が要る:
+      (a) `RegisterPluginItem`（include 解決は `IVerilogItemTree` 契約経由だが、`SimulationSetup` が `Data.Item` ツリーを辿る）
+      (b) クリック経路の instance path 解決（`VerilogModuleInstance.ParameterOverrides` / `GetParentInstanciatiation`）
+      (c) `SimulationSetup`（`Data.Item` / `Data.IVerilogRelatedFile` 前提）
+    - 完全除去には **`SimulationSetup` を `SystemVerilogCore` へ移す**のが本丸（`Data.Item` ツリーを契約化する必要があり、
+      Stage G-5 で `IVerilogItem` / `IVerilogItemList` / `IVerilogItemTree` を用意した延長線上にある）
+  - **検証**: `SystemVerilogCore` / `CodeEditor2VerilogPlugin` (警告 84) / `SystemVerilogLanguageServer` (警告 30) /
+    `RtlEditor2.Desktop` すべて 0 errors / `dotnet test` **1313 合格 / 0 失敗**
+  - **Next**
+    1. **実機確認 (最優先)**: エディタと VS Code で NavigatePanel / RTL Hierarchy の展開・クリック・
+       パラメータ上書き・編集後の更新（Stage H (10) の変更が広いため）
+    2. `SimulationSetup` の契約化 → plugin 参照の完全除去（本丸・要判断）
+
 - **Stage H (10) 完了: エディタ側 `Updater` を `VerilogTreeBuilder` への委譲に置換 (二重実装の解消)** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
   - **★ 二重実装が解消**: `VerilogCommon.Updater` が **466 行 → 120 行**。規則は `SystemVerilogCore.Tree.VerilogTreeBuilder` のみ
