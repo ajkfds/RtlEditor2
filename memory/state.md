@@ -43,14 +43,28 @@
     - **結論**: この 1 点は**同一インスタンス性**の問題で、契約の追加では解けない。
       `InstanceTextFile.SourceTextFile` が指す plugin `VerilogFile` と、`ParseFile` が返す plugin
       `VerilogFile` が**同一オブジェクトであることを保証する**設計 (item tree 経由の解決をやめる) が必要
-  - **Next (次にやること)**
-    1. **`InMemoryFile` が parse に渡す plugin `VerilogFile` と、読み手が使う `VerilogFile` を同一にする**
-       — 現状 `CreateVerilogFile` は item tree 登録済みのものを優先するが、`ParseFile` 経由の解決と
-       `InstanceTextFile.SourceTextFile` が同じ実体を指しているかは未検証。ここを実測で詰める
-    2. それが通れば **parse の file 引数 (約 10 箇所) を契約化**できる
-    3. 残る item tree 構築 (約 14) / Updater (3) / simulation setup (6) は別系統
-  - **注意**: この領域は**同じ失敗 (5 件 / `5` が `8` になる) を 3 回踏んでいる**。
-    変更したら必ず `--filter FullyQualifiedName~ParameterOverride` で即確認すること
+  - **★ 真因を確定 (4 回目の試行で判明 / 実測)**
+    - 追加で `VerilogModuleInstance.Create` の `GetEditorFile` を「契約で解決 → 絞る」に変更した
+      (**この修正自体は有効なので採用**。契約だけのファイルでもインスタンスノードを作れるようになった)
+    - それでも parse の file 引数を `this` にすると **5 件失敗**した
+    - **真因 = item tree が editor item を要求する**
+      - 階層は editor の `Updater` が作り、その全ノードは **editor item**
+        (`VerilogModuleInstance` など = `CodeEditor2.Data.TextFile` を包む)
+      - `VerilogModuleInstance.Create` は名前空間から宣言ファイルを引いて
+        **`IVerilogRelatedFile` に絞り、`TextFile` として包む**。ここは**本質的に editor 側の処理**
+      - よって名前空間にホスト自身のオブジェクトを登録すると**インスタンスノードが 1 つも作られず**、
+        クリック経路が「インスタンスではない」と判定する
+    - **結論**: parse の file 引数を契約化するには、**先に item tree 自体を契約化する**
+      (= 階層を editor の `Updater` に依存させない) 必要がある。順序が逆では通らない
+  - **Next (順序が確定した)**
+    1. **item tree の契約化** (= 階層構築を `SystemVerilogCore` 側で完結させる)。
+       `VerilogTreeBuilder` + `IVerilogTreeNodeFactory` は既にあるので、**LSP 側に UI フリーな
+       ノード実装**を持たせ、`Updater` 経由をやめるのが筋
+    2. これが済めば parse の file 引数 (約 10 箇所) を契約化でき、`_verilogFile` / `CreateVerilogFile` が不要になる
+    3. 残る simulation setup (6) は item tree 契約化の後
+  - **注意**: この領域は**同じ失敗 (5 件 / `5` が `8` になる) を 4 回踏んでいる**。
+    変更したら必ず `--filter FullyQualifiedName~ParameterOverride` で即確認すること。
+    **parse の file 引数は item tree 契約化まで触らない** (順序を守る)
 
 - **Stage H (18) 完了: parse の file 引数の阻害要因を二分探索で確定 + instance キャッシュを契約化** (ビルド 0 errors、テスト 1313 合格)
   - ユーザ指示: `続けて`
